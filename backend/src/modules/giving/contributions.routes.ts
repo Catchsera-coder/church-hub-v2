@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { and, desc, eq, gte, isNull, lte, sql } from 'drizzle-orm';
 import { db } from '../../db/index.js';
-import { contributions } from '../../db/schema.js';
+import { contributions, people, funds } from '../../db/schema.js';
 import { asyncHandler } from '../../http/asyncHandler.js';
 import { authenticate, requirePermission } from '../../middleware/auth.js';
 import { badRequest, conflict, notFound } from '../../http/errors.js';
@@ -56,8 +56,23 @@ contributionsRouter.get(
       .from(contributions)
       .where(where);
     const rows = await db
-      .select()
+      .select({
+        id: contributions.id,
+        amountCents: contributions.amountCents,
+        currency: contributions.currency,
+        receivedOn: contributions.receivedOn,
+        method: contributions.method,
+        reference: contributions.reference,
+        isAnonymous: contributions.isAnonymous,
+        reversesId: contributions.reversesId,
+        fundCode: funds.code,
+        fundName: funds.name,
+        givenName: people.givenName,
+        familyName: people.familyName,
+      })
       .from(contributions)
+      .leftJoin(funds, eq(funds.id, contributions.fundId))
+      .leftJoin(people, eq(people.id, contributions.personId))
       .where(where)
       .orderBy(desc(contributions.receivedOn), desc(contributions.id))
       .limit(q.limit)
