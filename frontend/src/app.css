@@ -1,0 +1,43 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /* Arabic / RTL gets a proper Arabic face and a touch more line-height. */
+  [dir='rtl'] {
+    font-family: theme('fontFamily.arabic');
+    line-height: 1.7;
+  }
+  /* Latin substrings inside Arabic (phone/email/dates) must stay LTR. */
+  [dir='rtl'] .force-ltr {
+    direction: ltr;
+    unicode-bidi: isolate;
+  }
+  h1, h2, h3, .font-display {
+    font-family: theme('fontFamily.display');
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition;
+  }
+  .btn-primary {
+    @apply btn bg-primary-600 text-white hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500;
+  }
+  .btn-ghost {
+    @apply btn text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800;
+  }
+  .card {
+    @apply rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900;
+  }
+  .input {
+    @apply w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500 dark:border-slate-700 dark:bg-slate-900;
+  }
+  .nav-link {
+    @apply flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white;
+  }
+  .nav-link-active {
+    @apply bg-primary-50 text-primary-700 dark:bg-primary-900/40 dark:text-primary-200;
+  }
+}
