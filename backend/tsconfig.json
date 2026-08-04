@@ -7,7 +7,6 @@
     "outDir": "dist",
     "rootDir": "src",
     "strict": true,
-    "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true,
     "esModuleInterop": true,
     "skipLibCheck": true,

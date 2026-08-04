@@ -13,7 +13,7 @@ export const signAccessToken = (claims: AccessClaims): string =>
   jwt.sign(claims, config.JWT_ACCESS_SECRET, { expiresIn: config.ACCESS_TOKEN_TTL as jwt.SignOptions['expiresIn'] });
 
 export const verifyAccessToken = (token: string): AccessClaims =>
-  jwt.verify(token, config.JWT_ACCESS_SECRET) as AccessClaims;
+  jwt.verify(token, config.JWT_ACCESS_SECRET) as unknown as AccessClaims;
 
 // Refresh tokens are opaque random strings; only their SHA-256 hash is stored,
 // so a DB leak can't be used to mint access tokens. Rotated on every refresh.
