@@ -29,8 +29,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 20, cache: npm, cache-dependency-path: backend/package-lock.json }
-      - run: npm ci
+        with: { node-version: 20 }
+      # npm install (not ci): no committed lockfile yet — the author's machine has
+      # no Node. First green run: commit the generated package-lock.json and switch
+      # this back to `npm ci` for reproducible installs (v1 lesson).
+      - run: npm install --no-audit --no-fund
       - run: npm run typecheck
       - run: npm run db:generate
       - run: npm run db:migrate
@@ -45,7 +48,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 20, cache: npm, cache-dependency-path: frontend/package-lock.json }
-      - run: npm ci
+        with: { node-version: 20 }
+      - run: npm install --no-audit --no-fund
       - run: npm run typecheck
       - run: npm run build
