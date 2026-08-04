@@ -7,7 +7,12 @@ import { config } from './config.js';
 import { errorHandler } from './http/errors.js';
 import { authRouter } from './modules/auth/routes.js';
 import { peopleRouter } from './modules/people/routes.js';
+import { familiesRouter } from './modules/families/routes.js';
+import { ministriesRouter } from './modules/ministries/routes.js';
+import { attendanceRouter } from './modules/attendance/routes.js';
+import { fundsRouter } from './modules/funds/routes.js';
 import { contributionsRouter } from './modules/giving/contributions.routes.js';
+import { batchesRouter } from './modules/giving/batches.routes.js';
 import { dashboardRouter } from './modules/dashboard/routes.js';
 import { settingsRouter } from './modules/settings/routes.js';
 
@@ -30,10 +35,14 @@ export function createApp() {
   app.use('/api/settings', settingsRouter);
   app.use('/api/dashboard', dashboardRouter);
   app.use('/api/people', peopleRouter);
+  app.use('/api/families', familiesRouter);
+  app.use('/api/ministries', ministriesRouter);
+  app.use('/api/attendance', attendanceRouter);
+  app.use('/api/funds', fundsRouter);
   app.use('/api/contributions', contributionsRouter);
-  // Further module routers (families, ministries, attendance, funds, batches,
-  // sermons, events, messages, team, activity) mount here following the same
-  // pattern as people/routes.ts.
+  app.use('/api/batches', batchesRouter);
+  // Remaining routers (sermons, events, messages, team, activity read) mount
+  // here following the same pattern as people/routes.ts.
 
   app.use(errorHandler);
   return app;
