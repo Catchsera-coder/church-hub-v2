@@ -13,6 +13,11 @@ import { attendanceRouter } from './modules/attendance/routes.js';
 import { fundsRouter } from './modules/funds/routes.js';
 import { contributionsRouter } from './modules/giving/contributions.routes.js';
 import { batchesRouter } from './modules/giving/batches.routes.js';
+import { sermonsRouter } from './modules/sermons/routes.js';
+import { eventsRouter } from './modules/events/routes.js';
+import { messagesRouter } from './modules/messages/routes.js';
+import { teamRouter } from './modules/team/routes.js';
+import { activityRouter } from './modules/activity/routes.js';
 import { dashboardRouter } from './modules/dashboard/routes.js';
 import { settingsRouter } from './modules/settings/routes.js';
 
@@ -41,8 +46,11 @@ export function createApp() {
   app.use('/api/funds', fundsRouter);
   app.use('/api/contributions', contributionsRouter);
   app.use('/api/batches', batchesRouter);
-  // Remaining routers (sermons, events, messages, team, activity read) mount
-  // here following the same pattern as people/routes.ts.
+  app.use('/api/sermons', sermonsRouter);
+  app.use('/api/events', eventsRouter);
+  app.use('/api/messages', messagesRouter);
+  app.use('/api/team', teamRouter);
+  app.use('/api/activity', activityRouter);
 
   app.use(errorHandler);
   return app;
