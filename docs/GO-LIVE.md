@@ -39,9 +39,11 @@ az containerapp create -g $RG -n v2-backend --environment $ENVID \
     JWT_ACCESS_SECRET=secretref:jwt-access JWT_REFRESH_SECRET=secretref:jwt-refresh \
     ADMIN_EMAIL=abcbchurchhub@gmail.com ADMIN_PASSWORD=secretref:admin-pass CORS_ORIGINS=https://placeholder
 
-# 3) Point the frontend (already created) at the backend's internal address
+# 3) Point the frontend at the backend AND pull the latest image (branding/login)
 BEURL=$(az containerapp show -g $RG -n v2-backend --query properties.configuration.ingress.fqdn -o tsv)
-az containerapp update -g $RG -n v2-frontend --set-env-vars BACKEND_ORIGIN="https://$BEURL"
+az containerapp update -g $RG -n v2-frontend \
+  --image $ACR.azurecr.io/church-hub-frontend:v2 \
+  --set-env-vars BACKEND_ORIGIN="https://$BEURL"
 
 # 4) Live URL:
 echo "LIVE AT: https://$(az containerapp show -g $RG -n v2-frontend --query properties.configuration.ingress.fqdn -o tsv)"
