@@ -7,10 +7,6 @@ COPY package.json package-lock.json* ./
 RUN npm install --no-audit --no-fund
 COPY . .
 RUN npm run build
-# Generate SQL migrations into ./drizzle so the runtime image is self-contained
-# (drizzle-kit only reads schema.ts here — no DB connection needed). --name fixes
-# the filename so it is byte-stable across builds (migrator tracks by content hash).
-RUN npx drizzle-kit generate --name init
 
 # --- runtime ---
 FROM node:20-alpine AS runtime
@@ -19,8 +15,12 @@ ENV NODE_ENV=production
 COPY package.json package-lock.json* ./
 RUN npm install --omit=dev --no-audit --no-fund
 COPY --from=build /app/dist ./dist
-COPY --from=build /app/drizzle ./drizzle
+# drizzle-kit push reads these at startup to sync the live DB to the schema
+# (adds new tables/columns without migration-history bookkeeping — safe for
+# additive changes across deploys).
+COPY --from=build /app/src ./src
+COPY --from=build /app/drizzle.config.ts ./drizzle.config.ts
 EXPOSE 8080
-# Run migrations, seed (idempotent — creates the first admin from ADMIN_EMAIL/
-# ADMIN_PASSWORD if absent), then start. Co-located with the DB in the same region.
-CMD ["sh", "-c", "node dist/db/migrate.js && node dist/db/seed.js && node dist/index.js"]
+# Sync schema (push), seed (idempotent — first admin from ADMIN_EMAIL/PASSWORD),
+# then start. Co-located with the DB in the same region.
+CMD ["sh", "-c", "npx drizzle-kit push --verbose && node dist/db/seed.js && node dist/index.js"]
