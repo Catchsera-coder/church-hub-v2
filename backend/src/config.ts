@@ -14,6 +14,9 @@ const schema = z.object({
   ACCESS_TOKEN_TTL: z.string().default('15m'),
   REFRESH_TOKEN_TTL: z.string().default('30d'),
   CORS_ORIGINS: z.string().default('http://localhost:5173'),
+  // Public URL of the SPA, used to build links in emails (password reset). If
+  // unset, reset emails include the token and a relative /reset-password path.
+  PUBLIC_APP_URL: z.string().url().optional(),
   DEFAULT_LOCALE: z.string().default('en'),
   DEFAULT_CURRENCY: z.string().default('USD'),
   DEFAULT_TIMEZONE: z.string().default('UTC'),
