@@ -11,17 +11,17 @@ two `<CHOOSE-...>` values with strong passwords of your choice.
 The backend image runs migrate + seed (idempotent) + start on boot, so no startup
 override is needed. `az acr build` and `--database-name` details already handled.
 
+Paste this whole block into Cloud Shell (Bash) and press Enter. It generates all
+passwords for you and prints your login + URL at the end — no decisions needed.
+
 ```bash
 RG=rg-abchub-prod; ACR=abchubacrko7bpuyfp66em
 ENVID=$(az containerapp env show -g $RG -n cae-abchub-prod --query id -o tsv)
 IDID=$(az identity show -g $RG -n id-abchub-prod --query id -o tsv)
-
-# choose real passwords (letters/digits; avoid @ : / in the DB one)
-PGPASS='<STRONG-DB-PASSWORD>'
-ADMINPASS='<ADMIN-LOGIN-PASSWORD>'
+PGPASS=$(openssl rand -base64 18 | tr -dc 'A-Za-z0-9' | head -c 24)
+ADMINPASS=$(openssl rand -base64 12 | tr -dc 'A-Za-z0-9' | head -c 12)
 JWTA=$(openssl rand -base64 48); JWTR=$(openssl rand -base64 48)
 
-# 1) Dedicated Postgres for v2 (own DB; old app untouched). Create server, then db.
 az postgres flexible-server create -g $RG -n psql-abchubv2-prod -l eastus2 \
   --tier Burstable --sku-name Standard_B1ms --version 16 \
   --admin-user chadmin --admin-password "$PGPASS" \
@@ -29,7 +29,6 @@ az postgres flexible-server create -g $RG -n psql-abchubv2-prod -l eastus2 \
 az postgres flexible-server db create -g $RG -s psql-abchubv2-prod -d church_hub_v2
 DBURL="postgres://chadmin:$PGPASS@psql-abchubv2-prod.postgres.database.azure.com:5432/church_hub_v2"
 
-# 2) Backend — internal ingress (image CMD migrates + seeds + starts)
 az containerapp create -g $RG -n v2-backend --environment $ENVID \
   --image $ACR.azurecr.io/church-hub-backend:v2 \
   --registry-server $ACR.azurecr.io --registry-identity $IDID --user-assigned $IDID \
@@ -39,18 +38,19 @@ az containerapp create -g $RG -n v2-backend --environment $ENVID \
     JWT_ACCESS_SECRET=secretref:jwt-access JWT_REFRESH_SECRET=secretref:jwt-refresh \
     ADMIN_EMAIL=abcbchurchhub@gmail.com ADMIN_PASSWORD=secretref:admin-pass CORS_ORIGINS=https://placeholder
 
-# 3) Point the frontend at the backend AND pull the latest image (branding/login)
 BEURL=$(az containerapp show -g $RG -n v2-backend --query properties.configuration.ingress.fqdn -o tsv)
 az containerapp update -g $RG -n v2-frontend \
   --image $ACR.azurecr.io/church-hub-frontend:v2 \
   --set-env-vars BACKEND_ORIGIN="https://$BEURL"
 
-# 4) Live URL:
-echo "LIVE AT: https://$(az containerapp show -g $RG -n v2-frontend --query properties.configuration.ingress.fqdn -o tsv)"
+echo "=================================================="
+echo " LIVE AT : https://$(az containerapp show -g $RG -n v2-frontend --query properties.configuration.ingress.fqdn -o tsv)"
+echo " LOGIN   : abcbchurchhub@gmail.com"
+echo " PASSWORD: $ADMINPASS"
+echo "=================================================="
 ```
 
-Then open that URL and sign in with `abcbchurchhub@gmail.com` / the admin password you chose.
-(If the backend image was rebuilt, first: `az containerapp update -g $RG -n v2-backend --image $ACR.azurecr.io/church-hub-backend:v2`.)
+Copy the LOGIN + PASSWORD it prints, open the LIVE AT link, and sign in.
 
 ## If image pull fails (AcrPull)
 The managed identity `id-abchub-prod` must have AcrPull on the registry. If a create
