@@ -23,6 +23,9 @@ const upsertSchema = z.object({
   dateOfBirth: z.string().nullable().optional(),
   notes: z.string().nullable().optional(),
   isActive: z.boolean().default(true),
+  emailOptOut: z.boolean().optional(),
+  smsOptOut: z.boolean().optional(),
+  whatsappOptOut: z.boolean().optional(),
 });
 
 const listQuery = z.object({

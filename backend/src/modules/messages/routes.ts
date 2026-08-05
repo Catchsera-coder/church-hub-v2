@@ -9,6 +9,7 @@ import { badRequest, notFound } from '../../http/errors.js';
 import { logActivity } from '../activity/service.js';
 import { resolveMessaging, sendMessage } from './delivery.js';
 import { currentOrg } from '../settings/routes.js';
+import { config } from '../../config.js';
 
 export const messagesRouter = Router();
 messagesRouter.use(authenticate);
@@ -69,21 +70,29 @@ messagesRouter.post('/:id/send', requirePermission('update message'), asyncHandl
   if (c.status === 'sent' || c.status === 'sending') throw badRequest('Already sent');
 
   const contactCol = c.channel === 'email' ? people.email : people.mobile;
+  // Lawful sending: never message people who opted out of this channel.
+  const optOutCol = c.channel === 'email' ? people.emailOptOut : people.smsOptOut;
   const audience = await db
-    .select({ id: people.id, contact: contactCol, lang: people.preferredLanguage })
+    .select({ id: people.id, contact: contactCol, lang: people.preferredLanguage, unsubToken: people.unsubToken })
     .from(people)
-    .where(and(eq(people.isActive, true), isNull(people.deletedAt), isNotNull(contactCol), ne(contactCol, '')));
+    .where(and(eq(people.isActive, true), isNull(people.deletedAt), isNotNull(contactCol), ne(contactCol, ''), eq(optOutCol, false)));
 
   await db.update(messageCampaigns).set({ status: 'sending', updatedAt: new Date() }).where(eq(messageCampaigns.id, id));
 
   // Resolve this church's messaging config once (Settings-tab values over env).
   const messaging = resolveMessaging((await currentOrg()).messaging);
+  const appUrl = config.PUBLIC_APP_URL?.replace(/\/+$/, '');
 
   let sent = 0;
   for (const p of audience) {
     const [rec] = await db.insert(messageRecipients).values({ messageCampaignId: id, personId: p.id }).onConflictDoNothing().returning();
     if (!rec) continue;
-    const ok = await sendMessage(messaging, c.channel, p.contact as string, c.subject[p.lang] ?? c.subject.en ?? '', c.body[p.lang] ?? c.body.en ?? '');
+    let body = c.body[p.lang] ?? c.body.en ?? '';
+    // Email footer with a one-click unsubscribe link (CAN-SPAM / lawful sending).
+    if (c.channel === 'email' && appUrl) {
+      body += `\n\n—\nTo stop receiving these emails, unsubscribe: ${appUrl}/unsubscribe/${p.unsubToken}`;
+    }
+    const ok = await sendMessage(messaging, c.channel, p.contact as string, c.subject[p.lang] ?? c.subject.en ?? '', body);
     await db.update(messageRecipients).set({ status: ok ? 'sent' : 'failed' }).where(eq(messageRecipients.id, rec.id));
     if (ok) sent++;
   }

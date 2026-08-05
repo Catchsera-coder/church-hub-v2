@@ -166,6 +166,11 @@ export const people = pgTable('people', {
   dateOfBirth: date('date_of_birth'),
   photoPath: text('photo_path'),
   qrToken: uuid('qr_token').notNull().defaultRandom(),
+  // Messaging consent (opt-out per channel; lawful sending suppresses these).
+  emailOptOut: boolean('email_opt_out').notNull().default(false),
+  smsOptOut: boolean('sms_opt_out').notNull().default(false),
+  whatsappOptOut: boolean('whatsapp_opt_out').notNull().default(false),
+  unsubToken: uuid('unsub_token').notNull().defaultRandom(), // one-click email unsubscribe
   isActive: boolean('is_active').notNull().default(true),
   notes: text('notes'),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),

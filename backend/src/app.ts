@@ -21,6 +21,7 @@ import { activityRouter } from './modules/activity/routes.js';
 import { dashboardRouter } from './modules/dashboard/routes.js';
 import { settingsRouter } from './modules/settings/routes.js';
 import { publicCheckinRouter } from './modules/checkin/public.routes.js';
+import { publicConsentRouter } from './modules/consent/public.routes.js';
 
 export function createApp() {
   const app = express();
@@ -39,6 +40,8 @@ export function createApp() {
   // Public self-check-in is unauthenticated — rate-limit to blunt directory scraping.
   app.use('/api/public/checkin', rateLimit({ windowMs: 60_000, max: 40 }));
   app.use('/api/public/checkin', publicCheckinRouter);
+  app.use('/api/public/unsubscribe', rateLimit({ windowMs: 60_000, max: 30 }));
+  app.use('/api/public/unsubscribe', publicConsentRouter);
 
   app.use('/api/auth', authRouter);
   app.use('/api/settings', settingsRouter);

@@ -16,6 +16,9 @@
     mobile: initial?.mobile ?? '',
     preferredLanguage: initial?.preferredLanguage ?? 'en',
     isActive: initial?.isActive ?? true,
+    emailOptOut: initial?.emailOptOut ?? false,
+    smsOptOut: initial?.smsOptOut ?? false,
+    whatsappOptOut: initial?.whatsappOptOut ?? false,
   });
   let saving = $state(false);
   let error = $state('');
@@ -118,6 +121,14 @@
         </div>
       {/if}
     </div>
+  </div>
+
+  <div class="card space-y-3 p-6">
+    <h2 class="text-sm font-semibold text-slate-700 dark:text-slate-200">{tr({ en: 'Messaging consent', ar: 'موافقة المراسلة' }, $locale)}</h2>
+    <p class="text-xs text-slate-500 dark:text-slate-400">{tr({ en: 'When ticked, this person will NOT receive that channel (they opted out).', ar: 'عند التحديد، لن يتلقى هذا الشخص تلك القناة (انسحب).' }, $locale)}</p>
+    <label class="flex items-center gap-2 text-sm"><input type="checkbox" bind:checked={form.emailOptOut} /> {tr({ en: 'Opted out of email', ar: 'منسحب من البريد' }, $locale)}</label>
+    <label class="flex items-center gap-2 text-sm"><input type="checkbox" bind:checked={form.smsOptOut} /> {tr({ en: 'Opted out of SMS', ar: 'منسحب من الرسائل النصية' }, $locale)}</label>
+    <label class="flex items-center gap-2 text-sm"><input type="checkbox" bind:checked={form.whatsappOptOut} /> {tr({ en: 'Opted out of WhatsApp', ar: 'منسحب من واتساب' }, $locale)}</label>
   </div>
 
   <div class="flex gap-3">
