@@ -13,6 +13,36 @@
   let error = $state('');
   let saving = $state(false);
 
+  // AI compose: draft copy from a short brief, fill the form. Off unless a key
+  // is configured — the backend replies with a clear message we surface inline.
+  let showAi = $state(false);
+  let aiBrief = $state('');
+  let aiTone = $state('');
+  let aiLoading = $state(false);
+  let aiError = $state('');
+
+  async function draftWithAi() {
+    if (!aiBrief.trim()) return;
+    aiLoading = true; aiError = '';
+    try {
+      const { data } = await api<{ data: any }>('/messages/ai-draft', {
+        method: 'POST',
+        body: JSON.stringify({
+          brief: aiBrief.trim(),
+          channels: [form.channel],
+          locales: LOCALES.map((l) => l.code),
+          tone: aiTone.trim() || undefined,
+        }),
+      });
+      const d = data[form.channel];
+      if (d) {
+        if (form.channel === 'email' && d.subject) form.subject = { ...form.subject, ...d.subject };
+        if (d.body) form.body = { ...form.body, ...d.body };
+        showAi = false;
+      }
+    } catch (err) { aiError = (err as Error).message; } finally { aiLoading = false; }
+  }
+
   async function submit(e: Event) {
     e.preventDefault();
     saving = true; error = '';
@@ -40,6 +70,28 @@
           <option value="sms">{tr({ en: 'SMS', ar: 'رسالة نصية' }, $locale)}</option>
         </select>
       </label>
+    </div>
+
+    <div class="rounded-lg border border-dashed border-slate-300 p-3 dark:border-slate-600">
+      {#if !showAi}
+        <button type="button" class="btn-ghost text-sm" onclick={() => { showAi = true; }}>
+          ✨ {tr({ en: 'Draft with AI', ar: 'صياغة بالذكاء الاصطناعي' }, $locale)}
+        </button>
+      {:else}
+        <div class="space-y-2">
+          <label class="block space-y-1">
+            <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Describe the message', ar: 'صف الرسالة' }, $locale)}</span>
+            <textarea class="input" rows="2" bind:value={aiBrief} placeholder={tr({ en: 'e.g. Remind everyone about Friday prayer meeting at 7pm', ar: 'مثال: ذكّر الجميع باجتماع صلاة الجمعة الساعة 7 مساءً' }, $locale)}></textarea>
+          </label>
+          <input class="input" bind:value={aiTone} placeholder={tr({ en: 'Tone (optional), e.g. warm and pastoral', ar: 'النبرة (اختياري)' }, $locale)} />
+          {#if aiError}<p class="text-xs text-rose-600 dark:text-rose-400">{aiError}</p>{/if}
+          <div class="flex gap-2">
+            <button type="button" class="btn-primary shrink-0" onclick={draftWithAi} disabled={aiLoading}>{aiLoading ? tr({ en: 'Drafting…', ar: 'جارٍ الصياغة…' }, $locale) : tr({ en: 'Generate', ar: 'إنشاء' }, $locale)}</button>
+            <button type="button" class="btn-ghost shrink-0" onclick={() => { showAi = false; }}>✕</button>
+          </div>
+          <p class="text-xs text-slate-500 dark:text-slate-400">{tr({ en: 'Fills subject and body for all languages. Review before saving.', ar: 'يملأ الموضوع والنص لكل اللغات. راجعها قبل الحفظ.' }, $locale)}</p>
+        </div>
+      {/if}
     </div>
 
     {#if form.channel === 'email'}

@@ -33,6 +33,12 @@ export type MessagingSettings = {
   twilioAuthToken?: string;
   acsConnectionString?: string; // shared by ACS email + SMS
   acsSmsFrom?: string;
+  // WhatsApp via Twilio (reuses the Twilio account; from is a WhatsApp sender).
+  whatsappProvider?: 'twilio';
+  whatsappFrom?: string; // e.g. "whatsapp:+14155238886"
+  // AI compose assistant (Anthropic). Off until a key is supplied here or in env.
+  aiApiKey?: string;
+  aiModel?: string; // defaults to claude-opus-5
 };
 
 // ---------------------------------------------------------------------------

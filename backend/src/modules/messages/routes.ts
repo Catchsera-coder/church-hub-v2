@@ -8,6 +8,7 @@ import { authenticate, requirePermission } from '../../middleware/auth.js';
 import { badRequest, notFound } from '../../http/errors.js';
 import { logActivity } from '../activity/service.js';
 import { resolveMessaging, sendMessage } from './delivery.js';
+import { resolveAi, draftMessages, type AiChannel } from './ai.js';
 import { currentOrg } from '../settings/routes.js';
 import { config } from '../../config.js';
 
@@ -32,6 +33,39 @@ messagesRouter.get('/', requirePermission('view message'), asyncHandler(async (_
     .from(messageCampaigns)
     .orderBy(desc(messageCampaigns.createdAt));
   res.json({ data: rows });
+}));
+
+/**
+ * AI compose: draft copy for one or more channels from a short brief. Returns
+ * drafts only — nothing is saved or sent. Gated on an Anthropic key (Settings or
+ * env); replies 400 "AI not configured" when absent so the UI can hide/disable
+ * the feature rather than fail mid-flow.
+ */
+const aiSchema = z.object({
+  brief: z.string().min(3).max(2000),
+  channels: z.array(z.enum(['email', 'sms', 'whatsapp'])).min(1),
+  locales: z.array(z.string().max(8)).min(1).max(4).default(['en']),
+  tone: z.string().max(120).optional(),
+});
+
+messagesRouter.post('/ai-draft', requirePermission('create message'), asyncHandler(async (req, res) => {
+  const b = aiSchema.parse(req.body);
+  const org = await currentOrg();
+  const ai = resolveAi(org.messaging);
+  if (!ai) throw badRequest('AI is not configured. Add an Anthropic API key in Settings → Messaging.');
+  const churchName = org.name?.en ?? org.name?.ar ?? undefined;
+  try {
+    const draft = await draftMessages(ai, {
+      brief: b.brief,
+      channels: b.channels as AiChannel[],
+      locales: b.locales,
+      tone: b.tone,
+      churchName,
+    });
+    res.json({ data: draft });
+  } catch (err) {
+    throw badRequest(err instanceof Error ? err.message : 'AI draft failed.');
+  }
 }));
 
 messagesRouter.post('/', requirePermission('create message'), asyncHandler(async (req, res) => {

@@ -29,7 +29,7 @@
     if (isAdmin) {
       const m = await api<{ data: any }>('/settings/messaging');
       // secret fields start blank; blank on save = leave unchanged
-      msg = { ...m.data, sendgridApiKey: '', twilioAuthToken: '', acsConnectionString: '' };
+      msg = { ...m.data, sendgridApiKey: '', twilioAuthToken: '', acsConnectionString: '', aiApiKey: '' };
     }
   });
 
@@ -72,11 +72,12 @@
         smsProvider: msg.smsProvider, smsFrom: msg.smsFrom,
         twilioAccountSid: msg.twilioAccountSid, twilioAuthToken: msg.twilioAuthToken,
         acsSmsFrom: msg.acsSmsFrom, acsConnectionString: msg.acsConnectionString,
+        whatsappFrom: msg.whatsappFrom, aiModel: msg.aiModel, aiApiKey: msg.aiApiKey,
       }) });
       msgSaved = true;
       // refresh the "set" indicators
       const m = await api<{ data: any }>('/settings/messaging');
-      msg = { ...m.data, sendgridApiKey: '', twilioAuthToken: '', acsConnectionString: '' };
+      msg = { ...m.data, sendgridApiKey: '', twilioAuthToken: '', acsConnectionString: '', aiApiKey: '' };
     } finally { msgSaving = false; }
   }
 
@@ -264,6 +265,28 @@
             </label>
           </div>
         </div>
+      </div>
+
+      <div class="card space-y-4 p-6">
+        <h3 class="font-semibold">{tr({ en: 'WhatsApp', ar: 'واتساب' }, $locale)}</h3>
+        <p class="text-xs text-slate-500 dark:text-slate-400">{tr({ en: 'Uses your Twilio account above. Enter your WhatsApp-enabled sender.', ar: 'يستخدم حساب Twilio أعلاه. أدخل مرسل واتساب المفعّل.' }, $locale)}</p>
+        <label class="block space-y-1">
+          <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'WhatsApp sender', ar: 'مرسل واتساب' }, $locale)}</span>
+          <input class="input force-ltr" bind:value={msg.whatsappFrom} placeholder="whatsapp:+14155238886" />
+        </label>
+      </div>
+
+      <div class="card space-y-4 p-6">
+        <h3 class="font-semibold">✨ {tr({ en: 'AI compose', ar: 'الصياغة بالذكاء الاصطناعي' }, $locale)}</h3>
+        <p class="text-xs text-slate-500 dark:text-slate-400">{tr({ en: 'Add an Anthropic API key to draft messages from a short brief. Left blank, the AI compose button is disabled.', ar: 'أضف مفتاح Anthropic لصياغة الرسائل من وصف قصير. إذا تُرك فارغاً، يتعطّل زر الصياغة.' }, $locale)}{#if msg.envAiDefault} {tr({ en: '(An environment key is already active.)', ar: '(مفتاح بيئة مفعّل بالفعل.)' }, $locale)}{/if}</p>
+        <label class="block space-y-1">
+          <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Anthropic API key', ar: 'مفتاح Anthropic' }, $locale)}</span>
+          <input class="input force-ltr" type="password" bind:value={msg.aiApiKey} placeholder={secretPlaceholder(msg.aiApiKeySet)} />
+        </label>
+        <label class="block space-y-1">
+          <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Model (optional)', ar: 'النموذج (اختياري)' }, $locale)}</span>
+          <input class="input force-ltr" bind:value={msg.aiModel} placeholder="claude-opus-5" />
+        </label>
       </div>
 
       <div class="flex items-center gap-3">

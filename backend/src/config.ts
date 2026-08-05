@@ -41,6 +41,15 @@ const schema = z.object({
   // Azure Communication Services (SMS): connection string + an ACS phone number.
   ACS_CONNECTION_STRING: z.string().optional(),
   ACS_SMS_FROM: z.string().optional(),
+
+  // WhatsApp (via Twilio) — optional per-deploy sender, e.g. whatsapp:+1415...
+  WHATSAPP_FROM: z.string().optional(),
+
+  // AI compose assistant (Anthropic). Env default; a church can also set its own
+  // key in Settings. Off entirely when neither is present — the compose button
+  // then reports "AI not configured" rather than failing silently.
+  ANTHROPIC_API_KEY: z.string().optional(),
+  AI_MODEL: z.string().default('claude-opus-5'),
 });
 
 const parsed = schema.safeParse(process.env);

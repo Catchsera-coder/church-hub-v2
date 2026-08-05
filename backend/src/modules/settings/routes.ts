@@ -83,9 +83,13 @@ settingsRouter.get(
         twilioAuthTokenSet: Boolean(m.twilioAuthToken),
         acsSmsFrom: m.acsSmsFrom ?? '',
         acsConnectionStringSet: Boolean(m.acsConnectionString),
+        whatsappFrom: m.whatsappFrom ?? '',
+        aiModel: m.aiModel ?? '',
+        aiApiKeySet: Boolean(m.aiApiKey),
         // Surfaced so admins know an env default is active even if unset here.
         envEmailDefault: Boolean(config.SENDGRID_API_KEY && config.MAIL_FROM),
         envSmsDefault: config.smsProvider ?? '',
+        envAiDefault: Boolean(config.ANTHROPIC_API_KEY),
       },
     });
   }),
@@ -102,6 +106,9 @@ const messagingSchema = z.object({
   twilioAuthToken: z.string().optional(),
   acsSmsFrom: z.string().optional(),
   acsConnectionString: z.string().optional(),
+  whatsappFrom: z.string().optional(),
+  aiModel: z.string().optional(),
+  aiApiKey: z.string().optional(),
 });
 
 settingsRouter.put(
@@ -121,12 +128,18 @@ settingsRouter.put(
     if (body.twilioAccountSid !== undefined) next.twilioAccountSid = body.twilioAccountSid || undefined;
     if (body.acsSmsFrom !== undefined) next.acsSmsFrom = body.acsSmsFrom || undefined;
     if (body.smsProvider !== undefined) next.smsProvider = body.smsProvider === '' ? undefined : body.smsProvider;
+    if (body.whatsappFrom !== undefined) {
+      next.whatsappFrom = body.whatsappFrom || undefined;
+      next.whatsappProvider = body.whatsappFrom ? 'twilio' : undefined;
+    }
+    if (body.aiModel !== undefined) next.aiModel = body.aiModel || undefined;
 
     // Secrets: only overwrite when a non-empty value is supplied (the UI sends
     // blank to mean "leave unchanged"). To clear, we'd add an explicit action.
     if (body.sendgridApiKey) next.sendgridApiKey = body.sendgridApiKey;
     if (body.twilioAuthToken) next.twilioAuthToken = body.twilioAuthToken;
     if (body.acsConnectionString) next.acsConnectionString = body.acsConnectionString;
+    if (body.aiApiKey) next.aiApiKey = body.aiApiKey;
 
     await db.update(organisations).set({ messaging: next, updatedAt: new Date() }).where(eq(organisations.id, 1));
     res.json({ data: { ok: true } });
