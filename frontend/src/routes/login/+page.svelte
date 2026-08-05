@@ -13,11 +13,16 @@
   // Only ever the church's OWN uploaded logo (Settings → Identity). No placeholder.
   let logo = $state<string | null>(null);
 
-  // Forgot-password panel
+  // Forgot-password panel (email → code → new password)
   let mode = $state<'signin' | 'forgot'>('signin');
-  let forgotEmail = $state('');
-  let forgotSent = $state(false);
-  let forgotBusy = $state(false);
+  let fStep = $state<'email' | 'code'>('email');
+  let fEmail = $state('');
+  let fCode = $state('');
+  let fPass = $state('');
+  let fConfirm = $state('');
+  let fBusy = $state(false);
+  let fError = $state('');
+  let fDone = $state(false);
 
   onMount(async () => {
     if (isAuthed()) return goto('/dashboard', { replaceState: true });
@@ -48,16 +53,37 @@
     }
   }
 
-  async function requestReset(e: Event) {
+  function openForgot() {
+    mode = 'forgot'; fStep = 'email'; fEmail = email; fCode = ''; fPass = ''; fConfirm = ''; fError = ''; fDone = false;
+  }
+
+  async function sendCode(e: Event) {
     e.preventDefault();
-    forgotBusy = true;
+    fBusy = true; fError = '';
     try {
-      await api('/auth/forgot', { method: 'POST', body: JSON.stringify({ email: forgotEmail }) });
-      forgotSent = true; // always succeeds (no account enumeration)
+      await api('/auth/forgot', { method: 'POST', body: JSON.stringify({ email: fEmail }) });
+      fStep = 'code'; // always advances (no account enumeration)
     } catch {
-      forgotSent = true;
+      fStep = 'code';
     } finally {
-      forgotBusy = false;
+      fBusy = false;
+    }
+  }
+
+  async function doReset(e: Event) {
+    e.preventDefault();
+    fError = '';
+    if (fPass.length < 8) { fError = tr({ en: 'Use at least 8 characters.', ar: 'استخدم 8 أحرف على الأقل.' }, $locale); return; }
+    if (fPass !== fConfirm) { fError = tr({ en: 'Passwords do not match.', ar: 'كلمتا المرور غير متطابقتين.' }, $locale); return; }
+    fBusy = true;
+    try {
+      await api('/auth/reset', { method: 'POST', body: JSON.stringify({ email: fEmail, code: fCode.trim(), password: fPass }) });
+      fDone = true;
+      setTimeout(() => { mode = 'signin'; email = fEmail; }, 1500);
+    } catch (err) {
+      fError = err instanceof ApiError ? err.message : (err as Error).message;
+    } finally {
+      fBusy = false;
     }
   }
 </script>
@@ -94,31 +120,50 @@
         </button>
 
         <button type="button" class="w-full text-center text-sm text-primary-600 hover:underline dark:text-primary-300"
-          onclick={() => { mode = 'forgot'; forgotEmail = email; forgotSent = false; }}>
+          onclick={openForgot}>
           {$t('auth.forgot')}
         </button>
       </form>
-    {:else}
-      <form class="card space-y-4 p-6" onsubmit={requestReset}>
+    {:else if fStep === 'email'}
+      <form class="card space-y-4 p-6" onsubmit={sendCode}>
         <h1 class="text-lg font-semibold">{$t('auth.reset_title')}</h1>
-        {#if forgotSent}
-          <p class="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
-            {$t('auth.forgot_sent')}
-          </p>
+        <p class="text-sm text-slate-600 dark:text-slate-300">{$t('auth.forgot_prompt')}</p>
+        <label class="block space-y-1">
+          <span class="text-sm text-slate-600 dark:text-slate-300">{$t('auth.email')}</span>
+          <input class="input force-ltr" type="email" bind:value={fEmail} required autocomplete="username" />
+        </label>
+        <button class="btn-primary w-full" type="submit" disabled={fBusy}>
+          {fBusy ? $t('common.loading') : $t('auth.forgot_send')}
+        </button>
+        <button type="button" class="w-full text-center text-sm text-primary-600 hover:underline dark:text-primary-300"
+          onclick={() => { mode = 'signin'; }}>{$t('auth.back_to_signin')}</button>
+      </form>
+    {:else}
+      <form class="card space-y-4 p-6" onsubmit={doReset}>
+        <h1 class="text-lg font-semibold">{$t('auth.reset_title')}</h1>
+        {#if fDone}
+          <p class="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">{$t('auth.reset_done')}</p>
         {:else}
-          <p class="text-sm text-slate-600 dark:text-slate-300">{$t('auth.forgot_prompt')}</p>
+          <p class="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">{$t('auth.forgot_sent')}</p>
+          {#if fError}<p class="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:bg-rose-900/30 dark:text-rose-300">{fError}</p>{/if}
           <label class="block space-y-1">
-            <span class="text-sm text-slate-600 dark:text-slate-300">{$t('auth.email')}</span>
-            <input class="input force-ltr" type="email" bind:value={forgotEmail} required autocomplete="username" />
+            <span class="text-sm text-slate-600 dark:text-slate-300">{$t('auth.code')}</span>
+            <input class="input force-ltr tracking-widest" inputmode="numeric" bind:value={fCode} required placeholder="000000" />
           </label>
-          <button class="btn-primary w-full" type="submit" disabled={forgotBusy}>
-            {forgotBusy ? $t('common.loading') : $t('auth.forgot_send')}
+          <label class="block space-y-1">
+            <span class="text-sm text-slate-600 dark:text-slate-300">{$t('auth.new_password')}</span>
+            <input class="input force-ltr" type="password" bind:value={fPass} required autocomplete="new-password" />
+          </label>
+          <label class="block space-y-1">
+            <span class="text-sm text-slate-600 dark:text-slate-300">{$t('auth.confirm_password')}</span>
+            <input class="input force-ltr" type="password" bind:value={fConfirm} required autocomplete="new-password" />
+          </label>
+          <button class="btn-primary w-full" type="submit" disabled={fBusy}>
+            {fBusy ? $t('common.loading') : $t('auth.reset_submit')}
           </button>
         {/if}
         <button type="button" class="w-full text-center text-sm text-primary-600 hover:underline dark:text-primary-300"
-          onclick={() => { mode = 'signin'; }}>
-          {$t('auth.back_to_signin')}
-        </button>
+          onclick={() => { mode = 'signin'; }}>{$t('auth.back_to_signin')}</button>
       </form>
     {/if}
   </div>

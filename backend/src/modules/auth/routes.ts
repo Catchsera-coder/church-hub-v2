@@ -86,9 +86,10 @@ authRouter.post(
   }),
 );
 
-// --- Password reset ---------------------------------------------------------
-// Request a reset link. Always responds 200 (never reveals whether the email
-// exists). If it matches an active user, a single-use token (1h) is emailed.
+// --- Password reset (email code) --------------------------------------------
+// Step 1: request a 6-digit code by email. Always responds 200 (never reveals
+// whether the email exists). Code is single-use, expires in 15 minutes; any
+// previous codes for the user are invalidated first.
 authRouter.post(
   '/forgot',
   asyncHandler(async (req, res) => {
@@ -96,19 +97,20 @@ authRouter.post(
     const [user] = await db.select().from(users).where(eq(users.email, email.toLowerCase())).limit(1);
 
     if (user && user.isActive) {
-      const token = crypto.randomBytes(32).toString('base64url');
-      const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
-      const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+      await db.update(passwordResetTokens)
+        .set({ usedAt: new Date() })
+        .where(and(eq(passwordResetTokens.userId, user.id), isNull(passwordResetTokens.usedAt)));
+
+      const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
+      const tokenHash = crypto.createHash('sha256').update(code).digest('hex');
+      const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
       await db.insert(passwordResetTokens).values({ userId: user.id, tokenHash, expiresAt });
 
-      const base = config.PUBLIC_APP_URL?.replace(/\/+$/, '') ?? '';
-      const link = `${base}/reset-password?token=${token}`;
-      const org = await currentOrg();
-      const messaging = resolveMessaging(org.messaging);
-      const subject = 'Reset your password';
+      const messaging = resolveMessaging((await currentOrg()).messaging);
+      const subject = 'Your password reset code';
       const body =
-        `We received a request to reset your password.\n\n` +
-        `Open this link to choose a new password (valid for 1 hour):\n${link}\n\n` +
+        `Your password reset code is: ${code}\n\n` +
+        `Enter it on the sign-in screen to choose a new password. It expires in 15 minutes.\n\n` +
         `If you didn't request this, you can ignore this email.`;
       await sendMessage(messaging, 'email', user.email, subject, body);
     }
@@ -117,23 +119,33 @@ authRouter.post(
   }),
 );
 
-// Complete the reset with a valid token.
+// Step 2: complete the reset with email + code + new password.
 authRouter.post(
   '/reset',
   asyncHandler(async (req, res) => {
-    const { token, password } = z.object({ token: z.string().min(1), password: z.string().min(8) }).parse(req.body);
-    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
-    const [row] = await db
-      .select()
-      .from(passwordResetTokens)
-      .where(and(eq(passwordResetTokens.tokenHash, tokenHash), isNull(passwordResetTokens.usedAt), gt(passwordResetTokens.expiresAt, new Date())))
-      .limit(1);
-    if (!row) throw badRequest('This reset link is invalid or has expired.');
+    const { email, code, password } = z
+      .object({ email: z.string().email(), code: z.string().trim().min(4), password: z.string().min(8) })
+      .parse(req.body);
 
-    await db.update(users).set({ passwordHash: await hashPassword(password), updatedAt: new Date() }).where(eq(users.id, row.userId));
+    const [user] = await db.select().from(users).where(eq(users.email, email.toLowerCase())).limit(1);
+    const tokenHash = crypto.createHash('sha256').update(code).digest('hex');
+    const [row] = user
+      ? await db
+          .select()
+          .from(passwordResetTokens)
+          .where(and(
+            eq(passwordResetTokens.userId, user.id),
+            eq(passwordResetTokens.tokenHash, tokenHash),
+            isNull(passwordResetTokens.usedAt),
+            gt(passwordResetTokens.expiresAt, new Date()),
+          ))
+          .limit(1)
+      : [];
+    if (!user || !row) throw badRequest('That code is invalid or has expired.');
+
+    await db.update(users).set({ passwordHash: await hashPassword(password), updatedAt: new Date() }).where(eq(users.id, user.id));
     await db.update(passwordResetTokens).set({ usedAt: new Date() }).where(eq(passwordResetTokens.id, row.id));
-    // Invalidate existing sessions so a leaked token can't keep a session alive.
-    await db.update(refreshTokens).set({ revokedAt: new Date() }).where(and(eq(refreshTokens.userId, row.userId), isNull(refreshTokens.revokedAt)));
+    await db.update(refreshTokens).set({ revokedAt: new Date() }).where(and(eq(refreshTokens.userId, user.id), isNull(refreshTokens.revokedAt)));
 
     res.json({ ok: true });
   }),
