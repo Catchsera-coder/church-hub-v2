@@ -1,4 +1,5 @@
 import type { Handle } from '@sveltejs/kit';
+import { env } from '$env/dynamic/private';
 
 /**
  * Production API proxy.
@@ -12,7 +13,7 @@ import type { Handle } from '@sveltejs/kit';
  * BACKEND_ORIGIN points at the backend (compose: http://backend:8080; Container
  * Apps: the backend app's internal FQDN). Defaults to localhost for `node build`.
  */
-const BACKEND_ORIGIN = process.env.BACKEND_ORIGIN ?? 'http://localhost:8080';
+const BACKEND_ORIGIN = env.BACKEND_ORIGIN ?? 'http://localhost:8080';
 
 export const handle: Handle = async ({ event, resolve }) => {
   if (event.url.pathname.startsWith('/api')) {

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "namePrefix": { "value": "abchub" },
+    "location": { "value": "eastus2" },
+    "acrLoginServer": { "value": "REGISTRY.azurecr.io" },
+    "acrUsername": { "value": "REGISTRY" },
+    "acrPassword": { "value": "<from-keyvault-or-cli>" },
+    "backendImage": { "value": "church-hub-backend:latest" },
+    "frontendImage": { "value": "church-hub-frontend:latest" },
+    "databaseUrl": { "value": "postgres://user:pass@server.postgres.database.azure.com:5432/church_hub?sslmode=require" },
+    "jwtAccessSecret": { "value": "<openssl rand -base64 48>" },
+    "jwtRefreshSecret": { "value": "<openssl rand -base64 48>" },
+    "corsOrigins": { "value": "https://abchub-frontend.<region>.azurecontainerapps.io" },
+
+    "sendgridApiKey": { "value": "" },
+    "mailFrom": { "value": "" },
+    "smsProvider": { "value": "" },
+    "smsFrom": { "value": "" },
+    "twilioAccountSid": { "value": "" },
+    "twilioAuthToken": { "value": "" },
+    "acsConnectionString": { "value": "" },
+    "acsSmsFrom": { "value": "" }
+  }
+}

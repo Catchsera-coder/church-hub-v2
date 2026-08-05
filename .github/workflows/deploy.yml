@@ -1,0 +1,83 @@
+# Build + deploy church-hub-v2 images to Azure Container Apps.
+#
+# Manual by design (workflow_dispatch): you pick WHICH church to deploy, since one
+# repo serves many church deployments (see infra/main.bicep). First-time infra
+# provisioning is a separate one-off step — see docs/DEPLOY.md. This workflow
+# handles ongoing image rollouts to apps that already exist.
+#
+# Requires repo secrets (OIDC federated credential, no stored password):
+#   AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID, ACR_LOGIN_SERVER
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      church:
+        description: 'Church namePrefix (matches the infra deployment, e.g. abchub)'
+        required: true
+        type: string
+      resource_group:
+        description: 'Resource group the Container Apps live in'
+        required: true
+        default: rg-abchub-prod
+        type: string
+
+permissions:
+  id-token: write # for azure/login OIDC
+  contents: read
+
+concurrency:
+  group: deploy-${{ inputs.church }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      ACR: ${{ secrets.ACR_LOGIN_SERVER }}
+      TAG: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: ACR login
+        run: az acr login --name "${ACR%%.*}"
+
+      - name: Build + push backend
+        run: |
+          docker build -t "$ACR/church-hub-backend:$TAG" -t "$ACR/church-hub-backend:latest" ./backend
+          docker push "$ACR/church-hub-backend:$TAG"
+          docker push "$ACR/church-hub-backend:latest"
+
+      - name: Build + push frontend
+        run: |
+          docker build -t "$ACR/church-hub-frontend:$TAG" -t "$ACR/church-hub-frontend:latest" ./frontend
+          docker push "$ACR/church-hub-frontend:$TAG"
+          docker push "$ACR/church-hub-frontend:latest"
+
+      - name: Roll out backend (runs migrations on start)
+        run: |
+          az containerapp update \
+            --name "${{ inputs.church }}-backend" \
+            --resource-group "${{ inputs.resource_group }}" \
+            --image "$ACR/church-hub-backend:$TAG"
+
+      - name: Roll out frontend
+        run: |
+          az containerapp update \
+            --name "${{ inputs.church }}-frontend" \
+            --resource-group "${{ inputs.resource_group }}" \
+            --image "$ACR/church-hub-frontend:$TAG"
+
+      - name: Show frontend URL
+        run: |
+          az containerapp show \
+            --name "${{ inputs.church }}-frontend" \
+            --resource-group "${{ inputs.resource_group }}" \
+            --query properties.configuration.ingress.fqdn -o tsv
