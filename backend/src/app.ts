@@ -20,6 +20,7 @@ import { teamRouter } from './modules/team/routes.js';
 import { activityRouter } from './modules/activity/routes.js';
 import { dashboardRouter } from './modules/dashboard/routes.js';
 import { settingsRouter } from './modules/settings/routes.js';
+import { publicCheckinRouter } from './modules/checkin/public.routes.js';
 
 export function createApp() {
   const app = express();
@@ -35,6 +36,9 @@ export function createApp() {
 
   // Tighter limit on auth to blunt credential stuffing.
   app.use('/api/auth', rateLimit({ windowMs: 60_000, max: 20 }));
+  // Public self-check-in is unauthenticated — rate-limit to blunt directory scraping.
+  app.use('/api/public/checkin', rateLimit({ windowMs: 60_000, max: 40 }));
+  app.use('/api/public/checkin', publicCheckinRouter);
 
   app.use('/api/auth', authRouter);
   app.use('/api/settings', settingsRouter);

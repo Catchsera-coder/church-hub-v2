@@ -209,10 +209,15 @@ export const attendanceEvents = pgTable('attendance_events', {
   title: jsonb('title').$type<I18n>().notNull().default({}),
   serviceTypeId: integer('service_type_id').references(() => serviceTypes.id, { onDelete: 'set null' }),
   startsAt: timestamp('starts_at', { withTimezone: true }).notNull(),
+  // Unguessable token for the public self-check-in QR (so a scanned link can't
+  // be enumerated from a sequential id).
+  publicToken: uuid('public_token').notNull().defaultRandom(),
+  selfCheckinOpen: boolean('self_checkin_open').notNull().default(true),
   ...timestamps,
 }, (t) => ({
   startsIdx: index('attendance_events_starts_idx').on(t.startsAt),
   serviceIdx: index('attendance_events_service_idx').on(t.serviceTypeId),
+  publicTokenIdx: uniqueIndex('attendance_events_public_token_idx').on(t.publicToken),
 }));
 
 export const attendanceRecords = pgTable('attendance_records', {
