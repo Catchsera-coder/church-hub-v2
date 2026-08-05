@@ -37,7 +37,7 @@ az containerapp create -g $RG -n v2-backend --environment $ENVID \
   --secrets database-url="$DBURL" jwt-access="$JWTA" jwt-refresh="$JWTR" admin-pass="$ADMINPASS" \
   --env-vars NODE_ENV=production PORT=8080 DATABASE_URL=secretref:database-url \
     JWT_ACCESS_SECRET=secretref:jwt-access JWT_REFRESH_SECRET=secretref:jwt-refresh \
-    ADMIN_EMAIL=Contact@catchsera.com ADMIN_PASSWORD=secretref:admin-pass CORS_ORIGINS=https://placeholder
+    ADMIN_EMAIL=abcbchurchhub@gmail.com ADMIN_PASSWORD=secretref:admin-pass CORS_ORIGINS=https://placeholder
 
 # 3) Point the frontend (already created) at the backend's internal address
 BEURL=$(az containerapp show -g $RG -n v2-backend --query properties.configuration.ingress.fqdn -o tsv)
@@ -47,7 +47,7 @@ az containerapp update -g $RG -n v2-frontend --set-env-vars BACKEND_ORIGIN="http
 echo "LIVE AT: https://$(az containerapp show -g $RG -n v2-frontend --query properties.configuration.ingress.fqdn -o tsv)"
 ```
 
-Then open that URL and sign in with `Contact@catchsera.com` / the admin password you chose.
+Then open that URL and sign in with `abcbchurchhub@gmail.com` / the admin password you chose.
 (If the backend image was rebuilt, first: `az containerapp update -g $RG -n v2-backend --image $ACR.azurecr.io/church-hub-backend:v2`.)
 
 ## If image pull fails (AcrPull)
