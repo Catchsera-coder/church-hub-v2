@@ -86,3 +86,13 @@ teamRouter.post('/:id/deactivate', requirePermission('update user'), asyncHandle
   await logActivity(req, 'updated', 'user', id, 'deactivated');
   res.json({ data: { ...row, passwordHash: undefined } });
 }));
+
+// Admin-set a user's password (recovery without email). No account lockout.
+teamRouter.post('/:id/set-password', requirePermission('update user'), asyncHandler(async (req, res) => {
+  const id = Number(req.params.id);
+  const { password } = z.object({ password: z.string().min(8) }).parse(req.body);
+  const [row] = await db.update(users).set({ passwordHash: await hashPassword(password), updatedAt: new Date() }).where(eq(users.id, id)).returning();
+  if (!row) throw notFound();
+  await logActivity(req, 'updated', 'user', id, 'password set by admin');
+  res.json({ data: { ok: true } });
+}));

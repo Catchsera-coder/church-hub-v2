@@ -17,6 +17,20 @@
   let error = $state('');
   let saving = $state(false);
 
+  // Admin password reset (edit mode).
+  let newPassword = $state('');
+  let pwBusy = $state(false);
+  let pwDone = $state(false);
+
+  async function setPassword() {
+    if (newPassword.length < 8) { error = tr({ en: 'Password must be at least 8 characters.', ar: 'كلمة المرور 8 أحرف على الأقل.' }, $locale); return; }
+    pwBusy = true; pwDone = false; error = '';
+    try {
+      await api(`/team/${id}/set-password`, { method: 'POST', body: JSON.stringify({ password: newPassword }) });
+      pwDone = true; newPassword = '';
+    } catch (err) { error = (err as Error).message; } finally { pwBusy = false; }
+  }
+
   onMount(async () => {
     allRoles = (await api<{ data: any[] }>('/team/roles')).data;
     // Edit: the list returns role *names*; map them back to ids for the checkboxes.
@@ -76,6 +90,15 @@
 
     {#if id}
       <label class="flex items-center gap-2 text-sm"><input type="checkbox" bind:checked={form.isActive} /> {tr({ en: 'Active', ar: 'نشط' }, $locale)}</label>
+
+      <div class="border-t border-slate-200 pt-4 dark:border-slate-700">
+        <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Reset password', ar: 'إعادة تعيين كلمة المرور' }, $locale)}</span>
+        <div class="mt-1 flex gap-2">
+          <input class="input force-ltr" type="text" bind:value={newPassword} minlength="8" placeholder={tr({ en: 'New password (min 8)', ar: 'كلمة مرور جديدة (8+)' }, $locale)} />
+          <button type="button" class="btn-ghost shrink-0 border border-slate-300 dark:border-slate-700" onclick={setPassword} disabled={pwBusy}>{pwBusy ? '…' : tr({ en: 'Set', ar: 'تعيين' }, $locale)}</button>
+        </div>
+        {#if pwDone}<span class="text-xs text-emerald-600 dark:text-emerald-400">✓ {tr({ en: 'Password updated', ar: 'تم تحديث كلمة المرور' }, $locale)}</span>{/if}
+      </div>
     {/if}
   </div>
   <div class="flex gap-3">
