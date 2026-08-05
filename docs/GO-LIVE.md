@@ -8,49 +8,47 @@ human; automation is intentionally blocked from handling credentials.
 Open **Azure Portal → Cloud Shell (Bash)** and paste the block below. Replace the
 two `<CHOOSE-...>` values with strong passwords of your choice.
 
+The backend image runs migrate + seed (idempotent) + start on boot, so no startup
+override is needed. `az acr build` and `--database-name` details already handled.
+
 ```bash
-RG=rg-abchub-prod
-ACR=abchubacrko7bpuyfp66em
+RG=rg-abchub-prod; ACR=abchubacrko7bpuyfp66em
 ENVID=$(az containerapp env show -g $RG -n cae-abchub-prod --query id -o tsv)
 IDID=$(az identity show -g $RG -n id-abchub-prod --query id -o tsv)
 
-# 1) Dedicated Postgres for v2 (its own DB; the old app is untouched)
-PGPASS='<CHOOSE-A-STRONG-DB-PASSWORD>'
+# choose real passwords (letters/digits; avoid @ : / in the DB one)
+PGPASS='<STRONG-DB-PASSWORD>'
+ADMINPASS='<ADMIN-LOGIN-PASSWORD>'
+JWTA=$(openssl rand -base64 48); JWTR=$(openssl rand -base64 48)
+
+# 1) Dedicated Postgres for v2 (own DB; old app untouched). Create server, then db.
 az postgres flexible-server create -g $RG -n psql-abchubv2-prod -l eastus2 \
   --tier Burstable --sku-name Standard_B1ms --version 16 \
   --admin-user chadmin --admin-password "$PGPASS" \
-  --storage-size 32 --public-access 0.0.0.0 --database-name church_hub_v2 --yes
+  --storage-size 32 --public-access 0.0.0.0 --yes
+az postgres flexible-server db create -g $RG -s psql-abchubv2-prod -d church_hub_v2
 DBURL="postgres://chadmin:$PGPASS@psql-abchubv2-prod.postgres.database.azure.com:5432/church_hub_v2"
 
-# 2) App secrets
-JWTA=$(openssl rand -base64 48); JWTR=$(openssl rand -base64 48)
-ADMINEMAIL='Contact@catchsera.com'
-ADMINPASS='<CHOOSE-AN-ADMIN-LOGIN-PASSWORD>'
-
-# 3) Backend — internal ingress; runs migrate + seed + start on boot (seed is idempotent)
+# 2) Backend — internal ingress (image CMD migrates + seeds + starts)
 az containerapp create -g $RG -n v2-backend --environment $ENVID \
   --image $ACR.azurecr.io/church-hub-backend:v2 \
   --registry-server $ACR.azurecr.io --registry-identity $IDID --user-assigned $IDID \
   --ingress internal --target-port 8080 --min-replicas 1 --max-replicas 2 \
-  --command "/bin/sh" --args "-c" "node dist/db/migrate.js && node dist/db/seed.js && node dist/index.js" \
   --secrets database-url="$DBURL" jwt-access="$JWTA" jwt-refresh="$JWTR" admin-pass="$ADMINPASS" \
   --env-vars NODE_ENV=production PORT=8080 DATABASE_URL=secretref:database-url \
     JWT_ACCESS_SECRET=secretref:jwt-access JWT_REFRESH_SECRET=secretref:jwt-refresh \
-    ADMIN_EMAIL="$ADMINEMAIL" ADMIN_PASSWORD=secretref:admin-pass CORS_ORIGINS=https://placeholder
+    ADMIN_EMAIL=Contact@catchsera.com ADMIN_PASSWORD=secretref:admin-pass CORS_ORIGINS=https://placeholder
 
-# 4) Frontend — public; reverse-proxies /api to the backend's internal address
+# 3) Point the frontend (already created) at the backend's internal address
 BEURL=$(az containerapp show -g $RG -n v2-backend --query properties.configuration.ingress.fqdn -o tsv)
-az containerapp create -g $RG -n v2-frontend --environment $ENVID \
-  --image $ACR.azurecr.io/church-hub-frontend:v2 \
-  --registry-server $ACR.azurecr.io --registry-identity $IDID --user-assigned $IDID \
-  --ingress external --target-port 3000 --min-replicas 1 --max-replicas 2 \
-  --env-vars NODE_ENV=production BACKEND_ORIGIN="https://$BEURL"
+az containerapp update -g $RG -n v2-frontend --set-env-vars BACKEND_ORIGIN="https://$BEURL"
 
-# 5) Your live URL:
-echo "https://$(az containerapp show -g $RG -n v2-frontend --query properties.configuration.ingress.fqdn -o tsv)"
+# 4) Live URL:
+echo "LIVE AT: https://$(az containerapp show -g $RG -n v2-frontend --query properties.configuration.ingress.fqdn -o tsv)"
 ```
 
-Then open that URL and sign in with `ADMIN_EMAIL` / the admin password you chose.
+Then open that URL and sign in with `Contact@catchsera.com` / the admin password you chose.
+(If the backend image was rebuilt, first: `az containerapp update -g $RG -n v2-backend --image $ACR.azurecr.io/church-hub-backend:v2`.)
 
 ## If image pull fails (AcrPull)
 The managed identity `id-abchub-prod` must have AcrPull on the registry. If a create

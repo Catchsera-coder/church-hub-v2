@@ -21,5 +21,6 @@ RUN npm install --omit=dev --no-audit --no-fund
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/drizzle ./drizzle
 EXPOSE 8080
-# Run migrations then start (co-located with the DB in the same region).
-CMD ["sh", "-c", "node dist/db/migrate.js && node dist/index.js"]
+# Run migrations, seed (idempotent — creates the first admin from ADMIN_EMAIL/
+# ADMIN_PASSWORD if absent), then start. Co-located with the DB in the same region.
+CMD ["sh", "-c", "node dist/db/migrate.js && node dist/db/seed.js && node dist/index.js"]
