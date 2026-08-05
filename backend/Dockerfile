@@ -2,7 +2,9 @@
 FROM node:20-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json* ./
-RUN npm ci
+# No lockfile committed yet, so use `npm install` (matches CI). Switch to
+# `npm ci` once lockfiles are committed.
+RUN npm install --no-audit --no-fund
 COPY . .
 RUN npm run build
 # Generate SQL migrations into ./drizzle so the runtime image is self-contained
@@ -15,7 +17,7 @@ FROM node:20-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 COPY package.json package-lock.json* ./
-RUN npm ci --omit=dev
+RUN npm install --omit=dev --no-audit --no-fund
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/drizzle ./drizzle
 EXPOSE 8080
