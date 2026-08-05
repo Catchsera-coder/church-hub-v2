@@ -16,6 +16,15 @@
   h1, h2, h3, .font-display {
     font-family: theme('fontFamily.display');
   }
+  /* "Bold text" appearance setting — heavier weight across the app. */
+  html.appearance-bold body { font-weight: 500; }
+  html.appearance-bold h1,
+  html.appearance-bold h2,
+  html.appearance-bold h3,
+  html.appearance-bold .font-display { font-weight: 800; }
+  html.appearance-bold .nav-link,
+  html.appearance-bold label,
+  html.appearance-bold .btn { font-weight: 600; }
 }
 
 @layer components {

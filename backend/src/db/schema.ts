@@ -23,14 +23,15 @@ type I18n = Record<string, string>;
  * Secrets live in this row; the PUBLIC settings read strips them.
  */
 export type MessagingSettings = {
-  emailProvider?: 'sendgrid';
+  emailProvider?: 'sendgrid' | 'acs';
   sendgridApiKey?: string;
   mailFrom?: string;
+  acsMailFrom?: string; // ACS verified sender, e.g. DoNotReply@<your-domain>
   smsProvider?: 'twilio' | 'azure';
   smsFrom?: string;
   twilioAccountSid?: string;
   twilioAuthToken?: string;
-  acsConnectionString?: string;
+  acsConnectionString?: string; // shared by ACS email + SMS
   acsSmsFrom?: string;
 };
 

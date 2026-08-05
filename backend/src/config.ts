@@ -27,6 +27,8 @@ const schema = z.object({
   // See docs/RUNNING.md. Each church deploy picks its own provider(s).
   MAIL_FROM: z.string().email().optional(),
   SENDGRID_API_KEY: z.string().optional(),
+  // Azure Communication Services email (shares ACS_CONNECTION_STRING with SMS).
+  ACS_MAIL_FROM: z.string().optional(),
 
   // SMS can run on Twilio OR Azure Communication Services. Leave SMS_PROVIDER
   // unset to auto-pick whichever is configured (Azure preferred when both are);

@@ -5,12 +5,12 @@
   import { api } from '$lib/api.js';
   import { auth, setSession, clearSession, isAuthed, can, hasRole } from '$lib/stores/auth.js';
   import { t, locale, tr } from '$lib/i18n.js';
+  import { theme, toggleTheme } from '$lib/stores/appearance.js';
 
   let { children } = $props();
   let orgName = $state<Record<string, string> | null>(null);
   let logo = $state<string | null>(null);
   let ready = $state(false);
-  let dark = $state(false);
   let sidebarOpen = $state(false);
 
   const groups = [
@@ -66,8 +66,6 @@
 
   onMount(async () => {
     if (!isAuthed()) return goto('/login', { replaceState: true });
-    dark = localStorage.getItem('theme') === 'dark';
-    applyDark();
     try {
       const me = await api<{ user: any; roles: string[]; perms: string[] }>('/auth/me');
       setSession({ user: me.user, roles: me.roles, perms: me.perms });
@@ -82,12 +80,6 @@
     }
     ready = true;
   });
-
-  function applyDark() {
-    document.documentElement.classList.toggle('dark', dark);
-    localStorage.setItem('theme', dark ? 'dark' : 'light');
-  }
-  function toggleDark() { dark = !dark; applyDark(); }
 
   async function signOut() {
     try { await api('/auth/logout', { method: 'POST', body: JSON.stringify({ refreshToken: $auth.refreshToken }) }); } catch { /* ignore */ }
@@ -134,7 +126,7 @@
         <button class="btn-ghost md:hidden" onclick={() => (sidebarOpen = !sidebarOpen)} aria-label="Menu">☰</button>
         <div class="flex-1"></div>
         <div class="flex items-center gap-2">
-          <button class="btn-ghost" onclick={toggleDark} aria-label="Theme">{dark ? '☀' : '☾'}</button>
+          <button class="btn-ghost" onclick={toggleTheme} aria-label="Theme">{$theme === 'dark' ? '☀' : '☾'}</button>
           <div class="flex items-center gap-2 ps-2">
             <span class="hidden text-sm text-slate-600 dark:text-slate-300 sm:inline">{$auth.user?.name}</span>
             <button class="btn-ghost" onclick={signOut}>{$t('auth.signout')}</button>

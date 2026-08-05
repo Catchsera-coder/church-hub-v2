@@ -13,9 +13,10 @@ export default {
         },
       },
       fontFamily: {
+        // Clean, modern sans throughout (headings use the same family, heavier).
         sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
         arabic: ['"IBM Plex Sans Arabic"', 'Inter', 'ui-sans-serif', 'sans-serif'],
-        display: ['"Cormorant Garamond"', 'ui-serif', 'Georgia', 'serif'],
+        display: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
       },
     },
   },

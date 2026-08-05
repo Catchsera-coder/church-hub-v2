@@ -5,22 +5,24 @@ import type { MessagingSettings } from '../../db/schema.js';
 /**
  * Turns "send this on this channel" into an actual send.
  *
- * Config is resolved per church: the Settings-tab values (organisations.messaging,
- * passed in as `dbMsg`) take precedence, falling back to env defaults. So a church
- * can change providers/keys live without a redeploy. Providers are called over
- * their HTTP APIs with fetch (+ Node crypto for Azure signing) — no SDK dep.
+ * Config is resolved per church: Settings-tab values (organisations.messaging)
+ * take precedence over env defaults, so a church changes providers/keys live
+ * without a redeploy. Providers are called over their HTTP APIs with fetch (+
+ * Node crypto for Azure signing) — no SDK dependency.
  *
  * Honest about failure (the v1 lesson, in reverse): dev with nothing configured
  * logs + succeeds; a configured channel really sends and returns true only on a
  * provider ACCEPT; prod with nothing configured returns false so recipients are
  * marked 'failed', never a fake 'sent'.
  *
- * Email -> SendGrid. SMS -> Twilio OR Azure Communication Services.
+ * Email -> SendGrid OR Azure Communication Services.
+ * SMS   -> Twilio OR Azure Communication Services.
  */
 export interface ResolvedMessaging {
-  emailEnabled: boolean;
+  emailProvider: 'sendgrid' | 'acs' | null;
   sendgridApiKey?: string;
   mailFrom?: string;
+  acsMailFrom?: string;
   smsProvider: 'twilio' | 'azure' | null;
   smsFrom?: string;
   twilioAccountSid?: string;
@@ -34,31 +36,33 @@ export function resolveMessaging(dbMsg?: MessagingSettings | null): ResolvedMess
   const m = dbMsg ?? {};
   const sendgridApiKey = m.sendgridApiKey || config.SENDGRID_API_KEY;
   const mailFrom = m.mailFrom || config.MAIL_FROM;
+  const acsConnectionString = m.acsConnectionString || config.ACS_CONNECTION_STRING;
+  const acsMailFrom = m.acsMailFrom || config.ACS_MAIL_FROM;
+
+  const sendgridReady = Boolean(sendgridApiKey && mailFrom);
+  const acsEmailReady = Boolean(acsConnectionString && acsMailFrom);
+  const wantEmail = m.emailProvider;
+  let emailProvider: 'sendgrid' | 'acs' | null;
+  if (wantEmail === 'sendgrid') emailProvider = sendgridReady ? 'sendgrid' : null;
+  else if (wantEmail === 'acs') emailProvider = acsEmailReady ? 'acs' : null;
+  else emailProvider = sendgridReady ? 'sendgrid' : acsEmailReady ? 'acs' : null;
 
   const smsFrom = m.smsFrom || config.SMS_FROM;
   const twilioAccountSid = m.twilioAccountSid || config.TWILIO_ACCOUNT_SID;
   const twilioAuthToken = m.twilioAuthToken || config.TWILIO_AUTH_TOKEN;
-  const acsConnectionString = m.acsConnectionString || config.ACS_CONNECTION_STRING;
   const acsSmsFrom = m.acsSmsFrom || config.ACS_SMS_FROM;
 
   const twilioReady = Boolean(twilioAccountSid && twilioAuthToken && smsFrom);
-  const azureReady = Boolean(acsConnectionString && acsSmsFrom);
-  const want = m.smsProvider ?? config.SMS_PROVIDER;
+  const azureSmsReady = Boolean(acsConnectionString && acsSmsFrom);
+  const wantSms = m.smsProvider ?? config.SMS_PROVIDER;
   let smsProvider: 'twilio' | 'azure' | null;
-  if (want === 'twilio') smsProvider = twilioReady ? 'twilio' : null;
-  else if (want === 'azure') smsProvider = azureReady ? 'azure' : null;
-  else smsProvider = azureReady ? 'azure' : twilioReady ? 'twilio' : null;
+  if (wantSms === 'twilio') smsProvider = twilioReady ? 'twilio' : null;
+  else if (wantSms === 'azure') smsProvider = azureSmsReady ? 'azure' : null;
+  else smsProvider = azureSmsReady ? 'azure' : twilioReady ? 'twilio' : null;
 
   return {
-    emailEnabled: Boolean(sendgridApiKey && mailFrom),
-    sendgridApiKey,
-    mailFrom,
-    smsProvider,
-    smsFrom,
-    twilioAccountSid,
-    twilioAuthToken,
-    acsConnectionString,
-    acsSmsFrom,
+    emailProvider, sendgridApiKey, mailFrom, acsMailFrom,
+    smsProvider, smsFrom, twilioAccountSid, twilioAuthToken, acsConnectionString, acsSmsFrom,
   };
 }
 
@@ -71,7 +75,8 @@ export async function sendMessage(
 ): Promise<boolean> {
   try {
     if (channel === 'email') {
-      if (m.emailEnabled) return await sendEmail(m, to, subject, body);
+      if (m.emailProvider === 'sendgrid') return await sendEmailSendgrid(m, to, subject, body);
+      if (m.emailProvider === 'acs') return await sendEmailAcs(m, to, subject, body);
     } else if (m.smsProvider === 'twilio') {
       return await sendSmsTwilio(m, to, body);
     } else if (m.smsProvider === 'azure') {
@@ -91,13 +96,10 @@ export async function sendMessage(
 }
 
 // --- Email: SendGrid ---------------------------------------------------------
-async function sendEmail(m: ResolvedMessaging, to: string, subject: string, body: string): Promise<boolean> {
+async function sendEmailSendgrid(m: ResolvedMessaging, to: string, subject: string, body: string): Promise<boolean> {
   const res = await fetch('https://api.sendgrid.com/v3/mail/send', {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${m.sendgridApiKey}`,
-      'Content-Type': 'application/json',
-    },
+    headers: { Authorization: `Bearer ${m.sendgridApiKey}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       personalizations: [{ to: [{ email: to }] }],
       from: { email: m.mailFrom },
@@ -110,16 +112,29 @@ async function sendEmail(m: ResolvedMessaging, to: string, subject: string, body
   return false;
 }
 
+// --- Email: Azure Communication Services -------------------------------------
+async function sendEmailAcs(m: ResolvedMessaging, to: string, subject: string, body: string): Promise<boolean> {
+  const res = await acsSignedFetch(
+    m.acsConnectionString!,
+    '/emails:send?api-version=2023-03-31',
+    {
+      senderAddress: m.acsMailFrom,
+      content: { subject: subject || '(no subject)', plainText: body },
+      recipients: { to: [{ address: to }] },
+    },
+  );
+  if (res.ok) return true; // 202 Accepted (async send queued)
+  console.error(`[email] Azure ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  return false;
+}
+
 // --- SMS: Twilio -------------------------------------------------------------
 async function sendSmsTwilio(m: ResolvedMessaging, to: string, body: string): Promise<boolean> {
   const url = `https://api.twilio.com/2010-04-01/Accounts/${m.twilioAccountSid}/Messages.json`;
   const auth = Buffer.from(`${m.twilioAccountSid}:${m.twilioAuthToken}`).toString('base64');
   const res = await fetch(url, {
     method: 'POST',
-    headers: {
-      Authorization: `Basic ${auth}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
+    headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ To: to, From: m.smsFrom!, Body: body }).toString(),
   });
   if (res.ok) return true; // 201 Created
@@ -128,9 +143,23 @@ async function sendSmsTwilio(m: ResolvedMessaging, to: string, body: string): Pr
 }
 
 // --- SMS: Azure Communication Services --------------------------------------
-// ACS uses HMAC-SHA256 request signing with the resource access key, over
-// x-ms-date, host and a base64 SHA-256 of the body.
-// https://learn.microsoft.com/azure/communication-services/quickstarts/sms
+async function sendSmsAzure(m: ResolvedMessaging, to: string, body: string): Promise<boolean> {
+  const res = await acsSignedFetch(
+    m.acsConnectionString!,
+    '/sms?api-version=2021-03-07',
+    { from: m.acsSmsFrom, message: body, smsRecipients: [{ to }] },
+  );
+  if (!res.ok) {
+    console.error(`[sms] Azure ${res.status}: ${(await res.text()).slice(0, 200)}`);
+    return false;
+  }
+  const data = (await res.json().catch(() => null)) as { value?: Array<{ successful?: boolean }> } | null;
+  const first = data?.value?.[0];
+  return first ? first.successful !== false : true;
+}
+
+// --- ACS HMAC request signing (shared by email + SMS) ------------------------
+// https://learn.microsoft.com/azure/communication-services/tutorials/hmac-header-tutorial
 function parseAcsConnectionString(cs: string): { endpoint: string; accessKey: string } {
   const endpoint = /endpoint=([^;]+)/i.exec(cs)?.[1]?.replace(/\/+$/, '');
   const accessKey = /accesskey=([^;]+)/i.exec(cs)?.[1];
@@ -138,23 +167,17 @@ function parseAcsConnectionString(cs: string): { endpoint: string; accessKey: st
   return { endpoint, accessKey };
 }
 
-async function sendSmsAzure(m: ResolvedMessaging, to: string, body: string): Promise<boolean> {
-  const { endpoint, accessKey } = parseAcsConnectionString(m.acsConnectionString!);
+async function acsSignedFetch(connectionString: string, pathAndQuery: string, payloadObj: unknown): Promise<Response> {
+  const { endpoint, accessKey } = parseAcsConnectionString(connectionString);
   const host = new URL(endpoint).host;
-  const pathAndQuery = '/sms?api-version=2021-03-07';
-
-  const payload = JSON.stringify({
-    from: m.acsSmsFrom,
-    message: body,
-    smsRecipients: [{ to }],
-  });
+  const payload = JSON.stringify(payloadObj);
 
   const date = new Date().toUTCString();
   const contentHash = createHash('sha256').update(payload, 'utf8').digest('base64');
   const stringToSign = `POST\n${pathAndQuery}\n${date};${host};${contentHash}`;
   const signature = createHmac('sha256', Buffer.from(accessKey, 'base64')).update(stringToSign, 'utf8').digest('base64');
 
-  const res = await fetch(endpoint + pathAndQuery, {
+  return fetch(endpoint + pathAndQuery, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -164,12 +187,4 @@ async function sendSmsAzure(m: ResolvedMessaging, to: string, body: string): Pro
     },
     body: payload,
   });
-
-  if (!res.ok) {
-    console.error(`[sms] Azure ${res.status}: ${(await res.text()).slice(0, 200)}`);
-    return false;
-  }
-  const data = (await res.json().catch(() => null)) as { value?: Array<{ successful?: boolean }> } | null;
-  const first = data?.value?.[0];
-  return first ? first.successful !== false : true;
 }

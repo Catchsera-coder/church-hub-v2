@@ -3,7 +3,15 @@
   import { api } from '$lib/api.js';
   import { t, locale, tr, LOCALES } from '$lib/i18n.js';
   import { hasRole } from '$lib/stores/auth.js';
+  import { theme, fontScale, boldText } from '$lib/stores/appearance.js';
   import PageHeader from '$lib/components/PageHeader.svelte';
+
+  const SIZES = [
+    { v: 0.9, label: { en: 'Small', ar: 'صغير' } },
+    { v: 1, label: { en: 'Normal', ar: 'عادي' } },
+    { v: 1.15, label: { en: 'Large', ar: 'كبير' } },
+    { v: 1.3, label: { en: 'Extra large', ar: 'كبير جداً' } },
+  ];
 
   let form = $state<any>(null);
   let saving = $state(false);
@@ -59,7 +67,8 @@
     msgSaving = true; msgSaved = false;
     try {
       await api('/settings/messaging', { method: 'PUT', body: JSON.stringify({
-        mailFrom: msg.mailFrom, sendgridApiKey: msg.sendgridApiKey,
+        emailProvider: msg.emailProvider, mailFrom: msg.mailFrom, acsMailFrom: msg.acsMailFrom,
+        sendgridApiKey: msg.sendgridApiKey,
         smsProvider: msg.smsProvider, smsFrom: msg.smsFrom,
         twilioAccountSid: msg.twilioAccountSid, twilioAuthToken: msg.twilioAuthToken,
         acsSmsFrom: msg.acsSmsFrom, acsConnectionString: msg.acsConnectionString,
@@ -126,6 +135,33 @@
       </div>
     </div>
 
+    <div class="card space-y-4 p-6">
+      <h2 class="text-lg font-semibold">{tr({ en: 'Appearance', ar: 'المظهر' }, $locale)}</h2>
+      <p class="text-sm text-slate-500 dark:text-slate-400">{tr({ en: 'Applies to this device.', ar: 'يُطبّق على هذا الجهاز.' }, $locale)}</p>
+
+      <div class="space-y-1">
+        <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Theme', ar: 'النمط' }, $locale)}</span>
+        <div class="flex gap-2">
+          <button type="button" class="btn {$theme === 'light' ? 'btn-primary' : 'btn-ghost border border-slate-300 dark:border-slate-700'}" onclick={() => theme.set('light')}>☀ {tr({ en: 'Light', ar: 'فاتح' }, $locale)}</button>
+          <button type="button" class="btn {$theme === 'dark' ? 'btn-primary' : 'btn-ghost border border-slate-300 dark:border-slate-700'}" onclick={() => theme.set('dark')}>☾ {tr({ en: 'Dark', ar: 'داكن' }, $locale)}</button>
+        </div>
+      </div>
+
+      <div class="space-y-1">
+        <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Text size', ar: 'حجم الخط' }, $locale)}</span>
+        <div class="flex flex-wrap gap-2">
+          {#each SIZES as s}
+            <button type="button" class="btn {$fontScale === s.v ? 'btn-primary' : 'btn-ghost border border-slate-300 dark:border-slate-700'}" onclick={() => fontScale.set(s.v)}>{tr(s.label, $locale)}</button>
+          {/each}
+        </div>
+      </div>
+
+      <label class="flex items-center gap-2 text-sm">
+        <input type="checkbox" checked={$boldText} onchange={(e) => boldText.set((e.currentTarget as HTMLInputElement).checked)} />
+        {tr({ en: 'Bold text', ar: 'خط عريض' }, $locale)}
+      </label>
+    </div>
+
     <div class="card grid gap-4 p-6 sm:grid-cols-2">
       <label class="block space-y-1">
         <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Currency', ar: 'العملة' }, $locale)}</span>
@@ -159,10 +195,23 @@
           <p class="text-sm text-slate-500 dark:text-slate-400">{tr({ en: 'Configure how this church sends email and SMS. Leave a secret blank to keep the current value.', ar: 'اضبط كيفية إرسال هذه الكنيسة للبريد والرسائل. اترك السر فارغاً للإبقاء على القيمة الحالية.' }, $locale)}</p>
         </div>
 
-        <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-200">{tr({ en: 'Email (SendGrid)', ar: 'البريد (SendGrid)' }, $locale)}</h3>
+        <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-200">{tr({ en: 'Email', ar: 'البريد الإلكتروني' }, $locale)}</h3>
+        <label class="block space-y-1">
+          <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Email provider', ar: 'مزود البريد' }, $locale)}</span>
+          <select class="input" bind:value={msg.emailProvider}>
+            <option value="">{tr({ en: 'Auto / use deploy default', ar: 'تلقائي / الافتراضي' }, $locale)}</option>
+            <option value="acs">{tr({ en: 'Azure Communication Services', ar: 'Azure Communication Services' }, $locale)}</option>
+            <option value="sendgrid">SendGrid</option>
+          </select>
+          <span class="text-xs text-slate-400">{tr({ en: 'Your Azure ACS is already set up — choose it, add the sender + connection string below, and password-reset emails will send.', ar: 'خدمة Azure ACS جاهزة — اخترها وأضف المُرسِل وسلسلة الاتصال بالأسفل، وستُرسَل رسائل إعادة التعيين.' }, $locale)}</span>
+        </label>
         <div class="grid gap-4 sm:grid-cols-2">
           <label class="block space-y-1">
-            <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'From address', ar: 'عنوان المُرسِل' }, $locale)}</span>
+            <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'ACS sender address', ar: 'عنوان مُرسِل ACS' }, $locale)}</span>
+            <input class="input force-ltr" type="email" bind:value={msg.acsMailFrom} placeholder="DoNotReply@your-domain.azurecomm.net" />
+          </label>
+          <label class="block space-y-1">
+            <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'SendGrid — from address', ar: 'SendGrid — عنوان المُرسِل' }, $locale)}</span>
             <input class="input force-ltr" type="email" bind:value={msg.mailFrom} placeholder="hello@church.org" />
           </label>
           <label class="block space-y-1">

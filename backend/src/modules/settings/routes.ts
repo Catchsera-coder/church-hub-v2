@@ -73,8 +73,10 @@ settingsRouter.get(
     const m = (await currentOrg()).messaging ?? {};
     res.json({
       data: {
+        emailProvider: m.emailProvider ?? '',
         mailFrom: m.mailFrom ?? '',
         sendgridApiKeySet: Boolean(m.sendgridApiKey),
+        acsMailFrom: m.acsMailFrom ?? '',
         smsProvider: m.smsProvider ?? '',
         smsFrom: m.smsFrom ?? '',
         twilioAccountSid: m.twilioAccountSid ?? '',
@@ -90,7 +92,9 @@ settingsRouter.get(
 );
 
 const messagingSchema = z.object({
+  emailProvider: z.enum(['sendgrid', 'acs']).or(z.literal('')).optional(),
   mailFrom: z.string().optional(),
+  acsMailFrom: z.string().optional(),
   sendgridApiKey: z.string().optional(),
   smsProvider: z.enum(['twilio', 'azure']).or(z.literal('')).optional(),
   smsFrom: z.string().optional(),
@@ -110,7 +114,9 @@ settingsRouter.put(
     const next: MessagingSettings = { ...current };
 
     // Non-secret identifiers: apply as given (empty string clears).
+    if (body.emailProvider !== undefined) next.emailProvider = body.emailProvider === '' ? undefined : body.emailProvider;
     if (body.mailFrom !== undefined) next.mailFrom = body.mailFrom || undefined;
+    if (body.acsMailFrom !== undefined) next.acsMailFrom = body.acsMailFrom || undefined;
     if (body.smsFrom !== undefined) next.smsFrom = body.smsFrom || undefined;
     if (body.twilioAccountSid !== undefined) next.twilioAccountSid = body.twilioAccountSid || undefined;
     if (body.acsSmsFrom !== undefined) next.acsSmsFrom = body.acsSmsFrom || undefined;
@@ -121,7 +127,6 @@ settingsRouter.put(
     if (body.sendgridApiKey) next.sendgridApiKey = body.sendgridApiKey;
     if (body.twilioAuthToken) next.twilioAuthToken = body.twilioAuthToken;
     if (body.acsConnectionString) next.acsConnectionString = body.acsConnectionString;
-    next.emailProvider = next.sendgridApiKey || config.SENDGRID_API_KEY ? 'sendgrid' : undefined;
 
     await db.update(organisations).set({ messaging: next, updatedAt: new Date() }).where(eq(organisations.id, 1));
     res.json({ data: { ok: true } });
