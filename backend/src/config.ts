@@ -17,6 +17,16 @@ const schema = z.object({
   DEFAULT_LOCALE: z.string().default('en'),
   DEFAULT_CURRENCY: z.string().default('USD'),
   DEFAULT_TIMEZONE: z.string().default('UTC'),
+
+  // Messaging providers (all optional). Email via SendGrid HTTP API, SMS via
+  // Twilio HTTP API — both called with fetch, so no SDK dependency. When a
+  // channel's vars are absent, delivery.ts reports failure honestly (no fake
+  // 'sent'). See docs/RUNNING.md.
+  MAIL_FROM: z.string().email().optional(),
+  SENDGRID_API_KEY: z.string().optional(),
+  SMS_FROM: z.string().optional(),
+  TWILIO_ACCOUNT_SID: z.string().optional(),
+  TWILIO_AUTH_TOKEN: z.string().optional(),
 });
 
 const parsed = schema.safeParse(process.env);
@@ -30,6 +40,8 @@ export const config = {
   ...parsed.data,
   isProd: parsed.data.NODE_ENV === 'production',
   corsOrigins: parsed.data.CORS_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean),
+  emailEnabled: Boolean(parsed.data.SENDGRID_API_KEY && parsed.data.MAIL_FROM),
+  smsEnabled: Boolean(parsed.data.TWILIO_ACCOUNT_SID && parsed.data.TWILIO_AUTH_TOKEN && parsed.data.SMS_FROM),
 };
 
 export type Config = typeof config;
