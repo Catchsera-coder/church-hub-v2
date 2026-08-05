@@ -71,3 +71,29 @@ This environment has **no Node/npm**, so nothing here is run or tested locally b
 author of these files — correctness relies on TypeScript + tests-in-CI + a developer
 running it. To run locally: `docker compose up` (Postgres), then `npm ci && npm run
 dev` in `backend/` and `frontend/`. See `docs/RUNNING.md`.
+
+## Current state (v1 → v2 parity)
+Every module has list + create/edit + its key actions wired end-to-end in the SPA,
+and CI (typecheck + build + backend tests) is green. Concretely:
+
+- **Members** — create/edit, family link, ministry roster editor, soft-delete.
+- **Families** — create/edit, search, soft-delete.
+- **Ministries / Funds** — create/edit.
+- **Contributions** — record a gift (fund + donor typeahead + anonymous), reverse
+  (append-only offsetting row), net total.
+- **Counting sessions** — create, close (variance reason required when out of balance).
+- **Attendance** — create gathering, manual check-in (person typeahead), QR/kiosk.
+- **Sermons / Events** — create/edit; events also have registrant add/remove.
+- **Messages** — compose (email/SMS, bilingual), "Send now" (synchronous delivery
+  adapter — real provider still to be wired; see `backend/.../messages/delivery.ts`).
+- **Team** — invite/create with roles, edit roles + active state.
+- **Activity log / Dashboard / Church settings** — done.
+
+### Still requires a developer / runtime (cannot be done in this no-Node env)
+1. Run `npm install` in `backend/` and `frontend/`, commit the lockfiles, then switch
+   CI from `npm install` back to `npm ci` (see `.github/workflows/ci.yml`).
+2. `docker compose up` for a real click-through of the flows above.
+3. Old→new data-migration script; then Azure infra (two Container Apps in the **same
+   region** as Postgres) + domain + CI→ACR; cutover per `docs/CUTOVER.md`.
+4. Wire a real email/SMS provider in `messages/delivery.ts` (+ move send to a worker
+   for large audiences).
