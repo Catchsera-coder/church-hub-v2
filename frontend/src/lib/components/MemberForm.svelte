@@ -20,11 +20,33 @@
   let saving = $state(false);
   let error = $state('');
 
+  // Inline "quick create" for a family, so the admin never has to leave this form.
+  let showNewFamily = $state(false);
+  let newFamilyName = $state('');
+  let creatingFamily = $state(false);
+
   const statuses = ['visitor', 'regular', 'member', 'inactive'];
 
   onMount(async () => {
     families = (await api<{ data: any[] }>('/families?limit=100')).data;
   });
+
+  async function createFamily() {
+    if (!newFamilyName.trim()) return;
+    creatingFamily = true;
+    try {
+      const { data } = await api<{ data: any }>('/families', {
+        method: 'POST',
+        body: JSON.stringify({ name: { en: newFamilyName.trim() } }),
+      });
+      families = [...families, data];
+      form.householdId = String(data.id);
+      showNewFamily = false;
+      newFamilyName = '';
+    } catch (err) {
+      error = (err as Error).message;
+    } finally { creatingFamily = false; }
+  }
 
   async function submit(e: Event) {
     e.preventDefault();
@@ -78,13 +100,24 @@
       <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Mobile', ar: 'الجوال' }, $locale)}</span>
       <input class="input force-ltr" bind:value={form.mobile} />
     </label>
-    <label class="block space-y-1 sm:col-span-2">
+    <div class="block space-y-1 sm:col-span-2">
       <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Family', ar: 'العائلة' }, $locale)}</span>
-      <select class="input" bind:value={form.householdId}>
-        <option value="">{tr({ en: '— None —', ar: '— بدون —' }, $locale)}</option>
-        {#each families as f}<option value={String(f.id)}>{tr(f.name, $locale)}</option>{/each}
-      </select>
-    </label>
+      {#if showNewFamily}
+        <div class="flex gap-2">
+          <input class="input" bind:value={newFamilyName} placeholder={tr({ en: 'New family name', ar: 'اسم عائلة جديد' }, $locale)} />
+          <button type="button" class="btn-primary shrink-0" onclick={createFamily} disabled={creatingFamily}>{creatingFamily ? '…' : tr({ en: 'Add', ar: 'إضافة' }, $locale)}</button>
+          <button type="button" class="btn-ghost shrink-0" onclick={() => { showNewFamily = false; }}>✕</button>
+        </div>
+      {:else}
+        <div class="flex gap-2">
+          <select class="input" bind:value={form.householdId}>
+            <option value="">{tr({ en: '— None —', ar: '— بدون —' }, $locale)}</option>
+            {#each families as f}<option value={String(f.id)}>{tr(f.name, $locale)}</option>{/each}
+          </select>
+          <button type="button" class="btn-ghost shrink-0 whitespace-nowrap" onclick={() => { showNewFamily = true; }}>+ {tr({ en: 'New', ar: 'جديد' }, $locale)}</button>
+        </div>
+      {/if}
+    </div>
   </div>
 
   <div class="flex gap-3">

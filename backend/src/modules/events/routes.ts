@@ -68,7 +68,7 @@ eventsRouter.put('/:id', requirePermission('update event'), asyncHandler(async (
 eventsRouter.get('/:id/registrants', requirePermission('view event'), asyncHandler(async (req, res) => {
   const id = Number(req.params.id);
   const rows = await db
-    .select({ id: conferenceRegistrants.id, personId: people.id, givenName: people.givenName, familyName: people.familyName, registeredAt: conferenceRegistrants.registeredAt })
+    .select({ id: conferenceRegistrants.id, personId: people.id, givenName: people.givenName, familyName: people.familyName, role: conferenceRegistrants.role, roleNote: conferenceRegistrants.roleNote, registeredAt: conferenceRegistrants.registeredAt })
     .from(conferenceRegistrants)
     .innerJoin(people, eq(people.id, conferenceRegistrants.personId))
     .where(eq(conferenceRegistrants.conferenceId, id))
@@ -76,14 +76,24 @@ eventsRouter.get('/:id/registrants', requirePermission('view event'), asyncHandl
   res.json({ data: rows });
 }));
 
+const registrantSchema = z.object({
+  personId: z.number().int().positive(),
+  role: z.enum(['attendee', 'guest', 'speaker', 'singer', 'musician', 'free', 'other']).default('attendee'),
+  roleNote: z.string().max(120).nullable().optional(),
+});
+
 eventsRouter.post('/:id/registrants', requirePermission('update event'), asyncHandler(async (req, res) => {
   const id = Number(req.params.id);
-  const personId = z.object({ personId: z.number().int().positive() }).parse(req.body).personId;
+  const b = registrantSchema.parse(req.body);
   const [event] = await db.select().from(conferences).where(eq(conferences.id, id)).limit(1);
   if (!event) throw notFound();
   if (!event.registrationOpen) throw badRequest('Registration is closed for this event');
-  const [row] = await db.insert(conferenceRegistrants).values({ conferenceId: id, personId }).onConflictDoNothing().returning();
-  res.status(201).json({ data: row ?? { conferenceId: id, personId, duplicate: true } });
+  const [row] = await db
+    .insert(conferenceRegistrants)
+    .values({ conferenceId: id, personId: b.personId, role: b.role, roleNote: b.role === 'other' ? (b.roleNote ?? null) : null })
+    .onConflictDoNothing()
+    .returning();
+  res.status(201).json({ data: row ?? { conferenceId: id, personId: b.personId, duplicate: true } });
 }));
 
 eventsRouter.delete('/:id/registrants/:registrantId', requirePermission('update event'), asyncHandler(async (req, res) => {

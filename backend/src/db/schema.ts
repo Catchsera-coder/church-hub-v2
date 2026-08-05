@@ -322,6 +322,10 @@ export const conferenceRegistrants = pgTable('conference_registrants', {
   id: serial('id').primaryKey(),
   conferenceId: integer('conference_id').notNull().references(() => conferences.id, { onDelete: 'cascade' }),
   personId: integer('person_id').notNull().references(() => people.id, { onDelete: 'cascade' }),
+  // Role at the event: attendee (default, pays fee), guest (free), speaker,
+  // singer, musician, free (free addition), or other (label in roleNote).
+  role: varchar('role', { length: 20 }).notNull().default('attendee'),
+  roleNote: varchar('role_note', { length: 120 }),
   registeredAt: timestamp('registered_at', { withTimezone: true }).defaultNow().notNull(),
 }, (t) => ({
   unique: uniqueIndex('conference_registrants_unique').on(t.conferenceId, t.personId),

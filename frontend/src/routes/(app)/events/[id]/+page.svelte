@@ -19,6 +19,20 @@
   let adding = $state(false);
   let searchTimer: ReturnType<typeof setTimeout>;
 
+  // Role for the next registration.
+  let role = $state('attendee');
+  let roleNote = $state('');
+  const ROLES = [
+    { v: 'attendee', label: { en: 'Attendee (pays fee)', ar: 'مشارك (يدفع الرسوم)' } },
+    { v: 'guest', label: { en: 'Guest (free)', ar: 'ضيف (مجاناً)' } },
+    { v: 'speaker', label: { en: 'Speaker', ar: 'متحدث' } },
+    { v: 'singer', label: { en: 'Singer', ar: 'مرنّم' } },
+    { v: 'musician', label: { en: 'Musician', ar: 'موسيقي' } },
+    { v: 'free', label: { en: 'Free addition', ar: 'إضافة مجانية' } },
+    { v: 'other', label: { en: 'Other…', ar: 'أخرى…' } },
+  ];
+  const roleLabel = (v: string) => tr(ROLES.find((r) => r.v === v)?.label ?? { en: v, ar: v }, $locale);
+
   async function loadEvent() {
     const all = (await api<{ data: any[] }>('/events')).data;
     event = all.find((e) => e.id === id) ?? null;
@@ -40,7 +54,7 @@
   async function register(p: any) {
     adding = true;
     try {
-      await api(`/events/${id}/registrants`, { method: 'POST', body: JSON.stringify({ personId: p.id }) });
+      await api(`/events/${id}/registrants`, { method: 'POST', body: JSON.stringify({ personId: p.id, role, roleNote: role === 'other' ? roleNote : null }) });
       personQuery = ''; personResults = [];
       await loadRegistrants();
     } catch (err) {
@@ -79,9 +93,17 @@
       </h2>
 
       {#if manage}
+        <div class="flex gap-2">
+          <select class="input" bind:value={role}>
+            {#each ROLES as r}<option value={r.v}>{tr(r.label, $locale)}</option>{/each}
+          </select>
+          {#if role === 'other'}
+            <input class="input" bind:value={roleNote} placeholder={tr({ en: 'Specify role', ar: 'حدّد الدور' }, $locale)} />
+          {/if}
+        </div>
         <div class="relative">
           <input class="input" bind:value={personQuery} oninput={searchPeople} disabled={adding || !event.registrationOpen}
-            placeholder={event.registrationOpen ? tr({ en: 'Add member…', ar: 'إضافة عضو…' }, $locale) : tr({ en: 'Registration closed', ar: 'التسجيل مغلق' }, $locale)} />
+            placeholder={event.registrationOpen ? tr({ en: 'Add person as ' + roleLabel(role) + '…', ar: 'إضافة شخص كـ ' + roleLabel(role) + '…' }, $locale) : tr({ en: 'Registration closed', ar: 'التسجيل مغلق' }, $locale)} />
           {#if personResults.length}
             <div class="absolute z-10 mt-1 w-full rounded-lg border border-slate-200 bg-white shadow dark:border-slate-700 dark:bg-slate-900">
               {#each personResults as p}
@@ -100,7 +122,12 @@
         {/if}
         {#each registrants as r}
           <div class="flex items-center justify-between p-3 text-sm">
-            <span>{tr(r.givenName, $locale)} {tr(r.familyName, $locale)}</span>
+            <span class="flex items-center gap-2">
+              {tr(r.givenName, $locale)} {tr(r.familyName, $locale)}
+              {#if r.role && r.role !== 'attendee'}
+                <span class="rounded bg-primary-50 px-2 py-0.5 text-xs text-primary-700 dark:bg-primary-900/30 dark:text-primary-300">{r.role === 'other' && r.roleNote ? r.roleNote : roleLabel(r.role)}</span>
+              {/if}
+            </span>
             {#if manage}
               <button class="text-xs text-rose-600 hover:underline" onclick={() => unregister(r)}>{$t('common.delete')}</button>
             {/if}
