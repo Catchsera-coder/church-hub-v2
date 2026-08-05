@@ -1,13 +1,16 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { api } from '$lib/api.js';
   import { t, locale, tr, LOCALES } from '$lib/i18n.js';
 
   let { initial = null, id = null }: { initial?: any; id?: number | null } = $props();
 
+  let families = $state<any[]>([]);
   let form = $state({
     givenName: initial?.givenName ?? {},
     familyName: initial?.familyName ?? {},
+    householdId: initial?.householdId ? String(initial.householdId) : '',
     membershipStatus: initial?.membershipStatus ?? 'visitor',
     email: initial?.email ?? '',
     mobile: initial?.mobile ?? '',
@@ -19,11 +22,20 @@
 
   const statuses = ['visitor', 'regular', 'member', 'inactive'];
 
+  onMount(async () => {
+    families = (await api<{ data: any[] }>('/families?limit=100')).data;
+  });
+
   async function submit(e: Event) {
     e.preventDefault();
     saving = true; error = '';
     try {
-      const body = { ...form, email: form.email || null, mobile: form.mobile || null };
+      const body = {
+        ...form,
+        householdId: form.householdId === '' ? null : Number(form.householdId),
+        email: form.email || null,
+        mobile: form.mobile || null,
+      };
       if (id) await api(`/people/${id}`, { method: 'PUT', body: JSON.stringify(body) });
       else await api('/people', { method: 'POST', body: JSON.stringify(body) });
       await goto('/members');
@@ -65,6 +77,13 @@
     <label class="block space-y-1">
       <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Mobile', ar: 'الجوال' }, $locale)}</span>
       <input class="input force-ltr" bind:value={form.mobile} />
+    </label>
+    <label class="block space-y-1 sm:col-span-2">
+      <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Family', ar: 'العائلة' }, $locale)}</span>
+      <select class="input" bind:value={form.householdId}>
+        <option value="">{tr({ en: '— None —', ar: '— بدون —' }, $locale)}</option>
+        {#each families as f}<option value={String(f.id)}>{tr(f.name, $locale)}</option>{/each}
+      </select>
     </label>
   </div>
 

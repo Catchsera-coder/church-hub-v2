@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { api } from '$lib/api.js';
   import { t, locale, tr } from '$lib/i18n.js';
+  import { can } from '$lib/stores/auth.js';
   import DataTable from '$lib/components/DataTable.svelte';
   import PageHeader from '$lib/components/PageHeader.svelte';
 
@@ -22,14 +23,21 @@
   }
   function onSearch() { clearTimeout(timer); timer = setTimeout(load, 300); }
   onMount(load);
+  const editable = can('update household');
 </script>
 
-<PageHeader title={$t('nav.families')} />
+<PageHeader title={$t('nav.families')}>
+  {#snippet actions()}
+    {#if can('create household')}<a href="/families/new" class="btn-primary">{$t('common.new')}</a>{/if}
+  {/snippet}
+</PageHeader>
 <div class="mb-4"><input class="input max-w-xs" placeholder={$t('common.search')} bind:value={search} oninput={onSearch} /></div>
 
 <DataTable {loading} {rows} headers={[tr({ en: 'Family', ar: 'العائلة' }, $locale), tr({ en: 'Phone', ar: 'الهاتف' }, $locale), tr({ en: 'City', ar: 'المدينة' }, $locale)]}>
   {#snippet row(f)}
-    <td class="p-3 font-medium">{tr(f.name, $locale)}</td>
+    <td class="p-3 font-medium">
+      {#if editable}<a class="text-primary-700 hover:underline dark:text-primary-300" href="/families/{f.id}">{tr(f.name, $locale)}</a>{:else}{tr(f.name, $locale)}{/if}
+    </td>
     <td class="p-3 force-ltr text-slate-600 dark:text-slate-300">{f.homePhone ?? '—'}</td>
     <td class="p-3 text-slate-600 dark:text-slate-300">{f.city ?? '—'}</td>
   {/snippet}

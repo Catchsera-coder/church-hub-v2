@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { db } from '../../db/index.js';
-import { people } from '../../db/schema.js';
+import { people, personServiceType, serviceTypes } from '../../db/schema.js';
 import { asyncHandler } from '../../http/asyncHandler.js';
 import { authenticate, requirePermission } from '../../middleware/auth.js';
 import { notFound } from '../../http/errors.js';
@@ -97,6 +97,42 @@ peopleRouter.put(
     if (!row) throw notFound();
     await logActivity(req, 'updated', 'person', id);
     res.json({ data: row });
+  }),
+);
+
+// --- Ministry roster (person ↔ service type) ---------------------------------
+// The set of ministries a person serves in. GET lists them; PUT replaces the
+// whole set in one call (simpler and race-free vs add/remove endpoints).
+peopleRouter.get(
+  '/:id/ministries',
+  requirePermission('view person'),
+  asyncHandler(async (req, res) => {
+    const personId = Number(req.params.id);
+    const rows = await db
+      .select({ id: serviceTypes.id, name: serviceTypes.name })
+      .from(personServiceType)
+      .innerJoin(serviceTypes, eq(serviceTypes.id, personServiceType.serviceTypeId))
+      .where(eq(personServiceType.personId, personId));
+    res.json({ data: rows });
+  }),
+);
+
+peopleRouter.put(
+  '/:id/ministries',
+  requirePermission('update person'),
+  asyncHandler(async (req, res) => {
+    const personId = Number(req.params.id);
+    const { serviceTypeIds } = z.object({ serviceTypeIds: z.array(z.number().int().positive()).default([]) }).parse(req.body);
+    const [person] = await db.select({ id: people.id }).from(people).where(and(eq(people.id, personId), isNull(people.deletedAt))).limit(1);
+    if (!person) throw notFound();
+    await db.delete(personServiceType).where(eq(personServiceType.personId, personId));
+    if (serviceTypeIds.length) {
+      await db.insert(personServiceType)
+        .values(serviceTypeIds.map((serviceTypeId) => ({ personId, serviceTypeId })))
+        .onConflictDoNothing();
+    }
+    await logActivity(req, 'updated', 'person', personId, 'roster');
+    res.json({ data: { serviceTypeIds } });
   }),
 );
 
