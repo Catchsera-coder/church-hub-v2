@@ -3,18 +3,27 @@
   import { api } from '$lib/api.js';
   import { t, locale, tr } from '$lib/i18n.js';
   import { dateTime } from '$lib/format.js';
+  import { can } from '$lib/stores/auth.js';
   import DataTable from '$lib/components/DataTable.svelte';
   import PageHeader from '$lib/components/PageHeader.svelte';
 
   let rows = $state<any[]>([]);
   let loading = $state(true);
   onMount(async () => { try { rows = (await api<{ data: any[] }>('/team')).data; } finally { loading = false; } });
+  const editable = can('update user');
 </script>
 
-<PageHeader title={$t('nav.team')} />
+<PageHeader title={$t('nav.team')}>
+  {#snippet actions()}
+    {#if can('create user')}<a href="/team/new" class="btn-primary">{$t('common.new')}</a>{/if}
+  {/snippet}
+</PageHeader>
+
 <DataTable {loading} {rows} headers={[tr({ en: 'Name', ar: 'الاسم' }, $locale), tr({ en: 'Email', ar: 'البريد' }, $locale), tr({ en: 'Roles', ar: 'الأدوار' }, $locale), tr({ en: 'Status', ar: 'الحالة' }, $locale), tr({ en: 'Last sign-in', ar: 'آخر دخول' }, $locale)]}>
   {#snippet row(u)}
-    <td class="p-3 font-medium">{u.name}</td>
+    <td class="p-3 font-medium">
+      {#if editable}<a class="text-primary-700 hover:underline dark:text-primary-300" href="/team/{u.id}">{u.name}</a>{:else}{u.name}{/if}
+    </td>
     <td class="p-3 force-ltr text-slate-600 dark:text-slate-300">{u.email}</td>
     <td class="p-3 text-slate-600 dark:text-slate-300">{(u.roles ?? []).join(', ') || '—'}</td>
     <td class="p-3">
