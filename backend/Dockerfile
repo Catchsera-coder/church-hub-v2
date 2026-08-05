@@ -5,6 +5,10 @@ COPY package.json package-lock.json* ./
 RUN npm ci
 COPY . .
 RUN npm run build
+# Generate SQL migrations into ./drizzle so the runtime image is self-contained
+# (drizzle-kit only reads schema.ts here — no DB connection needed). --name fixes
+# the filename so it is byte-stable across builds (migrator tracks by content hash).
+RUN npx drizzle-kit generate --name init
 
 # --- runtime ---
 FROM node:20-alpine AS runtime

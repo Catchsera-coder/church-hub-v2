@@ -17,6 +17,23 @@ import {
 
 type I18n = Record<string, string>;
 
+/**
+ * Per-church messaging config, editable from the Settings tab (stored here so a
+ * church can change providers/keys without a redeploy — env stays the default).
+ * Secrets live in this row; the PUBLIC settings read strips them.
+ */
+export type MessagingSettings = {
+  emailProvider?: 'sendgrid';
+  sendgridApiKey?: string;
+  mailFrom?: string;
+  smsProvider?: 'twilio' | 'azure';
+  smsFrom?: string;
+  twilioAccountSid?: string;
+  twilioAuthToken?: string;
+  acsConnectionString?: string;
+  acsSmsFrom?: string;
+};
+
 // ---------------------------------------------------------------------------
 // Enums
 // ---------------------------------------------------------------------------
@@ -51,6 +68,7 @@ export const organisations = pgTable('organisations', {
   country: varchar('country', { length: 120 }),
   email: varchar('email', { length: 190 }),
   phone: varchar('phone', { length: 40 }),
+  messaging: jsonb('messaging').$type<MessagingSettings>().notNull().default({}),
   ...timestamps,
 });
 

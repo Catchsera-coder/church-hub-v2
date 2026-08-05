@@ -7,7 +7,8 @@ import { asyncHandler } from '../../http/asyncHandler.js';
 import { authenticate, requirePermission } from '../../middleware/auth.js';
 import { badRequest, notFound } from '../../http/errors.js';
 import { logActivity } from '../activity/service.js';
-import { sendMessage } from './delivery.js';
+import { resolveMessaging, sendMessage } from './delivery.js';
+import { currentOrg } from '../settings/routes.js';
 
 export const messagesRouter = Router();
 messagesRouter.use(authenticate);
@@ -75,11 +76,14 @@ messagesRouter.post('/:id/send', requirePermission('update message'), asyncHandl
 
   await db.update(messageCampaigns).set({ status: 'sending', updatedAt: new Date() }).where(eq(messageCampaigns.id, id));
 
+  // Resolve this church's messaging config once (Settings-tab values over env).
+  const messaging = resolveMessaging((await currentOrg()).messaging);
+
   let sent = 0;
   for (const p of audience) {
     const [rec] = await db.insert(messageRecipients).values({ messageCampaignId: id, personId: p.id }).onConflictDoNothing().returning();
     if (!rec) continue;
-    const ok = await sendMessage(c.channel, p.contact as string, c.subject[p.lang] ?? c.subject.en ?? '', c.body[p.lang] ?? c.body.en ?? '');
+    const ok = await sendMessage(messaging, c.channel, p.contact as string, c.subject[p.lang] ?? c.subject.en ?? '', c.body[p.lang] ?? c.body.en ?? '');
     await db.update(messageRecipients).set({ status: ok ? 'sent' : 'failed' }).where(eq(messageRecipients.id, rec.id));
     if (ok) sent++;
   }
