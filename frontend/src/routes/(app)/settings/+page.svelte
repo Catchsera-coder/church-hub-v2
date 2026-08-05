@@ -33,10 +33,26 @@
         name: form.name, currency: form.currency, timezone: form.timezone, locale: form.locale,
         email: form.email, phone: form.phone, addressLine1: form.addressLine1, city: form.city,
         region: form.region, postalCode: form.postalCode, country: form.country,
+        logoPath: form.logoPath ?? null, arabicEnabled: !!form.arabicEnabled,
       }) });
       saved = true;
+      // If Arabic was just disabled, drop back to English immediately.
+      if (!form.arabicEnabled && $locale !== 'en') locale.set('en');
     } finally { saving = false; }
   }
+
+  function onLogoFile(e: Event) {
+    const file = (e.currentTarget as HTMLInputElement).files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) { alert(tr({ en: 'Please choose an image file.', ar: 'اختر ملف صورة.' }, $locale)); return; }
+    if (file.size > 512 * 1024) { alert(tr({ en: 'Logo must be under 512 KB.', ar: 'يجب أن يكون الشعار أقل من 512 كيلوبايت.' }, $locale)); return; }
+    const reader = new FileReader();
+    reader.onload = () => { form.logoPath = reader.result as string; };
+    reader.readAsDataURL(file);
+  }
+
+  // Language options: English always; Arabic only when the church enabled it.
+  const langOptions = $derived(LOCALES.filter((l) => l.code === 'en' || form?.arabicEnabled));
 
   async function saveMessaging(e: Event) {
     e.preventDefault();
@@ -68,7 +84,21 @@
   <form class="max-w-2xl space-y-6" onsubmit={save}>
     <div class="card space-y-4 p-6">
       <h2 class="text-lg font-semibold">{tr({ en: 'Identity', ar: 'الهوية' }, $locale)}</h2>
-      {#each LOCALES as l}
+
+      <!-- Logo (shown on login + sidebar). Uses only the file you upload. -->
+      <div class="flex items-center gap-4">
+        <div class="grid h-16 w-16 place-items-center overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700">
+          {#if form.logoPath}<img src={form.logoPath} alt="" class="h-full w-full object-contain" />{:else}<span class="text-2xl text-slate-300">✦</span>{/if}
+        </div>
+        <div class="space-y-1">
+          <span class="block text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Church logo', ar: 'شعار الكنيسة' }, $locale)}</span>
+          <input type="file" accept="image/*" onchange={onLogoFile} class="text-sm" />
+          {#if form.logoPath}<button type="button" class="ms-2 text-xs text-rose-600 hover:underline" onclick={() => (form.logoPath = null)}>{$t('common.delete')}</button>{/if}
+          <p class="text-xs text-slate-400">{tr({ en: 'PNG/SVG, under 512 KB. Save to apply.', ar: 'PNG/SVG أقل من 512 كيلوبايت. احفظ للتطبيق.' }, $locale)}</p>
+        </div>
+      </div>
+
+      {#each langOptions as l}
         <label class="block space-y-1">
           <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Church name', ar: 'اسم الكنيسة' }, $locale)} ({l.native})</span>
           <input class="input" dir={l.dir} bind:value={form.name[l.code]} />
@@ -76,11 +106,27 @@
       {/each}
     </div>
 
-    <div class="card grid gap-4 p-6 sm:grid-cols-3">
-      <label class="block space-y-1">
-        <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Default language', ar: 'اللغة الافتراضية' }, $locale)}</span>
-        <select class="input" bind:value={form.locale}>{#each LOCALES as l}<option value={l.code}>{l.native}</option>{/each}</select>
+    <div class="card space-y-4 p-6">
+      <h2 class="text-lg font-semibold">{tr({ en: 'Language', ar: 'اللغة' }, $locale)}</h2>
+      <label class="flex items-center gap-2 text-sm">
+        <input type="checkbox" bind:checked={form.arabicEnabled} />
+        {tr({ en: 'Enable Arabic (default is English)', ar: 'تفعيل العربية (الافتراضي الإنجليزية)' }, $locale)}
       </label>
+      <div class="grid gap-4 sm:grid-cols-2">
+        <label class="block space-y-1">
+          <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Display language', ar: 'لغة العرض' }, $locale)}</span>
+          <select class="input" value={$locale} onchange={(e) => locale.set((e.currentTarget as HTMLSelectElement).value as any)}>
+            {#each langOptions as l}<option value={l.code}>{l.native}</option>{/each}
+          </select>
+        </label>
+        <label class="block space-y-1">
+          <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Default for new users', ar: 'الافتراضي للمستخدمين الجدد' }, $locale)}</span>
+          <select class="input" bind:value={form.locale}>{#each langOptions as l}<option value={l.code}>{l.native}</option>{/each}</select>
+        </label>
+      </div>
+    </div>
+
+    <div class="card grid gap-4 p-6 sm:grid-cols-2">
       <label class="block space-y-1">
         <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Currency', ar: 'العملة' }, $locale)}</span>
         <input class="input force-ltr uppercase" maxlength="3" bind:value={form.currency} />

@@ -4,10 +4,11 @@
   import { goto } from '$app/navigation';
   import { api } from '$lib/api.js';
   import { auth, setSession, clearSession, isAuthed, can, hasRole } from '$lib/stores/auth.js';
-  import { t, locale, tr, LOCALES, type Locale } from '$lib/i18n.js';
+  import { t, locale, tr } from '$lib/i18n.js';
 
   let { children } = $props();
   let orgName = $state<Record<string, string> | null>(null);
+  let logo = $state<string | null>(null);
   let ready = $state(false);
   let dark = $state(false);
   let sidebarOpen = $state(false);
@@ -70,8 +71,11 @@
     try {
       const me = await api<{ user: any; roles: string[]; perms: string[] }>('/auth/me');
       setSession({ user: me.user, roles: me.roles, perms: me.perms });
-      const s = await api<{ data: { name: Record<string, string> } }>('/settings');
+      const s = await api<{ data: { name: Record<string, string>; logoPath?: string | null; arabicEnabled?: boolean } }>('/settings');
       orgName = s.data.name;
+      logo = s.data.logoPath ?? null;
+      // Default is English; only allow Arabic when the church has enabled it.
+      if (!s.data.arabicEnabled && $locale !== 'en') locale.set('en');
     } catch {
       clearSession();
       return goto('/login', { replaceState: true });
@@ -99,7 +103,11 @@
     <!-- Sidebar -->
     <aside class="hidden w-64 shrink-0 border-e border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900 md:block {sidebarOpen ? '!block fixed inset-y-0 z-40' : ''}">
       <div class="mb-6 flex items-center gap-2 px-2">
-        <div class="grid h-8 w-8 place-items-center rounded-lg bg-primary-600 font-display text-white">✦</div>
+        {#if logo}
+          <img src={logo} alt="" class="h-8 w-8 object-contain" />
+        {:else}
+          <div class="grid h-8 w-8 place-items-center rounded-lg bg-primary-600 font-display text-white">✦</div>
+        {/if}
         <span class="font-display text-lg font-semibold">{orgName ? tr(orgName, $locale) : $t('app.name')}</span>
       </div>
       <nav class="space-y-5">
@@ -126,13 +134,6 @@
         <button class="btn-ghost md:hidden" onclick={() => (sidebarOpen = !sidebarOpen)} aria-label="Menu">☰</button>
         <div class="flex-1"></div>
         <div class="flex items-center gap-2">
-          <select
-            class="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900"
-            value={$locale}
-            onchange={(e) => locale.set((e.currentTarget as HTMLSelectElement).value as Locale)}
-          >
-            {#each LOCALES as l}<option value={l.code}>{l.native}</option>{/each}
-          </select>
           <button class="btn-ghost" onclick={toggleDark} aria-label="Theme">{dark ? '☀' : '☾'}</button>
           <div class="flex items-center gap-2 ps-2">
             <span class="hidden text-sm text-slate-600 dark:text-slate-300 sm:inline">{$auth.user?.name}</span>

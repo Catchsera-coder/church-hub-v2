@@ -45,6 +45,7 @@ const updateSchema = z.object({
   country: z.string().nullable().optional(),
   email: z.string().email().nullable().optional(),
   phone: z.string().nullable().optional(),
+  arabicEnabled: z.boolean().optional(),
 });
 
 settingsRouter.put(

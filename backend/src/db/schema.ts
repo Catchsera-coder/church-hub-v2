@@ -68,6 +68,8 @@ export const organisations = pgTable('organisations', {
   country: varchar('country', { length: 120 }),
   email: varchar('email', { length: 190 }),
   phone: varchar('phone', { length: 40 }),
+  // Default language is English; Arabic becomes selectable only when enabled here.
+  arabicEnabled: boolean('arabic_enabled').notNull().default(false),
   messaging: jsonb('messaging').$type<MessagingSettings>().notNull().default({}),
   ...timestamps,
 });

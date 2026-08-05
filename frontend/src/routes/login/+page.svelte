@@ -3,17 +3,15 @@
   import { goto } from '$app/navigation';
   import { api, ApiError } from '$lib/api.js';
   import { setSession, isAuthed } from '$lib/stores/auth.js';
-  import { t, locale, tr, LOCALES, type Locale } from '$lib/i18n.js';
+  import { t, locale, tr } from '$lib/i18n.js';
 
   let email = $state('');
   let password = $state('');
   let submitting = $state(false);
   let error = $state('');
   let orgName = $state<Record<string, string> | null>(null);
-  // Prefer the church's own uploaded logo. Drop it at static/logo.png, or set an
-  // uploaded logoPath in Settings; the geometric /logo.svg is only a fallback.
-  let logo = $state<string>('/logo.png');
-  function logoFallback() { if (logo !== '/logo.svg') logo = '/logo.svg'; }
+  // Only ever the church's OWN uploaded logo (Settings → Identity). No placeholder.
+  let logo = $state<string | null>(null);
 
   // Forgot-password panel
   let mode = $state<'signin' | 'forgot'>('signin');
@@ -67,22 +65,10 @@
 <div class="flex min-h-full items-center justify-center px-4 py-12">
   <div class="w-full max-w-sm">
     <div class="mb-8 flex flex-col items-center text-center">
-      <img src={logo} onerror={logoFallback} alt="" class="mb-4 h-20 w-20" />
+      {#if logo}<img src={logo} alt="" class="mb-4 h-20 w-20 object-contain" />{/if}
       <div class="font-display text-3xl font-bold tracking-tight text-primary-700 dark:text-primary-300">
         {orgName ? tr(orgName, $locale) : $t('app.name')}
       </div>
-    </div>
-
-    <div class="mb-4 flex justify-end">
-      <select
-        class="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900"
-        value={$locale}
-        onchange={(e) => locale.set((e.currentTarget as HTMLSelectElement).value as Locale)}
-      >
-        {#each LOCALES as l}
-          <option value={l.code}>{l.native}</option>
-        {/each}
-      </select>
     </div>
 
     {#if mode === 'signin'}

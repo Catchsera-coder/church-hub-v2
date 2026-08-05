@@ -36,9 +36,6 @@
 
 <div class="flex min-h-full items-center justify-center px-4 py-12">
   <div class="w-full max-w-sm">
-    <div class="mb-8 flex flex-col items-center text-center">
-      <img src="/logo.svg" alt="" class="mb-4 h-16 w-16" />
-    </div>
     <form class="card space-y-4 p-6" onsubmit={submit}>
       <h1 class="text-lg font-semibold">{$t('auth.reset_title')}</h1>
 
