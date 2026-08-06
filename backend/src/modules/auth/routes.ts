@@ -142,6 +142,9 @@ authRouter.post(
           .limit(1)
       : [];
     if (!user || !row) throw badRequest('That code is invalid or has expired.');
+    // A user deactivated after requesting a code must not be able to complete a
+    // reset — same generic message so it doesn't reveal account state.
+    if (!user.isActive) throw badRequest('That code is invalid or has expired.');
 
     await db.update(users).set({ passwordHash: await hashPassword(password), updatedAt: new Date() }).where(eq(users.id, user.id));
     await db.update(passwordResetTokens).set({ usedAt: new Date() }).where(eq(passwordResetTokens.id, row.id));

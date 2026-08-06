@@ -72,8 +72,8 @@
     {#if !id}
       <label class="block space-y-1">
         <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Temporary password', ar: 'كلمة مرور مؤقتة' }, $locale)}</span>
-        <input class="input force-ltr" type="text" bind:value={form.password} minlength="8" placeholder={tr({ en: 'Leave blank to invite by email', ar: 'اتركه فارغاً للدعوة بالبريد' }, $locale)} />
-        <span class="text-xs text-slate-400">{tr({ en: 'If set, at least 8 characters. If blank, the person is marked invited.', ar: 'إن حُدّدت، 8 أحرف على الأقل. إن تُركت فارغة، يُعلَّم الشخص كمدعو.' }, $locale)}</span>
+        <input class="input force-ltr" type="text" bind:value={form.password} minlength="8" placeholder={tr({ en: 'Leave blank for no password yet', ar: 'اتركه فارغاً بدون كلمة مرور بعد' }, $locale)} />
+        <span class="text-xs text-slate-400">{tr({ en: 'If set, at least 8 characters. If blank, the person has no password yet — they set one via "Forgot password" (needs email configured), or an admin sets it later. No invite email is sent automatically.', ar: 'إن حُدّدت، 8 أحرف على الأقل. إن تُركت فارغة، لا كلمة مرور بعد — يعيّنها الشخص عبر «نسيت كلمة المرور» (يتطلب إعداد البريد)، أو يعيّنها المشرف لاحقاً. لا يُرسَل بريد دعوة تلقائياً.' }, $locale)}</span>
       </label>
     {/if}
 

@@ -51,8 +51,16 @@ attendanceRouter.post('/events/recurring', requirePermission('create attendance'
 
   const rows = Array.from({ length: b.count }, (_, i) => {
     const d = new Date(first);
-    if (b.frequency === 'monthly') d.setMonth(first.getMonth() + i);
-    else d.setDate(first.getDate() + i * (b.frequency === 'weekly' ? 7 : b.frequency === 'biweekly' ? 14 : 1));
+    if (b.frequency === 'monthly') {
+      // Clamp to the target month's length so a day-31 start doesn't overflow
+      // into the next month (JS setMonth quirk): Jan 31 +1mo -> Feb 28, not Mar 3.
+      d.setDate(1);
+      d.setMonth(first.getMonth() + i);
+      const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+      d.setDate(Math.min(first.getDate(), lastDay));
+    } else {
+      d.setDate(first.getDate() + i * (b.frequency === 'weekly' ? 7 : b.frequency === 'biweekly' ? 14 : 1));
+    }
     return { title: b.title, serviceTypeId: b.serviceTypeId ?? null, startsAt: d };
   });
 

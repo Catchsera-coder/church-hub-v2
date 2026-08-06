@@ -3,6 +3,7 @@
   import { goto } from '$app/navigation';
   import { api } from '$lib/api.js';
   import { t, locale, tr, LOCALES } from '$lib/i18n.js';
+  import { can } from '$lib/stores/auth.js';
 
   let { initial = null, id = null }: { initial?: any; id?: number | null } = $props();
 
@@ -32,6 +33,15 @@
 
   onMount(async () => {
     families = (await api<{ data: any[] }>('/families?limit=100')).data;
+    // Ensure the member's current family stays selectable even if it's not in
+    // the newest 100 (else the link could silently drop on save).
+    const hid = initial?.householdId;
+    if (hid && !families.some((f) => f.id === hid)) {
+      try {
+        const { data } = await api<{ data: any }>(`/families/${hid}`);
+        if (data) families = [data, ...families];
+      } catch { /* household may be gone; leave as-is */ }
+    }
   });
 
   async function createFamily() {
@@ -77,7 +87,7 @@
     {#each LOCALES as l}
       <label class="block space-y-1">
         <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'First name', ar: 'الاسم الأول' }, $locale)} ({l.native})</span>
-        <input class="input" dir={l.dir} bind:value={form.givenName[l.code]} />
+        <input class="input" dir={l.dir} bind:value={form.givenName[l.code]} required={l.code === 'en'} />
       </label>
       <label class="block space-y-1">
         <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Last name', ar: 'اسم العائلة' }, $locale)} ({l.native})</span>
@@ -117,7 +127,7 @@
             <option value="">{tr({ en: '— None —', ar: '— بدون —' }, $locale)}</option>
             {#each families as f}<option value={String(f.id)}>{tr(f.name, $locale)}</option>{/each}
           </select>
-          <button type="button" class="btn-ghost shrink-0 whitespace-nowrap" onclick={() => { showNewFamily = true; }}>+ {tr({ en: 'New', ar: 'جديد' }, $locale)}</button>
+          {#if can('create household')}<button type="button" class="btn-ghost shrink-0 whitespace-nowrap" onclick={() => { showNewFamily = true; }}>+ {tr({ en: 'New', ar: 'جديد' }, $locale)}</button>{/if}
         </div>
       {/if}
     </div>

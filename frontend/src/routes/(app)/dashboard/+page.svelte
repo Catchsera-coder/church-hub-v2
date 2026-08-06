@@ -17,14 +17,17 @@
   };
   const DEFAULT_WIDGETS = ['members', 'families', 'attendance', 'giving'];
   let widgets = $state<string[]>(DEFAULT_WIDGETS);
+  // The church's configured currency (white-label) — never assume USD.
+  let currency = $state('USD');
 
   onMount(async () => {
     try {
       const [s, settings] = await Promise.all([
         api<{ data: Stats }>('/dashboard/stats'),
-        api<{ data: { dashboard?: { widgets?: string[] } } }>('/settings'),
+        api<{ data: { currency?: string; dashboard?: { widgets?: string[] } } }>('/settings'),
       ]);
       stats = s.data;
+      if (settings.data.currency) currency = settings.data.currency;
       const cfg = settings.data.dashboard?.widgets;
       if (cfg && cfg.length) widgets = cfg.filter((k) => k in CATALOG);
     } finally {
@@ -32,7 +35,7 @@
     }
   });
 
-  const money = (cents: number) => new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD' }).format(cents / 100);
+  const money = (cents: number) => new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(cents / 100);
 </script>
 
 <h1 class="mb-6 text-2xl font-semibold">{$t('nav.dashboard')}</h1>

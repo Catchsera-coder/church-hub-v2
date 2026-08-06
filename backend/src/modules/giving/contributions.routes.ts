@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { and, desc, eq, gte, isNull, lte, sql } from 'drizzle-orm';
 import { db } from '../../db/index.js';
-import { contributions, people, funds } from '../../db/schema.js';
+import { contributions, people, funds, batches } from '../../db/schema.js';
 import { asyncHandler } from '../../http/asyncHandler.js';
 import { authenticate, requirePermission } from '../../middleware/auth.js';
 import { badRequest, conflict, notFound } from '../../http/errors.js';
@@ -87,6 +87,13 @@ contributionsRouter.post(
   requirePermission('create contribution'),
   asyncHandler(async (req, res) => {
     const b = createSchema.parse(req.body);
+    // A closed counting session is frozen: never let a new gift land in it (or in
+    // a batch that doesn't exist), which would silently shift its entered total.
+    if (b.batchId != null) {
+      const [batch] = await db.select({ closedAt: batches.closedAt }).from(batches).where(eq(batches.id, b.batchId)).limit(1);
+      if (!batch) throw badRequest('That counting session does not exist');
+      if (batch.closedAt) throw badRequest('That counting session is closed');
+    }
     const [row] = await db
       .insert(contributions)
       .values({

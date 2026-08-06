@@ -134,7 +134,11 @@ messagesRouter.post('/:id/send', requirePermission('update message'), asyncHandl
     if (ok) sent++;
   }
 
-  await db.update(messageCampaigns).set({ status: 'sent', sentAt: new Date(), updatedAt: new Date() }).where(eq(messageCampaigns.id, id));
-  await logActivity(req, 'updated', 'message', id, `sent to ${sent}/${audience.length}`);
+  // Honest campaign status: if there were recipients but not one delivery was
+  // accepted (e.g. the channel's provider isn't configured), the campaign failed
+  // — don't paint it green. Otherwise it sent (fully or partially).
+  const finalStatus = audience.length > 0 && sent === 0 ? 'failed' : 'sent';
+  await db.update(messageCampaigns).set({ status: finalStatus, sentAt: new Date(), updatedAt: new Date() }).where(eq(messageCampaigns.id, id));
+  await logActivity(req, 'updated', 'message', id, `${finalStatus}: ${sent}/${audience.length}`);
   res.json({ data: { sent, total: audience.length } });
 }));

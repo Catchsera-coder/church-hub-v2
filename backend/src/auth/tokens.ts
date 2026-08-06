@@ -10,10 +10,11 @@ export interface AccessClaims {
 }
 
 export const signAccessToken = (claims: AccessClaims): string =>
-  jwt.sign(claims, config.JWT_ACCESS_SECRET, { expiresIn: config.ACCESS_TOKEN_TTL as jwt.SignOptions['expiresIn'] });
+  jwt.sign(claims, config.JWT_ACCESS_SECRET, { algorithm: 'HS256', expiresIn: config.ACCESS_TOKEN_TTL as jwt.SignOptions['expiresIn'] });
 
+// Pin the algorithm so a forged token can't request a different/`none` alg.
 export const verifyAccessToken = (token: string): AccessClaims =>
-  jwt.verify(token, config.JWT_ACCESS_SECRET) as unknown as AccessClaims;
+  jwt.verify(token, config.JWT_ACCESS_SECRET, { algorithms: ['HS256'] }) as unknown as AccessClaims;
 
 // Refresh tokens are opaque random strings; only their SHA-256 hash is stored,
 // so a DB leak can't be used to mint access tokens. Rotated on every refresh.

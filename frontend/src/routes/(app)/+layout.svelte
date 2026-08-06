@@ -134,10 +134,10 @@
     <!-- Main -->
     <div class="flex min-w-0 flex-1 flex-col">
       <header class="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-900">
-        <button class="btn-ghost md:hidden" onclick={() => (sidebarOpen = !sidebarOpen)} aria-label="Menu">☰</button>
+        <button class="btn-ghost md:hidden" onclick={() => (sidebarOpen = !sidebarOpen)} aria-label={tr({ en: 'Menu', ar: 'القائمة' }, $locale)}>☰</button>
         <div class="flex-1"></div>
         <div class="flex items-center gap-2">
-          <button class="btn-ghost" onclick={toggleTheme} aria-label="Theme">{$theme === 'dark' ? '☀' : '☾'}</button>
+          <button class="btn-ghost" onclick={toggleTheme} aria-label={tr({ en: 'Theme', ar: 'النمط' }, $locale)}>{$theme === 'dark' ? '☀' : '☾'}</button>
           <div class="flex items-center gap-2 ps-2">
             <span class="hidden text-sm text-slate-600 dark:text-slate-300 sm:inline">{$auth.user?.name}</span>
             <button class="btn-ghost" onclick={signOut}>{$t('auth.signout')}</button>
