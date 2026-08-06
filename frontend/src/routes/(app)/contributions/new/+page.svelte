@@ -3,6 +3,7 @@
   import { goto } from '$app/navigation';
   import { api } from '$lib/api.js';
   import { t, locale, tr } from '$lib/i18n.js';
+  import { can } from '$lib/stores/auth.js';
   import PageHeader from '$lib/components/PageHeader.svelte';
 
   let funds = $state<any[]>([]);
@@ -15,6 +16,10 @@
   let personId = $state<number | null>(null);
   let personLabel = $state('');
   let searchTimer: ReturnType<typeof setTimeout>;
+  // Inline "quick create" for a new donor, so the admin never has to leave this
+  // form (#23). Gated on `create person` — Finance can record gifts but may not
+  // be allowed to add people, in which case the option is simply hidden.
+  let creatingPerson = $state(false);
 
   let form = $state({
     fundId: null as number | null,
@@ -44,6 +49,31 @@
     personLabel = `${tr(p.givenName, $locale)} ${tr(p.familyName, $locale)}`.trim();
     personResults = [];
     personQuery = personLabel;
+  }
+
+  // Create a new person from the typed name (first token = first name, rest =
+  // last name) and select them as the donor. Added as a 'visitor', matching the
+  // self-check-in "add new" behaviour.
+  async function addPersonFromQuery() {
+    const name = personQuery.trim();
+    if (!name || creatingPerson) return;
+    const parts = name.split(/\s+/);
+    const given = parts[0];
+    const family = parts.slice(1).join(' ');
+    creatingPerson = true; error = '';
+    try {
+      const { data } = await api<{ data: any }>('/people', {
+        method: 'POST',
+        body: JSON.stringify({
+          givenName: { [$locale]: given },
+          familyName: family ? { [$locale]: family } : {},
+          membershipStatus: 'visitor',
+        }),
+      });
+      pickPerson(data);
+    } catch (err) {
+      error = (err as Error).message;
+    } finally { creatingPerson = false; }
   }
 
   async function submit(e: Event) {
@@ -93,13 +123,18 @@
       <div class="relative space-y-1">
         <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Donor', ar: 'المتبرّع' }, $locale)}</span>
         <input class="input" bind:value={personQuery} oninput={() => { personId = null; searchPeople(); }} placeholder={$t('common.search')} />
-        {#if personResults.length}
-          <div class="absolute z-10 mt-1 w-full rounded-lg border border-slate-200 bg-white shadow dark:border-slate-700 dark:bg-slate-900">
+        {#if personQuery.trim() && !personId && (personResults.length || can('create person'))}
+          <div class="absolute z-10 mt-1 w-full overflow-hidden rounded-lg border border-slate-200 bg-white shadow dark:border-slate-700 dark:bg-slate-900">
             {#each personResults as p}
               <button type="button" class="block w-full px-3 py-2 text-start text-sm hover:bg-slate-100 dark:hover:bg-slate-800" onclick={() => pickPerson(p)}>
                 {tr(p.givenName, $locale)} {tr(p.familyName, $locale)}
               </button>
             {/each}
+            {#if can('create person')}
+              <button type="button" class="block w-full border-t border-slate-100 px-3 py-2 text-start text-sm text-primary-600 hover:bg-slate-100 disabled:opacity-50 dark:border-slate-800 dark:text-primary-300 dark:hover:bg-slate-800" onclick={addPersonFromQuery} disabled={creatingPerson}>
+                {creatingPerson ? $t('common.loading') : `+ ${tr({ en: 'Add', ar: 'إضافة' }, $locale)} “${personQuery.trim()}” ${tr({ en: 'as a new person', ar: 'كشخص جديد' }, $locale)}`}
+              </button>
+            {/if}
           </div>
         {/if}
       </div>
