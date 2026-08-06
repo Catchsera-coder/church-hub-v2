@@ -105,7 +105,7 @@
       </div>
     {/if}
 
-    <div class="grid grid-cols-2 gap-4">
+    <div class="grid gap-4 sm:grid-cols-2">
       <label class="block space-y-1">
         <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Amount', ar: 'المبلغ' }, $locale)}</span>
         <input class="input force-ltr" type="number" step="0.01" min="0" bind:value={form.amount} required />
@@ -116,7 +116,7 @@
       </label>
     </div>
 
-    <div class="grid grid-cols-2 gap-4">
+    <div class="grid gap-4 sm:grid-cols-2">
       <label class="block space-y-1">
         <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Method', ar: 'الطريقة' }, $locale)}</span>
         <select class="input capitalize" bind:value={form.method}>{#each methods as m}<option value={m}>{m}</option>{/each}</select>

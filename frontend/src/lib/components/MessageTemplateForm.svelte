@@ -31,7 +31,7 @@
 <form class="max-w-2xl space-y-6" onsubmit={submit}>
   {#if error}<p class="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:bg-rose-900/30 dark:text-rose-300">{error}</p>{/if}
   <div class="card space-y-4 p-6">
-    <div class="grid grid-cols-2 gap-3">
+    <div class="grid gap-3 sm:grid-cols-2">
       <label class="block space-y-1">
         <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Template name', ar: 'اسم القالب' }, $locale)}</span>
         <input class="input" bind:value={form.name} required placeholder={tr({ en: 'e.g. Weekly newsletter', ar: 'مثال: النشرة الأسبوعية' }, $locale)} />

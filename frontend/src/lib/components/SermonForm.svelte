@@ -49,7 +49,7 @@
         <textarea class="input" dir={l.dir} rows="3" bind:value={form.summary[l.code]}></textarea>
       </label>
     {/each}
-    <div class="grid grid-cols-2 gap-3">
+    <div class="grid gap-3 sm:grid-cols-2">
       <label class="block space-y-1">
         <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Speaker', ar: 'المتحدث' }, $locale)}</span>
         <input class="input" bind:value={form.speaker} />

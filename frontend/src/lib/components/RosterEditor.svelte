@@ -45,7 +45,7 @@
   {:else if !ministries.length}
     <p class="text-sm text-slate-400">{tr({ en: 'No ministries defined yet.', ar: 'لا توجد خدمات بعد.' }, $locale)}</p>
   {:else}
-    <div class="grid grid-cols-2 gap-2">
+    <div class="grid gap-2 sm:grid-cols-2">
       {#each ministries as m}
         <label class="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={selected.includes(m.id)} disabled={!editable} onchange={() => toggle(m.id)} />

@@ -79,7 +79,7 @@
 
     <fieldset class="space-y-2">
       <legend class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Roles', ar: 'الأدوار' }, $locale)}</legend>
-      <div class="grid grid-cols-2 gap-2">
+      <div class="grid gap-2 sm:grid-cols-2">
         {#each allRoles as r}
           <label class="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={form.roleIds.includes(r.id)} onchange={() => toggleRole(r.id)} /> {r.name}

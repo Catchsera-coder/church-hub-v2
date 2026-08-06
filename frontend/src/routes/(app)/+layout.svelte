@@ -88,12 +88,23 @@
   }
 
   const isActive = (href: string) => $page.url.pathname === href || $page.url.pathname.startsWith(href + '/');
+  // On mobile the sidebar is an overlay drawer; close it after choosing a link.
+  const closeSidebar = () => (sidebarOpen = false);
 </script>
 
 {#if ready}
   <div class="flex h-full">
-    <!-- Sidebar -->
-    <aside class="hidden w-64 shrink-0 border-e border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900 md:block {sidebarOpen ? '!block fixed inset-y-0 z-40' : ''}">
+    <!-- Mobile drawer backdrop -->
+    {#if sidebarOpen}
+      <button
+        class="fixed inset-0 z-30 bg-black/40 md:hidden"
+        onclick={closeSidebar}
+        aria-label={tr({ en: 'Close menu', ar: 'إغلاق القائمة' }, $locale)}
+      ></button>
+    {/if}
+
+    <!-- Sidebar (static on md+, overlay drawer on mobile when open) -->
+    <aside class="hidden w-64 shrink-0 overflow-y-auto border-e border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900 md:block {sidebarOpen ? '!block fixed inset-y-0 start-0 z-40 shadow-xl md:!static md:!z-auto md:!shadow-none' : ''}">
       <div class="mb-6 flex items-center gap-2 px-2">
         {#if logo}
           <img src={logo} alt="" class="h-8 w-8 object-contain" />
@@ -103,7 +114,7 @@
         <span class="font-display text-lg font-semibold">{orgName ? tr(orgName, $locale) : $t('app.name')}</span>
       </div>
       <nav class="space-y-5">
-        <a href="/dashboard" class="nav-link {isActive('/dashboard') ? 'nav-link-active' : ''}">{$t('nav.dashboard')}</a>
+        <a href="/dashboard" class="nav-link {isActive('/dashboard') ? 'nav-link-active' : ''}" onclick={closeSidebar}>{$t('nav.dashboard')}</a>
         {#each groups as g}
           {@const items = g.items.filter(visible)}
           {#if items.length}
@@ -111,7 +122,7 @@
               <p class="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">{$t(g.key)}</p>
               <div class="space-y-1">
                 {#each items as item}
-                  <a href={item.href} class="nav-link {isActive(item.href) ? 'nav-link-active' : ''}">{$t(item.label)}</a>
+                  <a href={item.href} class="nav-link {isActive(item.href) ? 'nav-link-active' : ''}" onclick={closeSidebar}>{$t(item.label)}</a>
                 {/each}
               </div>
             </div>

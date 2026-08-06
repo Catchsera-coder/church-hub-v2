@@ -46,7 +46,7 @@
         <input class="input" dir={l.dir} bind:value={form.name[l.code]} required={l.code === 'en'} />
       </label>
     {/each}
-    <div class="grid grid-cols-2 gap-3">
+    <div class="grid gap-3 sm:grid-cols-2">
       <label class="block space-y-1">
         <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Starts', ar: 'يبدأ' }, $locale)}</span>
         <input class="input force-ltr" type="date" bind:value={form.startsOn} required />
@@ -60,7 +60,7 @@
       <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Venue', ar: 'المكان' }, $locale)}</span>
       <input class="input" bind:value={form.venue} />
     </label>
-    <div class="grid grid-cols-2 gap-3">
+    <div class="grid gap-3 sm:grid-cols-2">
       <label class="block space-y-1">
         <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Capacity', ar: 'السعة' }, $locale)}</span>
         <input class="input force-ltr" type="number" min="1" bind:value={form.capacity} />

@@ -40,7 +40,7 @@
       <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Session name', ar: 'اسم الجلسة' }, $locale)}</span>
       <input class="input" bind:value={form.name} required />
     </label>
-    <div class="grid grid-cols-2 gap-4">
+    <div class="grid gap-4 sm:grid-cols-2">
       <label class="block space-y-1">
         <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Received on', ar: 'تاريخ الاستلام' }, $locale)}</span>
         <input class="input force-ltr" type="date" bind:value={form.receivedOn} required />
