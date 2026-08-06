@@ -29,6 +29,38 @@ attendanceRouter.post('/events', requirePermission('create attendance'), asyncHa
   res.status(201).json({ data: row });
 }));
 
+/**
+ * Recurring gatherings (#19): create a whole series in one call — e.g. every
+ * Sunday for a term. Each occurrence is a normal attendance_events row (no
+ * schema change), so it can be edited or deleted individually afterwards.
+ * Intervals are computed from the first occurrence; `count` is capped to keep
+ * one request bounded.
+ */
+const recurringSchema = z.object({
+  title: z.record(z.string()).default({}),
+  serviceTypeId: z.number().int().positive().nullable().optional(),
+  startsAt: z.string(),
+  frequency: z.enum(['daily', 'weekly', 'biweekly', 'monthly']),
+  count: z.number().int().min(2).max(52),
+});
+
+attendanceRouter.post('/events/recurring', requirePermission('create attendance'), asyncHandler(async (req, res) => {
+  const b = recurringSchema.parse(req.body);
+  const first = new Date(b.startsAt);
+  if (Number.isNaN(first.getTime())) throw badRequest('Invalid start date');
+
+  const rows = Array.from({ length: b.count }, (_, i) => {
+    const d = new Date(first);
+    if (b.frequency === 'monthly') d.setMonth(first.getMonth() + i);
+    else d.setDate(first.getDate() + i * (b.frequency === 'weekly' ? 7 : b.frequency === 'biweekly' ? 14 : 1));
+    return { title: b.title, serviceTypeId: b.serviceTypeId ?? null, startsAt: d };
+  });
+
+  const created = await db.insert(attendanceEvents).values(rows).returning();
+  await logActivity(req, 'created', 'attendance_event', created[0]!.id, `recurring ${b.frequency} ×${created.length}`);
+  res.status(201).json({ data: { count: created.length, first: created[0], events: created } });
+}));
+
 attendanceRouter.get('/events/:id/records', requirePermission('view attendance'), asyncHandler(async (req, res) => {
   const eventId = Number(req.params.id);
   const rows = await db
