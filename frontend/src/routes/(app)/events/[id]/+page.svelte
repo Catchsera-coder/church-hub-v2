@@ -62,6 +62,32 @@
     } finally { adding = false; }
   }
 
+  // Inline quick-create (#23): create a new person from the typed name and
+  // register them in one step, so the admin never leaves the event. Added as a
+  // visitor; gated on `create person` in the template.
+  async function addPersonAndRegister() {
+    const name = personQuery.trim();
+    if (!name || adding) return;
+    const parts = name.split(/\s+/);
+    const given = parts[0];
+    const family = parts.slice(1).join(' ');
+    adding = true;
+    try {
+      const { data } = await api<{ data: any }>('/people', {
+        method: 'POST',
+        body: JSON.stringify({
+          givenName: { [$locale]: given },
+          familyName: family ? { [$locale]: family } : {},
+          membershipStatus: 'visitor',
+        }),
+      });
+      personResults = [];
+      await register(data); // register() manages its own adding flag + reload
+    } catch (err) {
+      alert(err instanceof ApiError ? err.message : (err as Error).message);
+    } finally { adding = false; }
+  }
+
   async function unregister(r: any) {
     if (!confirm(tr({ en: 'Remove this registration?', ar: 'إزالة هذا التسجيل؟' }, $locale))) return;
     await api(`/events/${id}/registrants/${r.id}`, { method: 'DELETE' });
@@ -104,13 +130,18 @@
         <div class="relative">
           <input class="input" bind:value={personQuery} oninput={searchPeople} disabled={adding || !event.registrationOpen}
             placeholder={event.registrationOpen ? tr({ en: 'Add person as ' + roleLabel(role) + '…', ar: 'إضافة شخص كـ ' + roleLabel(role) + '…' }, $locale) : tr({ en: 'Registration closed', ar: 'التسجيل مغلق' }, $locale)} />
-          {#if personResults.length}
-            <div class="absolute z-10 mt-1 w-full rounded-lg border border-slate-200 bg-white shadow dark:border-slate-700 dark:bg-slate-900">
+          {#if event.registrationOpen && personQuery.trim() && (personResults.length || can('create person'))}
+            <div class="absolute z-10 mt-1 w-full overflow-hidden rounded-lg border border-slate-200 bg-white shadow dark:border-slate-700 dark:bg-slate-900">
               {#each personResults as p}
                 <button type="button" class="block w-full px-3 py-2 text-start text-sm hover:bg-slate-100 dark:hover:bg-slate-800" onclick={() => register(p)}>
                   {tr(p.givenName, $locale)} {tr(p.familyName, $locale)}
                 </button>
               {/each}
+              {#if can('create person')}
+                <button type="button" class="block w-full border-t border-slate-100 px-3 py-2 text-start text-sm text-primary-600 hover:bg-slate-100 disabled:opacity-50 dark:border-slate-800 dark:text-primary-300 dark:hover:bg-slate-800" onclick={addPersonAndRegister} disabled={adding}>
+                  {adding ? $t('common.loading') : `+ ${tr({ en: 'Add', ar: 'إضافة' }, $locale)} “${personQuery.trim()}” ${tr({ en: 'as a new person', ar: 'كشخص جديد' }, $locale)}`}
+                </button>
+              {/if}
             </div>
           {/if}
         </div>
