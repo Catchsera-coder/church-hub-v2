@@ -81,6 +81,9 @@ export const organisations = pgTable('organisations', {
   // Default language is English; Arabic becomes selectable only when enabled here.
   arabicEnabled: boolean('arabic_enabled').notNull().default(false),
   messaging: jsonb('messaging').$type<MessagingSettings>().notNull().default({}),
+  // Dashboard customization (#17): which stat widgets show, in order. Empty =
+  // show the default set. Per-church (white-label), set by an Admin in Settings.
+  dashboard: jsonb('dashboard').$type<{ widgets?: string[] }>().notNull().default({}),
   ...timestamps,
 });
 

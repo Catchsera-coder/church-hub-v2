@@ -13,6 +13,22 @@
     { v: 1.3, label: { en: 'Extra large', ar: 'كبير جداً' } },
   ];
 
+  // Dashboard widgets (#17). Enabled set is stored per-church, in this order.
+  const DASH_WIDGETS = [
+    { key: 'members', label: { en: 'Members', ar: 'الأعضاء' } },
+    { key: 'families', label: { en: 'Families', ar: 'العائلات' } },
+    { key: 'attendance', label: { en: 'Attendance this month', ar: 'الحضور هذا الشهر' } },
+    { key: 'giving', label: { en: 'Giving this month', ar: 'العطاء هذا الشهر' } },
+  ];
+  const ALL_WIDGET_KEYS = DASH_WIDGETS.map((w) => w.key);
+
+  function toggleWidget(key: string) {
+    const set = new Set(form.dashboard?.widgets ?? ALL_WIDGET_KEYS);
+    if (set.has(key)) set.delete(key); else set.add(key);
+    // Persist in the canonical catalog order regardless of toggle sequence.
+    form.dashboard = { widgets: ALL_WIDGET_KEYS.filter((k) => set.has(k)) };
+  }
+
   let form = $state<any>(null);
   let saving = $state(false);
   let saved = $state(false);
@@ -25,7 +41,9 @@
 
   onMount(async () => {
     const r = await api<{ data: any }>('/settings');
-    form = { ...r.data, name: r.data.name ?? {} };
+    // Default the dashboard to all widgets when the church hasn't customized it.
+    const widgets = r.data.dashboard?.widgets?.length ? r.data.dashboard.widgets : ALL_WIDGET_KEYS;
+    form = { ...r.data, name: r.data.name ?? {}, dashboard: { widgets } };
     if (isAdmin) {
       const m = await api<{ data: any }>('/settings/messaging');
       // secret fields start blank; blank on save = leave unchanged
@@ -42,6 +60,7 @@
         email: form.email, phone: form.phone, addressLine1: form.addressLine1, city: form.city,
         region: form.region, postalCode: form.postalCode, country: form.country,
         logoPath: form.logoPath ?? null, arabicEnabled: !!form.arabicEnabled,
+        dashboard: { widgets: form.dashboard?.widgets ?? ALL_WIDGET_KEYS },
       }) });
       saved = true;
       // If Arabic was just disabled, drop back to English immediately.
@@ -161,6 +180,17 @@
         <input type="checkbox" checked={$boldText} onchange={(e) => boldText.set((e.currentTarget as HTMLInputElement).checked)} />
         {tr({ en: 'Bold text', ar: 'خط عريض' }, $locale)}
       </label>
+    </div>
+
+    <div class="card space-y-3 p-6">
+      <h2 class="text-lg font-semibold">{tr({ en: 'Dashboard', ar: 'لوحة المعلومات' }, $locale)}</h2>
+      <p class="text-sm text-slate-500 dark:text-slate-400">{tr({ en: 'Choose which summary widgets appear on the dashboard.', ar: 'اختر البطاقات التي تظهر في لوحة المعلومات.' }, $locale)}</p>
+      {#each DASH_WIDGETS as w}
+        <label class="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={(form.dashboard?.widgets ?? ALL_WIDGET_KEYS).includes(w.key)} onchange={() => toggleWidget(w.key)} />
+          {tr(w.label, $locale)}
+        </label>
+      {/each}
     </div>
 
     <div class="card grid gap-4 p-6 sm:grid-cols-2">

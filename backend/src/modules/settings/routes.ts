@@ -46,6 +46,10 @@ const updateSchema = z.object({
   email: z.string().email().nullable().optional(),
   phone: z.string().nullable().optional(),
   arabicEnabled: z.boolean().optional(),
+  // #17: which dashboard widgets are enabled, in display order.
+  dashboard: z.object({
+    widgets: z.array(z.enum(['members', 'families', 'attendance', 'giving'])).max(10),
+  }).optional(),
 });
 
 settingsRouter.put(
