@@ -7,7 +7,7 @@
 
   let form = $state({
     name: initial?.name ?? '',
-    channel: (initial?.channel ?? 'email') as 'email' | 'sms',
+    channel: (initial?.channel ?? 'email') as 'email' | 'sms' | 'whatsapp',
     subject: (initial?.subject ?? {}) as Record<string, string>,
     header: (initial?.header ?? {}) as Record<string, string>,
     body: (initial?.body ?? {}) as Record<string, string>,
@@ -41,6 +41,7 @@
         <select class="input" bind:value={form.channel}>
           <option value="email">{tr({ en: 'Email', ar: 'بريد إلكتروني' }, $locale)}</option>
           <option value="sms">{tr({ en: 'SMS', ar: 'رسالة نصية' }, $locale)}</option>
+          <option value="whatsapp">{tr({ en: 'WhatsApp', ar: 'واتساب' }, $locale)}</option>
         </select>
       </label>
     </div>

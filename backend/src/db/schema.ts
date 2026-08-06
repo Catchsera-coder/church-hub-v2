@@ -47,7 +47,10 @@ export type MessagingSettings = {
 export const membershipStatus = pgEnum('membership_status', ['visitor', 'regular', 'member', 'inactive']);
 export const ageGroup = pgEnum('age_group', ['children', 'youth', 'adult']);
 export const contributionMethod = pgEnum('contribution_method', ['cash', 'cheque', 'card', 'bank', 'other']);
-export const campaignChannel = pgEnum('campaign_channel', ['email', 'sms']);
+// 'whatsapp' is APPENDED (end position) so the value can be added to the live
+// enum with `ALTER TYPE ... ADD VALUE` — see src/db/pre-push.ts, which applies
+// it idempotently before drizzle-kit push so push never tries to recreate it.
+export const campaignChannel = pgEnum('campaign_channel', ['email', 'sms', 'whatsapp']);
 export const campaignStatus = pgEnum('campaign_status', ['draft', 'scheduled', 'sending', 'sent', 'failed']);
 export const recipientStatus = pgEnum('recipient_status', ['pending', 'sent', 'failed']);
 export const activityEvent = pgEnum('activity_event', ['created', 'updated', 'deleted']);

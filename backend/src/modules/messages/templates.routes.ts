@@ -19,7 +19,7 @@ messageTemplatesRouter.use(authenticate);
 
 const schema = z.object({
   name: z.string().min(1).max(190),
-  channel: z.enum(['email', 'sms']).default('email'),
+  channel: z.enum(['email', 'sms', 'whatsapp']).default('email'),
   subject: z.record(z.string()).default({}),
   header: z.record(z.string()).default({}),
   body: z.record(z.string()).default({}),

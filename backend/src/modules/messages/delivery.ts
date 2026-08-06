@@ -15,8 +15,9 @@ import type { MessagingSettings } from '../../db/schema.js';
  * provider ACCEPT; prod with nothing configured returns false so recipients are
  * marked 'failed', never a fake 'sent'.
  *
- * Email -> SendGrid OR Azure Communication Services.
- * SMS   -> Twilio OR Azure Communication Services.
+ * Email    -> SendGrid OR Azure Communication Services.
+ * SMS      -> Twilio OR Azure Communication Services.
+ * WhatsApp -> Twilio (reuses the Twilio account; sender is a WhatsApp number).
  */
 export interface ResolvedMessaging {
   emailProvider: 'sendgrid' | 'acs' | null;
@@ -29,6 +30,8 @@ export interface ResolvedMessaging {
   twilioAuthToken?: string;
   acsConnectionString?: string;
   acsSmsFrom?: string;
+  whatsappProvider: 'twilio' | null;
+  whatsappFrom?: string;
 }
 
 /** Merge the church's saved settings over the env defaults and pick providers. */
@@ -60,15 +63,22 @@ export function resolveMessaging(dbMsg?: MessagingSettings | null): ResolvedMess
   else if (wantSms === 'azure') smsProvider = azureSmsReady ? 'azure' : null;
   else smsProvider = azureSmsReady ? 'azure' : twilioReady ? 'twilio' : null;
 
+  // WhatsApp via Twilio: reuses the Twilio SID/token; needs its own WhatsApp
+  // sender (e.g. "whatsapp:+1415..."). Ready only when all three are present.
+  const whatsappFrom = m.whatsappFrom || config.WHATSAPP_FROM;
+  const whatsappReady = Boolean(twilioAccountSid && twilioAuthToken && whatsappFrom);
+  const whatsappProvider: 'twilio' | null = whatsappReady ? 'twilio' : null;
+
   return {
     emailProvider, sendgridApiKey, mailFrom, acsMailFrom,
     smsProvider, smsFrom, twilioAccountSid, twilioAuthToken, acsConnectionString, acsSmsFrom,
+    whatsappProvider, whatsappFrom,
   };
 }
 
 export async function sendMessage(
   m: ResolvedMessaging,
-  channel: 'email' | 'sms',
+  channel: 'email' | 'sms' | 'whatsapp',
   to: string,
   subject: string,
   body: string,
@@ -77,6 +87,8 @@ export async function sendMessage(
     if (channel === 'email') {
       if (m.emailProvider === 'sendgrid') return await sendEmailSendgrid(m, to, subject, body);
       if (m.emailProvider === 'acs') return await sendEmailAcs(m, to, subject, body);
+    } else if (channel === 'whatsapp') {
+      if (m.whatsappProvider === 'twilio') return await sendWhatsappTwilio(m, to, body);
     } else if (m.smsProvider === 'twilio') {
       return await sendSmsTwilio(m, to, body);
     } else if (m.smsProvider === 'azure') {
@@ -139,6 +151,25 @@ async function sendSmsTwilio(m: ResolvedMessaging, to: string, body: string): Pr
   });
   if (res.ok) return true; // 201 Created
   console.error(`[sms] Twilio ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  return false;
+}
+
+// --- WhatsApp: Twilio --------------------------------------------------------
+// Same Messages endpoint as SMS, but both numbers carry the "whatsapp:" scheme.
+// The sender (whatsappFrom) is already stored with the prefix; the recipient's
+// stored mobile is a bare E.164 number, so prefix it here.
+async function sendWhatsappTwilio(m: ResolvedMessaging, to: string, body: string): Promise<boolean> {
+  const url = `https://api.twilio.com/2010-04-01/Accounts/${m.twilioAccountSid}/Messages.json`;
+  const auth = Buffer.from(`${m.twilioAccountSid}:${m.twilioAuthToken}`).toString('base64');
+  const from = m.whatsappFrom!.startsWith('whatsapp:') ? m.whatsappFrom! : `whatsapp:${m.whatsappFrom}`;
+  const toAddr = to.startsWith('whatsapp:') ? to : `whatsapp:${to}`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ To: toAddr, From: from, Body: body }).toString(),
+  });
+  if (res.ok) return true; // 201 Created
+  console.error(`[whatsapp] Twilio ${res.status}: ${(await res.text()).slice(0, 200)}`);
   return false;
 }
 

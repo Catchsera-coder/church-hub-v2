@@ -17,7 +17,7 @@ messagesRouter.use(authenticate);
 
 const schema = z.object({
   name: z.string().min(1).max(190),
-  channel: z.enum(['email', 'sms']).default('email'),
+  channel: z.enum(['email', 'sms', 'whatsapp']).default('email'),
   subject: z.record(z.string()).default({}),
   body: z.record(z.string()).default({}),
   scheduledFor: z.string().nullable().optional(),
@@ -103,9 +103,12 @@ messagesRouter.post('/:id/send', requirePermission('update message'), asyncHandl
   if (!c) throw notFound();
   if (c.status === 'sent' || c.status === 'sending') throw badRequest('Already sent');
 
+  // Email uses the email address; SMS and WhatsApp both use the mobile number.
   const contactCol = c.channel === 'email' ? people.email : people.mobile;
   // Lawful sending: never message people who opted out of this channel.
-  const optOutCol = c.channel === 'email' ? people.emailOptOut : people.smsOptOut;
+  const optOutCol = c.channel === 'email' ? people.emailOptOut
+    : c.channel === 'whatsapp' ? people.whatsappOptOut
+    : people.smsOptOut;
   const audience = await db
     .select({ id: people.id, contact: contactCol, lang: people.preferredLanguage, unsubToken: people.unsubToken })
     .from(people)

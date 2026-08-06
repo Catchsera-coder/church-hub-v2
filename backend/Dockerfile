@@ -21,6 +21,8 @@ COPY --from=build /app/dist ./dist
 COPY --from=build /app/src ./src
 COPY --from=build /app/drizzle.config.ts ./drizzle.config.ts
 EXPOSE 8080
-# Sync schema (push), seed (idempotent — first admin from ADMIN_EMAIL/PASSWORD),
-# then start. Co-located with the DB in the same region.
-CMD ["sh", "-c", "npx drizzle-kit push --verbose && node dist/db/seed.js && node dist/index.js"]
+# Guarded enum/value migrations (pre-push) → sync schema (push) → seed
+# (idempotent — first admin from ADMIN_EMAIL/PASSWORD) → start. pre-push adds new
+# enum values with ADD VALUE IF NOT EXISTS so push never recreates a live enum.
+# Co-located with the DB in the same region.
+CMD ["sh", "-c", "node dist/db/pre-push.js && npx drizzle-kit push --verbose && node dist/db/seed.js && node dist/index.js"]
