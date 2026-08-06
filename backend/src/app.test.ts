@@ -16,6 +16,11 @@ describe('app', () => {
     expect(res.status).toBe(401);
   });
 
+  it('message templates route requires auth', async () => {
+    const res = await request(app).get('/api/message-templates');
+    expect(res.status).toBe(401);
+  });
+
   it('login rejects bad input with a validation error', async () => {
     const res = await request(app).post('/api/auth/login').send({ email: 'not-an-email' });
     expect(res.status).toBe(422);

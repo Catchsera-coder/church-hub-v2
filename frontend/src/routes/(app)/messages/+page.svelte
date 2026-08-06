@@ -34,6 +34,7 @@
 
 <PageHeader title={$t('nav.messages')}>
   {#snippet actions()}
+    {#if can('view message')}<a href="/messages/templates" class="btn-ghost">{tr({ en: 'Templates', ar: 'القوالب' }, $locale)}</a>{/if}
     {#if can('create message')}<a href="/messages/new" class="btn-primary">{$t('common.new')}</a>{/if}
   {/snippet}
 </PageHeader>

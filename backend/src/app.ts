@@ -16,6 +16,7 @@ import { batchesRouter } from './modules/giving/batches.routes.js';
 import { sermonsRouter } from './modules/sermons/routes.js';
 import { eventsRouter } from './modules/events/routes.js';
 import { messagesRouter } from './modules/messages/routes.js';
+import { messageTemplatesRouter } from './modules/messages/templates.routes.js';
 import { teamRouter } from './modules/team/routes.js';
 import { activityRouter } from './modules/activity/routes.js';
 import { dashboardRouter } from './modules/dashboard/routes.js';
@@ -56,6 +57,7 @@ export function createApp() {
   app.use('/api/sermons', sermonsRouter);
   app.use('/api/events', eventsRouter);
   app.use('/api/messages', messagesRouter);
+  app.use('/api/message-templates', messageTemplatesRouter);
   app.use('/api/team', teamRouter);
   app.use('/api/activity', activityRouter);
 

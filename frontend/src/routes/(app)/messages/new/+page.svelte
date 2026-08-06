@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { api } from '$lib/api.js';
   import { t, locale, tr, LOCALES } from '$lib/i18n.js';
@@ -12,6 +13,30 @@
   });
   let error = $state('');
   let saving = $state(false);
+
+  // Branded templates (#20b): pick one to prefill subject + body. Header/footer
+  // are joined around the body per language so the branded copy carries through.
+  let templates = $state<any[]>([]);
+  let templateId = $state<number | ''>('');
+  onMount(async () => {
+    try { templates = (await api<{ data: any[] }>('/message-templates')).data.filter((x) => x.isActive); } catch { /* templates are optional */ }
+  });
+
+  function applyTemplate() {
+    const tpl = templates.find((x) => x.id === Number(templateId));
+    if (!tpl) return;
+    form.channel = tpl.channel;
+    const subject: Record<string, string> = {};
+    const body: Record<string, string> = {};
+    for (const l of LOCALES) {
+      const c = l.code;
+      if (tpl.subject?.[c]) subject[c] = tpl.subject[c];
+      const parts = [tpl.header?.[c], tpl.body?.[c], tpl.footer?.[c]].filter(Boolean);
+      if (parts.length) body[c] = parts.join('\n\n');
+    }
+    form.subject = { ...form.subject, ...subject };
+    form.body = { ...form.body, ...body };
+  }
 
   // AI compose: draft copy from a short brief, fill the form. Off unless a key
   // is configured — the backend replies with a clear message we surface inline.
@@ -71,6 +96,18 @@
         </select>
       </label>
     </div>
+
+    {#if templates.length > 0}
+      <label class="block space-y-1">
+        <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Start from template', ar: 'ابدأ من قالب' }, $locale)}</span>
+        <select class="input" bind:value={templateId} onchange={applyTemplate}>
+          <option value="">{tr({ en: '— None —', ar: '— بدون —' }, $locale)}</option>
+          {#each templates as tpl}
+            <option value={tpl.id}>{tpl.name}</option>
+          {/each}
+        </select>
+      </label>
+    {/if}
 
     <div class="rounded-lg border border-dashed border-slate-300 p-3 dark:border-slate-600">
       {#if !showAi}

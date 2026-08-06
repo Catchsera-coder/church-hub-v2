@@ -359,6 +359,27 @@ export const messageCampaigns = pgTable('message_campaigns', {
   ...timestamps,
 }, (t) => ({ statusIdx: index('message_campaigns_status_idx').on(t.status) }));
 
+/**
+ * Reusable, branded message templates (#20b). Additive: a template is saved
+ * subject+body copy (bilingual JSONB, same shape as a campaign) plus optional
+ * branded header/footer copy the church can reuse across campaigns. Picking a
+ * template on the compose screen prefills a new campaign — templates are never
+ * sent directly, so this changes no send path. Soft-deleted like other content.
+ */
+export const messageTemplates = pgTable('message_templates', {
+  id: serial('id').primaryKey(),
+  name: varchar('name', { length: 190 }).notNull(),
+  channel: campaignChannel('channel').notNull().default('email'),
+  subject: jsonb('subject').$type<I18n>().notNull().default({}),
+  header: jsonb('header').$type<I18n>().notNull().default({}), // branded greeting/intro
+  body: jsonb('body').$type<I18n>().notNull().default({}),
+  footer: jsonb('footer').$type<I18n>().notNull().default({}), // branded signature/sign-off
+  isActive: boolean('is_active').notNull().default(true),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  createdByUserId: integer('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+  ...timestamps,
+}, (t) => ({ activeIdx: index('message_templates_active_idx').on(t.isActive) }));
+
 export const messageRecipients = pgTable('message_recipients', {
   id: serial('id').primaryKey(),
   messageCampaignId: integer('message_campaign_id').notNull().references(() => messageCampaigns.id, { onDelete: 'cascade' }),
