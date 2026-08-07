@@ -38,6 +38,13 @@
   let msg = $state<any>(null);
   let msgSaving = $state(false);
   let msgSaved = $state(false);
+  // Is email delivery actually usable? If not, password resets + email messages
+  // silently won't send (that's why "Forgot password" delivered nothing).
+  const emailConfigured = $derived(!!msg && (
+    msg.envEmailDefault ||
+    (msg.sendgridApiKeySet && msg.mailFrom) ||
+    (msg.acsConnectionStringSet && msg.acsMailFrom)
+  ));
 
   onMount(async () => {
     const r = await api<{ data: any }>('/settings');
@@ -226,6 +233,11 @@
           <p class="text-sm text-slate-500 dark:text-slate-400">{tr({ en: 'Configure how this church sends email and SMS. Leave a secret blank to keep the current value.', ar: 'اضبط كيفية إرسال هذه الكنيسة للبريد والرسائل. اترك السر فارغاً للإبقاء على القيمة الحالية.' }, $locale)}</p>
         </div>
 
+        {#if !emailConfigured}
+          <div class="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-900/30 dark:text-amber-200">
+            ⚠ {tr({ en: 'Email is not configured, so password-reset codes and email messages will NOT be delivered. Add your Azure ACS connection string + sender address (or a SendGrid key + from address) below, then Save.', ar: 'البريد غير مُهيأ، لذا لن تُرسَل رموز إعادة تعيين كلمة المرور ولا رسائل البريد. أضِف سلسلة اتصال Azure ACS وعنوان المُرسِل (أو مفتاح SendGrid وعنوان المُرسِل) بالأسفل ثم احفظ.' }, $locale)}
+          </div>
+        {/if}
         <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-200">{tr({ en: 'Email', ar: 'البريد الإلكتروني' }, $locale)}</h3>
         <label class="block space-y-1">
           <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Email provider', ar: 'مزود البريد' }, $locale)}</span>
