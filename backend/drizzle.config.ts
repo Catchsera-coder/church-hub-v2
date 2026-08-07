@@ -13,5 +13,7 @@ export default {
   out: './drizzle',
   dialect: 'postgresql',
   dbCredentials: { url },
-  strict: true,
+  // No `strict` — it forces an interactive confirmation prompt, which the
+  // container (no TTY) can't answer, so push would abort. The deploy relies on
+  // `drizzle-kit push --force` to apply additive changes non-interactively.
 } satisfies Config;
