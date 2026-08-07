@@ -29,4 +29,4 @@ EXPOSE 8080
 # change (which then crashes seed on the missing column). Additive changes are
 # safe to auto-apply; destructive ones are handled explicitly in pre-push.ts.
 # Co-located with the DB in the same region.
-CMD ["sh", "-c", "node dist/db/pre-push.js && npx drizzle-kit push --force --verbose && node dist/db/seed.js && node dist/index.js"]
+CMD ["sh", "-c", "node dist/db/pre-push.js && npx drizzle-kit push --force --verbose && node dist/db/dedupe.js && node dist/db/seed.js && node dist/index.js"]

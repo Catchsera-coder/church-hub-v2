@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { db, pool } from './index.js';
 import { organisations, users, roles, permissions, userRoles, rolePermissions, funds, serviceTypes } from './schema.js';
 import { hashPassword } from '../auth/password.js';
@@ -61,16 +61,21 @@ async function seed() {
     await db.insert(funds).values({ code: f.code, name: f.name, sortOrder: i + 1 }).onConflictDoNothing();
   }
 
-  // Default ministries (service types).
-  const ministrySeed = [
-    { en: 'Sunday Worship', ar: 'عبادة الأحد' },
-    { en: 'Prayer Meeting', ar: 'اجتماع الصلاة' },
-    { en: 'Bible Study', ar: 'درس الكتاب' },
-    { en: 'Youth', ar: 'الشباب' },
-    { en: 'Sunday School', ar: 'مدرسة الأحد' },
-  ];
-  for (const [i, m] of ministrySeed.entries()) {
-    await db.insert(serviceTypes).values({ name: m, sortOrder: i + 1 }).onConflictDoNothing();
+  // Default ministries (service types). Only seed when the table is EMPTY —
+  // service_types has no unique key, so re-inserting on every startup would
+  // duplicate them (the bug that produced 7× "Sunday Worship"). First run only.
+  const [{ count: serviceCount }] = await db.select({ count: sql<number>`count(*)::int` }).from(serviceTypes);
+  if (serviceCount === 0) {
+    const ministrySeed = [
+      { en: 'Sunday Worship', ar: 'عبادة الأحد' },
+      { en: 'Prayer Meeting', ar: 'اجتماع الصلاة' },
+      { en: 'Bible Study', ar: 'درس الكتاب' },
+      { en: 'Youth', ar: 'الشباب' },
+      { en: 'Sunday School', ar: 'مدرسة الأحد' },
+    ];
+    for (const [i, m] of ministrySeed.entries()) {
+      await db.insert(serviceTypes).values({ name: m, sortOrder: i + 1 });
+    }
   }
 
   // eslint-disable-next-line no-console
