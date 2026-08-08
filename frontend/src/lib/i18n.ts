@@ -129,6 +129,17 @@ locale.subscribe((l) => {
   }
 });
 
+/** Whether this church has Arabic enabled (set from org settings at app load,
+ *  and updated live when the Settings toggle is saved). Drives whether Arabic
+ *  appears ANYWHERE in the UI. Defaults to false so Arabic stays hidden until
+ *  we've confirmed it's enabled. */
+export const arabicEnabled = writable(false);
+
+/** The locales to actually render in the UI: English always; Arabic only when
+ *  the church enabled it. Use this instead of LOCALES for per-language fields
+ *  and language pickers so Arabic never shows when it's off. */
+export const enabledLocales = derived(arabicEnabled, ($ar) => LOCALES.filter((l) => l.code === 'en' || $ar));
+
 /** Reactive translator: `$t('nav.members')`. Falls back to the key. */
 export const t = derived(locale, ($l) => (key: string) => messages[$l][key] ?? messages.en[key] ?? key);
 

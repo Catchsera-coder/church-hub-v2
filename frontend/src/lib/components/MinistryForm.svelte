@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { api } from '$lib/api.js';
-  import { t, locale, tr, LOCALES } from '$lib/i18n.js';
+  import { t, locale, tr, enabledLocales } from '$lib/i18n.js';
 
   let { initial = null, id = null }: { initial?: any; id?: number | null } = $props();
 
@@ -62,7 +62,7 @@
 <form class="max-w-lg space-y-6" onsubmit={submit}>
   {#if error}<p class="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:bg-rose-900/30 dark:text-rose-300">{error}</p>{/if}
   <div class="card space-y-4 p-6">
-    {#each LOCALES as l}
+    {#each $enabledLocales as l}
       <label class="block space-y-1">
         <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Name', ar: 'الاسم' }, $locale)} ({l.native})</span>
         <input class="input" dir={l.dir} bind:value={form.name[l.code]} required={l.code === 'en'} />
@@ -78,7 +78,7 @@
       <span class="text-xs text-slate-400">{tr({ en: 'Make this a sub-ministry by choosing a parent. A ministry with sub-ministries acts as a group.', ar: 'اجعلها خدمة فرعية باختيار خدمة أم. الخدمة التي لها خدمات فرعية تعمل كمجموعة.' }, $locale)}</span>
     </label>
 
-    {#each LOCALES as l}
+    {#each $enabledLocales as l}
       <label class="block space-y-1">
         <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Description', ar: 'الوصف' }, $locale)} ({l.native})</span>
         <textarea class="input" dir={l.dir} rows="2" bind:value={form.description[l.code]}></textarea>

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { api } from '$lib/api.js';
-  import { t, locale, tr, LOCALES } from '$lib/i18n.js';
+  import { t, locale, tr, enabledLocales } from '$lib/i18n.js';
 
   let { initial = null, id = null }: { initial?: any; id?: number | null } = $props();
 
@@ -47,13 +47,13 @@
     </div>
 
     {#if form.channel === 'email'}
-      {#each LOCALES as l}
+      {#each $enabledLocales as l}
         <label class="block space-y-1">
           <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Subject', ar: 'الموضوع' }, $locale)} ({l.native})</span>
           <input class="input" dir={l.dir} bind:value={form.subject[l.code]} />
         </label>
       {/each}
-      {#each LOCALES as l}
+      {#each $enabledLocales as l}
         <label class="block space-y-1">
           <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Branded header', ar: 'ترويسة' }, $locale)} ({l.native})</span>
           <textarea class="input" dir={l.dir} rows="2" bind:value={form.header[l.code]} placeholder={tr({ en: 'e.g. Grace and peace to you from {church}', ar: 'مثال: نعمة لكم وسلام من {church}' }, $locale)}></textarea>
@@ -61,7 +61,7 @@
       {/each}
     {/if}
 
-    {#each LOCALES as l}
+    {#each $enabledLocales as l}
       <label class="block space-y-1">
         <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Body', ar: 'النص' }, $locale)} ({l.native})</span>
         <textarea class="input" dir={l.dir} rows="5" bind:value={form.body[l.code]} required={l.code === 'en'}></textarea>
@@ -69,7 +69,7 @@
     {/each}
 
     {#if form.channel === 'email'}
-      {#each LOCALES as l}
+      {#each $enabledLocales as l}
         <label class="block space-y-1">
           <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Branded footer', ar: 'تذييل' }, $locale)} ({l.native})</span>
           <textarea class="input" dir={l.dir} rows="2" bind:value={form.footer[l.code]} placeholder={tr({ en: 'e.g. In Christ, the {church} team', ar: 'مثال: في المسيح، فريق {church}' }, $locale)}></textarea>

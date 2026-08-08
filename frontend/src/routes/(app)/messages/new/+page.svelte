@@ -2,7 +2,8 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { api } from '$lib/api.js';
-  import { t, locale, tr, LOCALES } from '$lib/i18n.js';
+  import { get } from 'svelte/store';
+  import { t, locale, tr, enabledLocales } from '$lib/i18n.js';
   import PageHeader from '$lib/components/PageHeader.svelte';
 
   let form = $state({
@@ -28,7 +29,7 @@
     form.channel = tpl.channel;
     const subject: Record<string, string> = {};
     const body: Record<string, string> = {};
-    for (const l of LOCALES) {
+    for (const l of get(enabledLocales)) {
       const c = l.code;
       if (tpl.subject?.[c]) subject[c] = tpl.subject[c];
       const parts = [tpl.header?.[c], tpl.body?.[c], tpl.footer?.[c]].filter(Boolean);
@@ -55,7 +56,7 @@
         body: JSON.stringify({
           brief: aiBrief.trim(),
           channels: [form.channel],
-          locales: LOCALES.map((l) => l.code),
+          locales: get(enabledLocales).map((l) => l.code),
           tone: aiTone.trim() || undefined,
         }),
       });
@@ -133,7 +134,7 @@
     </div>
 
     {#if form.channel === 'email'}
-      {#each LOCALES as l}
+      {#each $enabledLocales as l}
         <label class="block space-y-1">
           <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Subject', ar: 'الموضوع' }, $locale)} ({l.native})</span>
           <input class="input" dir={l.dir} bind:value={form.subject[l.code]} />
@@ -141,7 +142,7 @@
       {/each}
     {/if}
 
-    {#each LOCALES as l}
+    {#each $enabledLocales as l}
       <label class="block space-y-1">
         <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Message', ar: 'الرسالة' }, $locale)} ({l.native})</span>
         <textarea class="input" dir={l.dir} rows="4" bind:value={form.body[l.code]} required={l.code === 'en'}></textarea>

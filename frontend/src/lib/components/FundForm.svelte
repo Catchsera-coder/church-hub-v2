@@ -1,7 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { api } from '$lib/api.js';
-  import { t, locale, tr, LOCALES } from '$lib/i18n.js';
+  import { t, locale, tr, enabledLocales } from '$lib/i18n.js';
 
   let { initial = null, id = null }: { initial?: any; id?: number | null } = $props();
 
@@ -34,7 +34,7 @@
       <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Code', ar: 'الرمز' }, $locale)}</span>
       <input class="input force-ltr uppercase" bind:value={form.code} required maxlength="32" />
     </label>
-    {#each LOCALES as l}
+    {#each $enabledLocales as l}
       <label class="block space-y-1">
         <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Name', ar: 'الاسم' }, $locale)} ({l.native})</span>
         <input class="input" dir={l.dir} bind:value={form.name[l.code]} />

@@ -4,7 +4,7 @@
   import { goto } from '$app/navigation';
   import { api } from '$lib/api.js';
   import { auth, setSession, clearSession, isAuthed, can, hasRole } from '$lib/stores/auth.js';
-  import { t, locale, tr } from '$lib/i18n.js';
+  import { t, locale, tr, arabicEnabled } from '$lib/i18n.js';
   import { theme, toggleTheme } from '$lib/stores/appearance.js';
 
   let { children } = $props();
@@ -73,6 +73,7 @@
       orgName = s.data.name;
       logo = s.data.logoPath ?? null;
       // Default is English; only allow Arabic when the church has enabled it.
+      arabicEnabled.set(!!s.data.arabicEnabled);
       if (!s.data.arabicEnabled && $locale !== 'en') locale.set('en');
     } catch {
       clearSession();

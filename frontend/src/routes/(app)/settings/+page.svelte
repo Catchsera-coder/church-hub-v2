@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { api } from '$lib/api.js';
-  import { t, locale, tr, LOCALES } from '$lib/i18n.js';
+  import { t, locale, tr, LOCALES, arabicEnabled } from '$lib/i18n.js';
   import { hasRole } from '$lib/stores/auth.js';
   import { theme, fontScale, boldText } from '$lib/stores/appearance.js';
   import PageHeader from '$lib/components/PageHeader.svelte';
@@ -70,6 +70,8 @@
         dashboard: { widgets: form.dashboard?.widgets ?? ALL_WIDGET_KEYS },
       }) });
       saved = true;
+      // Reflect the Arabic toggle app-wide so every form/picker updates at once.
+      arabicEnabled.set(!!form.arabicEnabled);
       // If Arabic was just disabled, drop back to English immediately.
       if (!form.arabicEnabled && $locale !== 'en') locale.set('en');
     } finally { saving = false; }
