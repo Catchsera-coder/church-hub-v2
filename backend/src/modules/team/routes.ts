@@ -1,16 +1,38 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../../db/index.js';
 import { users, roles, userRoles } from '../../db/schema.js';
 import { asyncHandler } from '../../http/asyncHandler.js';
 import { authenticate, requirePermission } from '../../middleware/auth.js';
-import { conflict, notFound } from '../../http/errors.js';
+import { badRequest, conflict, notFound } from '../../http/errors.js';
 import { hashPassword } from '../../auth/password.js';
 import { logActivity } from '../activity/service.js';
 
 export const teamRouter = Router();
 teamRouter.use(authenticate);
+
+// --- Super Admin safeguards -------------------------------------------------
+// Prevent privilege escalation: only a Super Admin may grant/manage the
+// Super Admin role or a Super Admin account, and the last Super Admin can't be
+// removed/deactivated (which would lock everyone out of admin).
+const isSuper = (req: { auth?: { roles?: string[] } }) => !!req.auth?.roles?.includes('Super Admin');
+
+async function superAdminRoleId(): Promise<number | null> {
+  const [r] = await db.select({ id: roles.id }).from(roles).where(eq(roles.name, 'Super Admin')).limit(1);
+  return r?.id ?? null;
+}
+async function userHasRole(userId: number, roleId: number): Promise<boolean> {
+  const [r] = await db.select({ c: sql<number>`count(*)::int` }).from(userRoles)
+    .where(and(eq(userRoles.userId, userId), eq(userRoles.roleId, roleId)));
+  return (r?.c ?? 0) > 0;
+}
+async function activeSuperAdminCount(saId: number): Promise<number> {
+  const [r] = await db.select({ c: sql<number>`count(distinct ${users.id})::int` }).from(users)
+    .innerJoin(userRoles, eq(userRoles.userId, users.id))
+    .where(and(eq(userRoles.roleId, saId), eq(users.isActive, true)));
+  return r?.c ?? 0;
+}
 
 teamRouter.get('/', requirePermission('view user'), asyncHandler(async (_req, res) => {
   const rows = await db
@@ -45,6 +67,8 @@ async function setRoles(userId: number, roleIds: number[]) {
 
 teamRouter.post('/', requirePermission('create user'), asyncHandler(async (req, res) => {
   const b = createSchema.parse(req.body);
+  const saId = await superAdminRoleId();
+  if (saId && b.roleIds.includes(saId) && !isSuper(req)) throw badRequest('Only a Super Admin can grant the Super Admin role.');
   const email = b.email.toLowerCase();
   const [dup] = await db.select({ id: users.id }).from(users).where(eq(users.email, email)).limit(1);
   if (dup) throw conflict('A user with this email already exists');
@@ -68,6 +92,18 @@ const updateSchema = z.object({
 teamRouter.put('/:id', requirePermission('update user'), asyncHandler(async (req, res) => {
   const id = Number(req.params.id);
   const b = updateSchema.parse(req.body);
+  const saId = await superAdminRoleId();
+  if (saId) {
+    const targetIsSuper = await userHasRole(id, saId);
+    const grantingSuper = b.roleIds?.includes(saId) ?? false;
+    if ((grantingSuper || targetIsSuper) && !isSuper(req)) throw badRequest('Only a Super Admin can manage the Super Admin role.');
+    // Removing SA (roleIds without it) or deactivating the last SA is blocked.
+    const removingSuper = b.roleIds !== undefined && !grantingSuper;
+    const deactivating = b.isActive === false;
+    if (targetIsSuper && (removingSuper || deactivating) && (await activeSuperAdminCount(saId)) <= 1) {
+      throw badRequest('Cannot remove or deactivate the last Super Admin.');
+    }
+  }
   const [row] = await db.update(users).set({
     ...(b.name !== undefined ? { name: b.name } : {}),
     ...(b.isActive !== undefined ? { isActive: b.isActive } : {}),
@@ -81,6 +117,11 @@ teamRouter.put('/:id', requirePermission('update user'), asyncHandler(async (req
 
 teamRouter.post('/:id/deactivate', requirePermission('update user'), asyncHandler(async (req, res) => {
   const id = Number(req.params.id);
+  const saId = await superAdminRoleId();
+  if (saId && await userHasRole(id, saId)) {
+    if (!isSuper(req)) throw badRequest('Only a Super Admin can deactivate a Super Admin.');
+    if ((await activeSuperAdminCount(saId)) <= 1) throw badRequest('Cannot deactivate the last Super Admin.');
+  }
   const [row] = await db.update(users).set({ isActive: false, updatedAt: new Date() }).where(eq(users.id, id)).returning();
   if (!row) throw notFound();
   await logActivity(req, 'updated', 'user', id, 'deactivated');
@@ -91,6 +132,8 @@ teamRouter.post('/:id/deactivate', requirePermission('update user'), asyncHandle
 teamRouter.post('/:id/set-password', requirePermission('update user'), asyncHandler(async (req, res) => {
   const id = Number(req.params.id);
   const { password } = z.object({ password: z.string().min(8) }).parse(req.body);
+  const saId = await superAdminRoleId();
+  if (saId && await userHasRole(id, saId) && !isSuper(req)) throw badRequest("Only a Super Admin can set a Super Admin's password.");
   const [row] = await db.update(users).set({ passwordHash: await hashPassword(password), updatedAt: new Date() }).where(eq(users.id, id)).returning();
   if (!row) throw notFound();
   await logActivity(req, 'updated', 'user', id, 'password set by admin');

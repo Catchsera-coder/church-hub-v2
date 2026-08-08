@@ -32,8 +32,24 @@ async function withTotals(id: number) {
 }
 
 batchesRouter.get('/', requirePermission('view batch'), asyncHandler(async (_req, res) => {
-  const rows = await db.select().from(batches).orderBy(desc(batches.receivedOn), desc(batches.id));
-  const data = await Promise.all(rows.map((r) => withTotals(r.id)));
+  // Single query (LEFT JOIN + GROUP BY) instead of 1 + 2N per-row lookups.
+  const rows = await db
+    .select({
+      id: batches.id, name: batches.name, receivedOn: batches.receivedOn,
+      expectedTotalCents: batches.expectedTotalCents, notes: batches.notes,
+      closedAt: batches.closedAt, closedByUserId: batches.closedByUserId,
+      createdAt: batches.createdAt, updatedAt: batches.updatedAt,
+      entered: sql<number>`coalesce(sum(${contributions.amountCents}),0)::bigint`,
+    })
+    .from(batches)
+    .leftJoin(contributions, eq(contributions.batchId, batches.id))
+    .groupBy(batches.id)
+    .orderBy(desc(batches.receivedOn), desc(batches.id));
+  const data = rows.map(({ entered, ...row }) => {
+    const enteredCents = Number(entered);
+    const variance = row.expectedTotalCents === null ? null : enteredCents - row.expectedTotalCents;
+    return { ...row, enteredCents, varianceCents: variance, reconciles: variance === null || variance === 0 };
+  });
   res.json({ data });
 }));
 

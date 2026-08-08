@@ -144,6 +144,9 @@ export const passwordResetTokens = pgTable('password_reset_tokens', {
   tokenHash: text('token_hash').notNull(),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   usedAt: timestamp('used_at', { withTimezone: true }),
+  // Failed /reset guesses against this code; the code is invalidated after a few
+  // so a 6-digit code can't be brute-forced within its TTL.
+  attempts: integer('attempts').notNull().default(0),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }, (t) => ({
   hashIdx: index('password_reset_tokens_hash_idx').on(t.tokenHash),

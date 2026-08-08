@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import { and, desc, eq, isNotNull, isNull, ne, sql } from 'drizzle-orm';
 import { db } from '../../db/index.js';
@@ -14,6 +15,11 @@ import { config } from '../../config.js';
 
 export const messagesRouter = Router();
 messagesRouter.use(authenticate);
+
+// Cost-bearing endpoints: AI calls Anthropic (credits) and send fans out to the
+// whole congregation (SMS/email spend). Cap them so one account can't burn spend.
+const aiLimiter = rateLimit({ windowMs: 60_000, max: 20 });
+const sendLimiter = rateLimit({ windowMs: 60_000, max: 5 });
 
 const schema = z.object({
   name: z.string().min(1).max(190),
@@ -48,7 +54,7 @@ const aiSchema = z.object({
   tone: z.string().max(120).optional(),
 });
 
-messagesRouter.post('/ai-draft', requirePermission('create message'), asyncHandler(async (req, res) => {
+messagesRouter.post('/ai-draft', aiLimiter, requirePermission('create message'), asyncHandler(async (req, res) => {
   const b = aiSchema.parse(req.body);
   const org = await currentOrg();
   const ai = resolveAi(org.messaging);
@@ -64,7 +70,9 @@ messagesRouter.post('/ai-draft', requirePermission('create message'), asyncHandl
     });
     res.json({ data: draft });
   } catch (err) {
-    throw badRequest(err instanceof Error ? err.message : 'AI draft failed.');
+    // Log the provider detail server-side; return a generic message to the client.
+    console.error('[ai-draft] failed:', err instanceof Error ? err.message : err);
+    throw badRequest('AI drafting failed. Please try again.');
   }
 }));
 
@@ -97,7 +105,7 @@ messagesRouter.put('/:id', requirePermission('update message'), asyncHandler(asy
  * queue with no worker (the v1 bug where campaigns silently never sent). For
  * large lists this should move to a real worker; see delivery.ts.
  */
-messagesRouter.post('/:id/send', requirePermission('update message'), asyncHandler(async (req, res) => {
+messagesRouter.post('/:id/send', sendLimiter, requirePermission('update message'), asyncHandler(async (req, res) => {
   const id = Number(req.params.id);
   const [c] = await db.select().from(messageCampaigns).where(eq(messageCampaigns.id, id)).limit(1);
   if (!c) throw notFound();

@@ -9,6 +9,13 @@ const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().default(8080),
   DATABASE_URL: z.string().min(1),
+  // Postgres pool size PER REPLICA. Keep replicas × this under the server's
+  // max_connections (Burstable B1ms ≈ 35). Default 6 → 3 replicas = 18.
+  DB_POOL_MAX: z.coerce.number().int().min(1).max(50).default(6),
+  // Verify the DB server's TLS cert in prod. Off by default to preserve the
+  // current behaviour; set DB_SSL_STRICT=true once the provider CA is trusted
+  // (Azure PG chains to DigiCert, in Node's bundle) to prevent MITM.
+  DB_SSL_STRICT: z.string().optional().transform((v) => v === 'true'),
   JWT_ACCESS_SECRET: z.string().min(16),
   JWT_REFRESH_SECRET: z.string().min(16),
   ACCESS_TOKEN_TTL: z.string().default('15m'),

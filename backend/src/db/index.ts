@@ -7,9 +7,10 @@ import * as schema from './schema.js';
 // declared explicitly in the schema (v1 lesson).
 export const pool = new pg.Pool({
   connectionString: config.DATABASE_URL,
-  // Keep this modest; Container Apps replicas each hold a pool.
-  max: 10,
-  ssl: config.isProd ? { rejectUnauthorized: false } : undefined,
+  // Per-replica pool; keep replicas × max under the server's max_connections.
+  max: config.DB_POOL_MAX,
+  // In prod, optionally verify the server cert (DB_SSL_STRICT) to prevent MITM.
+  ssl: config.isProd ? { rejectUnauthorized: config.DB_SSL_STRICT } : undefined,
 });
 
 export const db = drizzle(pool, { schema });

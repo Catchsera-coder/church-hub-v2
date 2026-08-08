@@ -1,10 +1,10 @@
 import crypto from 'node:crypto';
 import { Router } from 'express';
 import { z } from 'zod';
-import { and, eq, gt, isNull } from 'drizzle-orm';
+import { and, desc, eq, gt, isNull } from 'drizzle-orm';
 import { db } from '../../db/index.js';
 import { users, refreshTokens, passwordResetTokens } from '../../db/schema.js';
-import { verifyPassword, hashPassword } from '../../auth/password.js';
+import { verifyPassword, hashPassword, equalizeVerify } from '../../auth/password.js';
 import { signAccessToken, newRefreshToken, hashRefreshToken } from '../../auth/tokens.js';
 import { loadRolesAndPerms } from './service.js';
 import { asyncHandler } from '../../http/asyncHandler.js';
@@ -41,9 +41,11 @@ authRouter.post(
   asyncHandler(async (req, res) => {
     const { email, password } = loginSchema.parse(req.body);
     const [user] = await db.select().from(users).where(eq(users.email, email.toLowerCase())).limit(1);
-    if (!user || !user.isActive || !(await verifyPassword(user.passwordHash, password))) {
-      throw unauthorized('Invalid credentials');
-    }
+    // Always spend comparable time whether or not the account exists (anti-enumeration).
+    let ok = false;
+    if (user && user.isActive && user.passwordHash) ok = await verifyPassword(user.passwordHash, password);
+    else await equalizeVerify(password);
+    if (!ok) throw unauthorized('Invalid credentials');
     await db.update(users).set({ lastLoginAt: new Date() }).where(eq(users.id, user.id));
     const session = await issueSession(user);
     res.json({
@@ -127,27 +129,40 @@ authRouter.post(
       .object({ email: z.string().email(), code: z.string().trim().min(4), password: z.string().min(8) })
       .parse(req.body);
 
+    const invalid = () => badRequest('That code is invalid or has expired.');
     const [user] = await db.select().from(users).where(eq(users.email, email.toLowerCase())).limit(1);
+    if (!user || !user.isActive) throw invalid();
+
+    // Look at the newest active code for this user (regardless of match) so we
+    // can count failed guesses and invalidate after too many — a 6-digit code
+    // can't be brute-forced within its 15-min TTL.
+    const MAX_ATTEMPTS = 5;
+    const [active] = await db
+      .select()
+      .from(passwordResetTokens)
+      .where(and(
+        eq(passwordResetTokens.userId, user.id),
+        isNull(passwordResetTokens.usedAt),
+        gt(passwordResetTokens.expiresAt, new Date()),
+      ))
+      .orderBy(desc(passwordResetTokens.id))
+      .limit(1);
+    if (!active || active.attempts >= MAX_ATTEMPTS) {
+      if (active) await db.update(passwordResetTokens).set({ usedAt: new Date() }).where(eq(passwordResetTokens.id, active.id));
+      throw invalid();
+    }
+
     const tokenHash = crypto.createHash('sha256').update(code).digest('hex');
-    const [row] = user
-      ? await db
-          .select()
-          .from(passwordResetTokens)
-          .where(and(
-            eq(passwordResetTokens.userId, user.id),
-            eq(passwordResetTokens.tokenHash, tokenHash),
-            isNull(passwordResetTokens.usedAt),
-            gt(passwordResetTokens.expiresAt, new Date()),
-          ))
-          .limit(1)
-      : [];
-    if (!user || !row) throw badRequest('That code is invalid or has expired.');
-    // A user deactivated after requesting a code must not be able to complete a
-    // reset — same generic message so it doesn't reveal account state.
-    if (!user.isActive) throw badRequest('That code is invalid or has expired.');
+    if (tokenHash !== active.tokenHash) {
+      const attempts = active.attempts + 1;
+      await db.update(passwordResetTokens)
+        .set({ attempts, ...(attempts >= MAX_ATTEMPTS ? { usedAt: new Date() } : {}) })
+        .where(eq(passwordResetTokens.id, active.id));
+      throw invalid();
+    }
 
     await db.update(users).set({ passwordHash: await hashPassword(password), updatedAt: new Date() }).where(eq(users.id, user.id));
-    await db.update(passwordResetTokens).set({ usedAt: new Date() }).where(eq(passwordResetTokens.id, row.id));
+    await db.update(passwordResetTokens).set({ usedAt: new Date() }).where(eq(passwordResetTokens.id, active.id));
     await db.update(refreshTokens).set({ revokedAt: new Date() }).where(and(eq(refreshTokens.userId, user.id), isNull(refreshTokens.revokedAt)));
 
     res.json({ ok: true });

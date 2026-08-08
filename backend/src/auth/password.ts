@@ -11,3 +11,13 @@ export const verifyPassword = async (hash: string | null | undefined, plain: str
     return false;
   }
 };
+
+// Burn an equivalent Argon2 verify when there is no real hash to check, so
+// login timing doesn't reveal whether an account exists (user enumeration).
+let dummyHash: string | null = null;
+export const equalizeVerify = async (plain: string): Promise<void> => {
+  try {
+    if (!dummyHash) dummyHash = await hashPassword('argon2-timing-equalizer');
+    await argon2.verify(dummyHash, plain);
+  } catch { /* ignore — this call only exists to spend comparable time */ }
+};
