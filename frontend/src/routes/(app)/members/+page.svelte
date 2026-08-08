@@ -1,8 +1,10 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { api } from '$lib/api.js';
-  import { t, locale, tr } from '$lib/i18n.js';
+  import { t, locale, tr, displayName } from '$lib/i18n.js';
+  import { nameOrder } from '$lib/stores/prefs.js';
   import { can } from '$lib/stores/auth.js';
+  import FilterBar from '$lib/components/FilterBar.svelte';
 
   interface Person {
     id: number;
@@ -17,13 +19,31 @@
   }
   interface Meta { page: number; limit: number; total: number; pages: number }
 
+  const MONTHS = [
+    { v: 1, en: 'January', ar: 'يناير' }, { v: 2, en: 'February', ar: 'فبراير' },
+    { v: 3, en: 'March', ar: 'مارس' }, { v: 4, en: 'April', ar: 'أبريل' },
+    { v: 5, en: 'May', ar: 'مايو' }, { v: 6, en: 'June', ar: 'يونيو' },
+    { v: 7, en: 'July', ar: 'يوليو' }, { v: 8, en: 'August', ar: 'أغسطس' },
+    { v: 9, en: 'September', ar: 'سبتمبر' }, { v: 10, en: 'October', ar: 'أكتوبر' },
+    { v: 11, en: 'November', ar: 'نوفمبر' }, { v: 12, en: 'December', ar: 'ديسمبر' },
+  ];
+
+  // Empty string = filter off. Kept in one object so "active count" + clear are simple.
+  const EMPTY = {
+    status: '', ageGroup: '', birthdayMonth: '', anniversaryMonth: '',
+    ministryId: '', optedIn: '', hasPhone: '', inactiveWeeks: '', missingContact: '',
+  };
+  let f = $state({ ...EMPTY });
+  const activeCount = $derived(Object.values(f).filter((v) => v !== '').length);
+
   let rows = $state<Person[]>([]);
   let meta = $state<Meta>({ page: 1, limit: 25, total: 0, pages: 1 });
   let search = $state('');
   let page = $state(1);
   let loading = $state(true);
-  let reviewOnly = $state(false); // show only self-registered people awaiting review
+  let reviewOnly = $state(false);
   let pendingCount = $state(0);
+  let ministries = $state<{ id: number; name: Record<string, string> }[]>([]);
   let timer: ReturnType<typeof setTimeout>;
 
   async function load() {
@@ -32,6 +52,7 @@
       const q = new URLSearchParams({ page: String(page), limit: '25' });
       if (search.trim()) q.set('search', search.trim());
       if (reviewOnly) q.set('review', 'pending');
+      for (const [k, v] of Object.entries(f)) if (v !== '') q.set(k, String(v));
       const r = await api<{ data: Person[]; meta: Meta }>(`/people?${q}`);
       rows = r.data;
       meta = r.meta;
@@ -40,31 +61,26 @@
     }
   }
 
-  // Count of people who self-registered and haven't been vetted yet (for the badge).
   async function loadPendingCount() {
-    try {
-      const r = await api<{ meta: Meta }>(`/people?review=pending&limit=1`);
-      pendingCount = r.meta.total;
-    } catch { pendingCount = 0; }
+    try { pendingCount = (await api<{ meta: Meta }>(`/people?review=pending&limit=1`)).meta.total; }
+    catch { pendingCount = 0; }
   }
 
-  function onSearch() {
-    clearTimeout(timer);
-    timer = setTimeout(() => { page = 1; load(); }, 300);
-  }
-
-  function toggleReview() {
-    reviewOnly = !reviewOnly;
-    page = 1;
-    load();
-  }
+  function onSearch() { clearTimeout(timer); timer = setTimeout(() => { page = 1; load(); }, 300); }
+  function applyFilters() { page = 1; load(); }
+  function clearFilters() { f = { ...EMPTY }; page = 1; load(); }
+  function toggleReview() { reviewOnly = !reviewOnly; page = 1; load(); }
 
   async function markReviewed(p: Person) {
     await api(`/people/${p.id}/review`, { method: 'POST', body: JSON.stringify({}) });
     await Promise.all([load(), loadPendingCount()]);
   }
 
-  onMount(() => { load(); loadPendingCount(); });
+  onMount(async () => {
+    load();
+    loadPendingCount();
+    try { ministries = (await api<{ data: any[] }>('/ministries')).data; } catch { /* optional */ }
+  });
 </script>
 
 <div class="mb-6 flex items-center justify-between gap-3">
@@ -87,12 +103,88 @@
   </button>
 {/if}
 
-<div class="mb-4 flex items-center gap-3">
+<div class="mb-3 flex flex-wrap items-center gap-3">
   <input class="input max-w-xs" placeholder={$t('common.search')} bind:value={search} oninput={onSearch} />
-  <button class="btn-ghost text-sm {reviewOnly ? 'ring-1 ring-amber-400 text-amber-700 dark:text-amber-300' : ''}" onclick={toggleReview}>
+  <button class="btn-ghost text-sm {reviewOnly ? 'text-amber-700 ring-1 ring-amber-400 dark:text-amber-300' : ''}" onclick={toggleReview}>
     {reviewOnly ? tr({ en: '✓ Needs review', ar: '✓ يحتاج مراجعة' }, $locale) : tr({ en: 'Needs review', ar: 'يحتاج مراجعة' }, $locale)}
   </button>
+  <div class="ms-auto flex items-center gap-2 text-sm text-slate-500">
+    <span>{tr({ en: 'Name', ar: 'الاسم' }, $locale)}:</span>
+    <select class="input w-auto py-1 text-sm" bind:value={$nameOrder}>
+      <option value="given-first">{tr({ en: 'First Last', ar: 'الأول الأخير' }, $locale)}</option>
+      <option value="family-first">{tr({ en: 'Last First', ar: 'الأخير الأول' }, $locale)}</option>
+    </select>
+  </div>
 </div>
+
+<FilterBar active={activeCount} onclear={clearFilters}>
+  <label class="text-sm">
+    <span class="mb-1 block text-slate-500">{tr({ en: 'Status', ar: 'الحالة' }, $locale)}</span>
+    <select class="input w-40" bind:value={f.status} onchange={applyFilters}>
+      <option value="">{tr({ en: 'Any', ar: 'الكل' }, $locale)}</option>
+      <option value="visitor">{tr({ en: 'Visitor', ar: 'زائر' }, $locale)}</option>
+      <option value="regular">{tr({ en: 'Regular', ar: 'منتظم' }, $locale)}</option>
+      <option value="member">{tr({ en: 'Member', ar: 'عضو' }, $locale)}</option>
+      <option value="inactive">{tr({ en: 'Inactive', ar: 'غير نشط' }, $locale)}</option>
+    </select>
+  </label>
+  <label class="text-sm">
+    <span class="mb-1 block text-slate-500">{tr({ en: 'Age group', ar: 'الفئة العمرية' }, $locale)}</span>
+    <select class="input w-36" bind:value={f.ageGroup} onchange={applyFilters}>
+      <option value="">{tr({ en: 'Any', ar: 'الكل' }, $locale)}</option>
+      <option value="child">{tr({ en: 'Children (<13)', ar: 'أطفال (<13)' }, $locale)}</option>
+      <option value="youth">{tr({ en: 'Youth (13–17)', ar: 'شباب (13–17)' }, $locale)}</option>
+      <option value="adult">{tr({ en: 'Adults (18+)', ar: 'بالغون (18+)' }, $locale)}</option>
+    </select>
+  </label>
+  <label class="text-sm">
+    <span class="mb-1 block text-slate-500">🎂 {tr({ en: 'Birthday month', ar: 'شهر الميلاد' }, $locale)}</span>
+    <select class="input w-36" bind:value={f.birthdayMonth} onchange={applyFilters}>
+      <option value="">{tr({ en: 'Any', ar: 'الكل' }, $locale)}</option>
+      {#each MONTHS as m}<option value={m.v}>{tr({ en: m.en, ar: m.ar }, $locale)}</option>{/each}
+    </select>
+  </label>
+  <label class="text-sm">
+    <span class="mb-1 block text-slate-500">🎉 {tr({ en: 'Joined month', ar: 'شهر الانضمام' }, $locale)}</span>
+    <select class="input w-36" bind:value={f.anniversaryMonth} onchange={applyFilters}>
+      <option value="">{tr({ en: 'Any', ar: 'الكل' }, $locale)}</option>
+      {#each MONTHS as m}<option value={m.v}>{tr({ en: m.en, ar: m.ar }, $locale)}</option>{/each}
+    </select>
+  </label>
+  <label class="text-sm">
+    <span class="mb-1 block text-slate-500">{tr({ en: 'Ministry', ar: 'الخدمة' }, $locale)}</span>
+    <select class="input w-40" bind:value={f.ministryId} onchange={applyFilters}>
+      <option value="">{tr({ en: 'Any', ar: 'الكل' }, $locale)}</option>
+      {#each ministries as m}<option value={m.id}>{tr(m.name, $locale)}</option>{/each}
+    </select>
+  </label>
+  <label class="text-sm">
+    <span class="mb-1 block text-slate-500">{tr({ en: 'Opted in to', ar: 'موافق على' }, $locale)}</span>
+    <select class="input w-36" bind:value={f.optedIn} onchange={applyFilters}>
+      <option value="">{tr({ en: 'Any', ar: 'الكل' }, $locale)}</option>
+      <option value="email">{tr({ en: 'Email', ar: 'البريد' }, $locale)}</option>
+      <option value="sms">{tr({ en: 'SMS', ar: 'SMS' }, $locale)}</option>
+      <option value="whatsapp">{tr({ en: 'WhatsApp', ar: 'واتساب' }, $locale)}</option>
+    </select>
+  </label>
+  <label class="text-sm">
+    <span class="mb-1 block text-slate-500">{tr({ en: 'Not seen in', ar: 'لم يحضر منذ' }, $locale)}</span>
+    <select class="input w-40" bind:value={f.inactiveWeeks} onchange={applyFilters}>
+      <option value="">{tr({ en: 'Any', ar: 'الكل' }, $locale)}</option>
+      <option value="4">{tr({ en: '4+ weeks', ar: '4+ أسابيع' }, $locale)}</option>
+      <option value="8">{tr({ en: '8+ weeks', ar: '8+ أسابيع' }, $locale)}</option>
+      <option value="12">{tr({ en: '12+ weeks', ar: '12+ أسبوع' }, $locale)}</option>
+    </select>
+  </label>
+  <label class="flex items-center gap-2 pb-2 text-sm text-slate-600 dark:text-slate-300">
+    <input type="checkbox" checked={f.hasPhone === 'true'} onchange={(e) => { f.hasPhone = (e.currentTarget as HTMLInputElement).checked ? 'true' : ''; applyFilters(); }} />
+    {tr({ en: 'Has phone', ar: 'لديه هاتف' }, $locale)}
+  </label>
+  <label class="flex items-center gap-2 pb-2 text-sm text-slate-600 dark:text-slate-300">
+    <input type="checkbox" checked={f.missingContact === 'true'} onchange={(e) => { f.missingContact = (e.currentTarget as HTMLInputElement).checked ? 'true' : ''; applyFilters(); }} />
+    {tr({ en: 'Missing contact', ar: 'بدون بيانات تواصل' }, $locale)}
+  </label>
+</FilterBar>
 
 <div class="card overflow-hidden">
   {#if loading}
@@ -115,7 +207,7 @@
           <tr class="border-b border-slate-100 last:border-0 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/50">
             <td class="p-3">
               <a class="font-medium text-primary-700 hover:underline dark:text-primary-300" href="/members/{p.id}">
-                {tr(p.givenName, $locale)} {tr(p.familyName, $locale)}
+                {displayName(p, $nameOrder, $locale)}
               </a>
               {#if p.selfRegistered && !p.reviewedAt}
                 <span class="ms-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">{tr({ en: 'new', ar: 'جديد' }, $locale)}</span>

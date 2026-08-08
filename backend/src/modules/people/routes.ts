@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { db } from '../../db/index.js';
-import { people, personServiceType, serviceTypes } from '../../db/schema.js';
+import { people, personServiceType, serviceTypes, attendanceRecords } from '../../db/schema.js';
 import { asyncHandler } from '../../http/asyncHandler.js';
 import { authenticate, requirePermission } from '../../middleware/auth.js';
 import { notFound } from '../../http/errors.js';
@@ -21,11 +21,13 @@ const upsertSchema = z.object({
   mobile: z.string().max(40).nullable().optional(),
   preferredLanguage: z.string().max(8).default('en'),
   dateOfBirth: z.string().nullable().optional(),
+  joinedOn: z.string().nullable().optional(),
   notes: z.string().nullable().optional(),
   isActive: z.boolean().default(true),
   emailOptOut: z.boolean().optional(),
   smsOptOut: z.boolean().optional(),
   whatsappOptOut: z.boolean().optional(),
+  customFields: z.record(z.string()).optional(),
 });
 
 const listQuery = z.object({
@@ -35,6 +37,16 @@ const listQuery = z.object({
   status: z.enum(['visitor', 'regular', 'member', 'inactive']).optional(),
   // 'pending' → people who self-registered and haven't been vetted by staff yet.
   review: z.enum(['pending']).optional(),
+  // Pastor/servant filters (all optional, combinable).
+  ageGroup: z.enum(['child', 'youth', 'adult']).optional(),   // derived from DOB
+  birthdayMonth: z.coerce.number().int().min(1).max(12).optional(),
+  anniversaryMonth: z.coerce.number().int().min(1).max(12).optional(), // joined-on month
+  ministryId: z.coerce.number().int().positive().optional(),
+  hasEmail: z.enum(['true', 'false']).optional(),
+  hasPhone: z.enum(['true', 'false']).optional(),
+  optedIn: z.enum(['email', 'sms', 'whatsapp']).optional(),
+  missingContact: z.enum(['true']).optional(),
+  inactiveWeeks: z.coerce.number().int().min(1).max(104).optional(),
 });
 
 // GET /api/people — paginated, searchable across both locales of the name.
@@ -42,7 +54,8 @@ peopleRouter.get(
   '/',
   requirePermission('view person'),
   asyncHandler(async (req, res) => {
-    const { page, limit, search, status, review } = listQuery.parse(req.query);
+    const q = listQuery.parse(req.query);
+    const { page, limit, search, status, review } = q;
     const filters = [isNull(people.deletedAt)];
     if (status) filters.push(eq(people.membershipStatus, status));
     if (review === 'pending') filters.push(eq(people.selfRegistered, true), isNull(people.reviewedAt));
@@ -54,6 +67,24 @@ peopleRouter.get(
           OR ${people.email} ILIKE ${like} OR ${people.mobile} ILIKE ${like})`,
       );
     }
+    // Age bucket from date of birth (child <13, youth 13–17, adult ≥18).
+    if (q.ageGroup === 'child') filters.push(sql`${people.dateOfBirth} IS NOT NULL AND extract(year from age(${people.dateOfBirth})) < 13`);
+    if (q.ageGroup === 'youth') filters.push(sql`extract(year from age(${people.dateOfBirth})) BETWEEN 13 AND 17`);
+    if (q.ageGroup === 'adult') filters.push(sql`extract(year from age(${people.dateOfBirth})) >= 18`);
+    if (q.birthdayMonth) filters.push(sql`extract(month from ${people.dateOfBirth}) = ${q.birthdayMonth}`);
+    if (q.anniversaryMonth) filters.push(sql`extract(month from ${people.joinedOn}) = ${q.anniversaryMonth}`);
+    if (q.ministryId) filters.push(sql`EXISTS (SELECT 1 FROM ${personServiceType} pst WHERE pst.person_id = ${people.id} AND pst.service_type_id = ${q.ministryId})`);
+    if (q.hasEmail === 'true') filters.push(sql`${people.email} IS NOT NULL AND ${people.email} <> ''`);
+    if (q.hasEmail === 'false') filters.push(sql`(${people.email} IS NULL OR ${people.email} = '')`);
+    if (q.hasPhone === 'true') filters.push(sql`${people.mobile} IS NOT NULL AND ${people.mobile} <> ''`);
+    if (q.hasPhone === 'false') filters.push(sql`(${people.mobile} IS NULL OR ${people.mobile} = '')`);
+    if (q.missingContact === 'true') filters.push(sql`(${people.email} IS NULL OR ${people.email} = '') AND (${people.mobile} IS NULL OR ${people.mobile} = '')`);
+    // Opted-in on a channel = opt-out false AND the relevant contact present.
+    if (q.optedIn === 'email') filters.push(sql`${people.emailOptOut} = false AND ${people.email} IS NOT NULL AND ${people.email} <> ''`);
+    if (q.optedIn === 'sms') filters.push(sql`${people.smsOptOut} = false AND ${people.mobile} IS NOT NULL AND ${people.mobile} <> ''`);
+    if (q.optedIn === 'whatsapp') filters.push(sql`${people.whatsappOptOut} = false AND ${people.mobile} IS NOT NULL AND ${people.mobile} <> ''`);
+    // No attendance in the last N weeks (follow-up list).
+    if (q.inactiveWeeks) filters.push(sql`NOT EXISTS (SELECT 1 FROM ${attendanceRecords} ar WHERE ar.person_id = ${people.id} AND ar.checked_in_at >= now() - (${q.inactiveWeeks} * interval '1 week'))`);
     const where = and(...filters);
     const [{ count }] = await db.select({ count: sql<number>`count(*)::int` }).from(people).where(where);
     const rows = await db

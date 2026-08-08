@@ -16,6 +16,8 @@
     email: initial?.email ?? '',
     mobile: initial?.mobile ?? '',
     preferredLanguage: initial?.preferredLanguage ?? 'en',
+    dateOfBirth: initial?.dateOfBirth ?? '',
+    joinedOn: initial?.joinedOn ?? '',
     isActive: initial?.isActive ?? true,
     emailOptOut: initial?.emailOptOut ?? false,
     smsOptOut: initial?.smsOptOut ?? false,
@@ -70,6 +72,8 @@
         householdId: form.householdId === '' ? null : Number(form.householdId),
         email: form.email || null,
         mobile: form.mobile || null,
+        dateOfBirth: form.dateOfBirth || null,
+        joinedOn: form.joinedOn || null,
       };
       if (id) await api(`/people/${id}`, { method: 'PUT', body: JSON.stringify(body) });
       else await api('/people', { method: 'POST', body: JSON.stringify(body) });
@@ -112,6 +116,14 @@
     <label class="block space-y-1">
       <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Mobile', ar: 'الجوال' }, $locale)}</span>
       <input class="input force-ltr" bind:value={form.mobile} />
+    </label>
+    <label class="block space-y-1">
+      <span class="text-sm text-slate-600 dark:text-slate-300">🎂 {tr({ en: 'Date of birth', ar: 'تاريخ الميلاد' }, $locale)}</span>
+      <input class="input force-ltr" type="date" bind:value={form.dateOfBirth} />
+    </label>
+    <label class="block space-y-1">
+      <span class="text-sm text-slate-600 dark:text-slate-300">🎉 {tr({ en: 'Joined the church', ar: 'تاريخ الانضمام' }, $locale)}</span>
+      <input class="input force-ltr" type="date" bind:value={form.joinedOn} />
     </label>
     <div class="block space-y-1 sm:col-span-2">
       <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Family', ar: 'العائلة' }, $locale)}</span>

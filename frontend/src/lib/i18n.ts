@@ -148,3 +148,15 @@ export function tr(value: Record<string, string> | null | undefined, l: Locale):
   if (!value) return '';
   return value[l] || value.en || Object.values(value)[0] || '';
 }
+
+// Format a person's name in the chosen order. Both parts are always kept; only
+// the display order changes (a per-device preference).
+export function displayName(
+  p: { givenName?: Record<string, string> | null; familyName?: Record<string, string> | null },
+  order: 'given-first' | 'family-first',
+  l: Locale,
+): string {
+  const given = tr(p.givenName, l);
+  const family = tr(p.familyName, l);
+  return (order === 'family-first' ? `${family} ${given}` : `${given} ${family}`).trim();
+}

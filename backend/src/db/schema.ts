@@ -183,6 +183,12 @@ export const people = pgTable('people', {
   mobile: varchar('mobile', { length: 40 }),
   preferredLanguage: varchar('preferred_language', { length: 8 }).notNull().default('en'),
   dateOfBirth: date('date_of_birth'),
+  // When this person joined the church (for membership-anniversary celebrations).
+  // First-visit is derived from the earliest attendance record.
+  joinedOn: date('joined_on'),
+  // Extra fields captured by admin-built check-in forms (Phase 3) — keyed by the
+  // form field's key. Kept out of first-class columns so forms stay flexible.
+  customFields: jsonb('custom_fields').$type<Record<string, string>>().notNull().default({}),
   photoPath: text('photo_path'),
   qrToken: uuid('qr_token').notNull().defaultRandom(),
   // Messaging consent (opt-out per channel; lawful sending suppresses these).

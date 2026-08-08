@@ -11,5 +11,5 @@
   onMount(async () => { family = (await api<{ data: any }>(`/families/${id}`)).data; });
 </script>
 
-<PageHeader title={tr({ en: 'Edit family', ar: 'تعديل العائلة' }, $locale)} />
+<PageHeader title={tr({ en: 'Edit family', ar: 'تعديل العائلة' }, $locale)} back="/families" />
 {#if family}<FamilyForm initial={family} {id} />{:else}<p class="text-slate-400">{$t('common.loading')}</p>{/if}

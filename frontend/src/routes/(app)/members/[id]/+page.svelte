@@ -15,7 +15,7 @@
   });
 </script>
 
-<PageHeader title={tr({ en: 'Edit member', ar: 'تعديل العضو' }, $locale)} />
+<PageHeader title={tr({ en: 'Edit member', ar: 'تعديل العضو' }, $locale)} back="/members" />
 {#if person}
   <div class="space-y-6">
     <MemberForm initial={person} {id} />
