@@ -4,6 +4,7 @@
   import { t, locale, tr, LOCALES, arabicEnabled } from '$lib/i18n.js';
   import { hasRole } from '$lib/stores/auth.js';
   import { theme, fontScale, boldText } from '$lib/stores/appearance.js';
+  import { applyBrandColor } from '$lib/stores/brand.js';
   import PageHeader from '$lib/components/PageHeader.svelte';
 
   const SIZES = [
@@ -67,9 +68,12 @@
         email: form.email, phone: form.phone, addressLine1: form.addressLine1, city: form.city,
         region: form.region, postalCode: form.postalCode, country: form.country,
         logoPath: form.logoPath ?? null, arabicEnabled: !!form.arabicEnabled,
+        brandColor: form.brandColor || null,
         dashboard: { widgets: form.dashboard?.widgets ?? ALL_WIDGET_KEYS },
       }) });
       saved = true;
+      // Reflect the brand colour app-wide immediately.
+      applyBrandColor(form.brandColor);
       // Reflect the Arabic toggle app-wide so every form/picker updates at once.
       arabicEnabled.set(!!form.arabicEnabled);
       // If Arabic was just disabled, drop back to English immediately.
@@ -142,6 +146,17 @@
           <input class="input" dir={l.dir} bind:value={form.name[l.code]} />
         </label>
       {/each}
+
+      <!-- Brand colour: drives buttons, links, branded templates, and exports. -->
+      <div class="space-y-1">
+        <span class="block text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Brand colour', ar: 'لون العلامة' }, $locale)}</span>
+        <div class="flex items-center gap-3">
+          <input type="color" class="h-9 w-12 cursor-pointer rounded border border-slate-300 bg-white dark:border-slate-700" value={form.brandColor || '#3b3f8c'} oninput={(e) => { form.brandColor = (e.currentTarget as HTMLInputElement).value; applyBrandColor(form.brandColor); }} />
+          <input class="input force-ltr w-32" placeholder="#3b3f8c" bind:value={form.brandColor} oninput={() => applyBrandColor(form.brandColor)} />
+          {#if form.brandColor}<button type="button" class="text-xs text-rose-600 hover:underline" onclick={() => { form.brandColor = null; applyBrandColor(null); }}>{tr({ en: 'Reset', ar: 'إعادة' }, $locale)}</button>{/if}
+        </div>
+        <p class="text-xs text-slate-400">{tr({ en: 'Changes preview instantly. Save to apply for everyone.', ar: 'تظهر المعاينة فوراً. احفظ لتطبيقها على الجميع.' }, $locale)}</p>
+      </div>
     </div>
 
     <div class="card space-y-4 p-6">

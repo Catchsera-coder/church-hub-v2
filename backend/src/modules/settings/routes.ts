@@ -37,6 +37,8 @@ const updateSchema = z.object({
   timezone: z.string().max(64).optional(),
   locale: z.string().max(8).optional(),
   logoPath: z.string().nullable().optional(),
+  // Hex colour like #7c3aed or #7c3aedff; null clears it (fall back to palette).
+  brandColor: z.string().regex(/^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/).nullable().optional(),
   addressLine1: z.string().nullable().optional(),
   addressLine2: z.string().nullable().optional(),
   city: z.string().nullable().optional(),
@@ -46,9 +48,11 @@ const updateSchema = z.object({
   email: z.string().email().nullable().optional(),
   phone: z.string().nullable().optional(),
   arabicEnabled: z.boolean().optional(),
-  // #17: which dashboard widgets are enabled, in display order.
+  // #17: which dashboard widgets are enabled, in display order. Accept any widget
+  // key (the frontend filters to its known catalog) so new cards don't need a
+  // schema change each release.
   dashboard: z.object({
-    widgets: z.array(z.enum(['members', 'families', 'attendance', 'giving'])).max(10),
+    widgets: z.array(z.string().max(40)).max(30),
   }).optional(),
 });
 

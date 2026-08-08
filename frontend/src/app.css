@@ -3,6 +3,16 @@
 @tailwind utilities;
 
 @layer base {
+  /* Brand accent. Defaults to the built-in palette (primary-600); when a church
+     sets a brand colour in Settings, the layout overrides --brand at runtime and
+     the hover/ring/soft shades derive from it. */
+  :root {
+    --brand: #3b3f8c;
+    --brand-hover: color-mix(in srgb, var(--brand) 85%, black);
+    --brand-ring: var(--brand);
+    --brand-contrast: #ffffff;
+  }
+
   /* Arabic / RTL gets a proper Arabic face and a touch more line-height. */
   [dir='rtl'] {
     font-family: theme('fontFamily.arabic');
@@ -13,6 +23,8 @@
     direction: ltr;
     unicode-bidi: isolate;
   }
+  /* Directional glyphs (back chevrons, etc.) mirror in RTL. */
+  [dir='rtl'] .rtl-flip { transform: scaleX(-1); }
   h1, h2, h3, .font-display {
     font-family: theme('fontFamily.display');
   }
@@ -32,8 +44,11 @@
     @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition;
   }
   .btn-primary {
-    @apply btn bg-primary-600 text-white hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500;
+    @apply btn text-white focus:outline-none;
+    background-color: var(--brand);
   }
+  .btn-primary:hover { background-color: var(--brand-hover); }
+  .btn-primary:focus-visible { box-shadow: 0 0 0 2px var(--brand-ring); }
   .btn-ghost {
     @apply btn text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800;
   }
@@ -41,12 +56,18 @@
     @apply rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900;
   }
   .input {
-    @apply w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500 dark:border-slate-700 dark:bg-slate-900;
+    @apply w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none dark:border-slate-700 dark:bg-slate-900;
   }
+  .input:focus { border-color: var(--brand); box-shadow: 0 0 0 1px var(--brand); }
   .nav-link {
     @apply flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white;
   }
   .nav-link-active {
-    @apply bg-primary-50 text-primary-700 dark:bg-primary-900/40 dark:text-primary-200;
+    background-color: color-mix(in srgb, var(--brand) 12%, transparent);
+    color: var(--brand);
+  }
+  .dark .nav-link-active {
+    background-color: color-mix(in srgb, var(--brand) 28%, transparent);
+    color: color-mix(in srgb, var(--brand) 45%, white);
   }
 }

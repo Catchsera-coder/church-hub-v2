@@ -2,9 +2,12 @@
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
   import { t, locale, tr } from '$lib/i18n.js';
+  import { applyBrandColor } from '$lib/stores/brand.js';
 
   const token = $page.params.token;
   const base = `/api/public/checkin/${token}`;
+
+  let logo = $state<string | null>(null);
 
   type I18n = Record<string, string>;
   type HouseholdMember = { id: number; name: string; here: boolean };
@@ -52,6 +55,12 @@
   const churchName = $derived(event?.church?.name ? tr(event.church.name, $locale) : '');
 
   onMount(async () => {
+    // Brand the public form with the church's logo + colour (from public settings).
+    try {
+      const s = await (await fetch('/api/settings')).json();
+      logo = s.data?.logoPath ?? null;
+      applyBrandColor(s.data?.brandColor);
+    } catch { /* branding is best-effort */ }
     try {
       const res = await fetch(base);
       if (!res.ok) { notActive = true; return; }
@@ -171,7 +180,8 @@
     {:else}
       <!-- Warm header -->
       <header class="mb-6 mt-2 text-center">
-        {#if churchName}<p class="text-sm font-medium uppercase tracking-wide text-primary-600 dark:text-primary-300">{churchName}</p>{/if}
+        {#if logo}<img src={logo} alt="" class="mx-auto mb-3 h-16 w-16 object-contain" />{/if}
+        {#if churchName}<p class="text-sm font-medium uppercase tracking-wide" style="color: var(--brand)">{churchName}</p>{/if}
         <h1 class="mt-1 text-2xl font-bold text-slate-900 dark:text-white">{event ? tr(event.title, $locale) : ''}</h1>
         <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">{today}</p>
       </header>

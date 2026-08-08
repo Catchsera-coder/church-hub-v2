@@ -6,6 +6,8 @@
   import { auth, setSession, clearSession, isAuthed, can, hasRole } from '$lib/stores/auth.js';
   import { t, locale, tr, arabicEnabled } from '$lib/i18n.js';
   import { theme, toggleTheme } from '$lib/stores/appearance.js';
+  import { applyBrandColor } from '$lib/stores/brand.js';
+  import Icon from '$lib/components/Icon.svelte';
 
   let { children } = $props();
   let orgName = $state<Record<string, string> | null>(null);
@@ -17,43 +19,43 @@
     {
       key: 'group.congregation',
       items: [
-        { href: '/members', label: 'nav.members', perm: 'view person' },
-        { href: '/families', label: 'nav.families', perm: 'view household' },
+        { href: '/members', label: 'nav.members', icon: 'members', perm: 'view person' },
+        { href: '/families', label: 'nav.families', icon: 'families', perm: 'view household' },
       ],
     },
     {
       key: 'group.gatherings',
       items: [
-        { href: '/attendance', label: 'nav.attendance', perm: 'view attendance' },
-        { href: '/checkin', label: 'nav.checkin', perm: 'create attendance' },
-        { href: '/ministries', label: 'nav.ministries', perm: 'view ministry' },
+        { href: '/attendance', label: 'nav.attendance', icon: 'attendance', perm: 'view attendance' },
+        { href: '/checkin', label: 'nav.checkin', icon: 'checkin', perm: 'create attendance' },
+        { href: '/ministries', label: 'nav.ministries', icon: 'ministries', perm: 'view ministry' },
       ],
     },
     {
       key: 'group.giving',
       items: [
-        { href: '/contributions', label: 'nav.contributions', perm: 'view contribution' },
-        { href: '/counting', label: 'nav.counting', perm: 'view batch' },
-        { href: '/funds', label: 'nav.funds', perm: 'view fund' },
+        { href: '/contributions', label: 'nav.contributions', icon: 'contributions', perm: 'view contribution' },
+        { href: '/counting', label: 'nav.counting', icon: 'counting', perm: 'view batch' },
+        { href: '/funds', label: 'nav.funds', icon: 'funds', perm: 'view fund' },
       ],
     },
     {
       key: 'group.teaching',
       items: [
-        { href: '/sermons', label: 'nav.sermons', perm: 'view sermon' },
-        { href: '/events', label: 'nav.events', perm: 'view event' },
+        { href: '/sermons', label: 'nav.sermons', icon: 'sermons', perm: 'view sermon' },
+        { href: '/events', label: 'nav.events', icon: 'events', perm: 'view event' },
       ],
     },
     {
       key: 'group.communication',
-      items: [{ href: '/messages', label: 'nav.messages', perm: 'view message' }],
+      items: [{ href: '/messages', label: 'nav.messages', icon: 'messages', perm: 'view message' }],
     },
     {
       key: 'group.admin',
       items: [
-        { href: '/team', label: 'nav.team', perm: 'view user' },
-        { href: '/activity', label: 'nav.activity', role: 'Admin' },
-        { href: '/settings', label: 'nav.settings', role: 'Admin' },
+        { href: '/team', label: 'nav.team', icon: 'team', perm: 'view user' },
+        { href: '/activity', label: 'nav.activity', icon: 'activity', role: 'Admin' },
+        { href: '/settings', label: 'nav.settings', icon: 'settings', role: 'Admin' },
       ],
     },
   ];
@@ -69,9 +71,10 @@
     try {
       const me = await api<{ user: any; roles: string[]; perms: string[] }>('/auth/me');
       setSession({ user: me.user, roles: me.roles, perms: me.perms });
-      const s = await api<{ data: { name: Record<string, string>; logoPath?: string | null; arabicEnabled?: boolean } }>('/settings');
+      const s = await api<{ data: { name: Record<string, string>; logoPath?: string | null; arabicEnabled?: boolean; brandColor?: string | null } }>('/settings');
       orgName = s.data.name;
       logo = s.data.logoPath ?? null;
+      applyBrandColor(s.data.brandColor);
       // Default is English; only allow Arabic when the church has enabled it.
       arabicEnabled.set(!!s.data.arabicEnabled);
       if (!s.data.arabicEnabled && $locale !== 'en') locale.set('en');
@@ -110,12 +113,14 @@
         {#if logo}
           <img src={logo} alt="" class="h-8 w-8 object-contain" />
         {:else}
-          <div class="grid h-8 w-8 place-items-center rounded-lg bg-primary-600 font-display text-white">✦</div>
+          <div class="grid h-8 w-8 place-items-center rounded-lg font-display text-white" style="background-color: var(--brand)">✦</div>
         {/if}
         <span class="font-display text-lg font-semibold">{orgName ? tr(orgName, $locale) : $t('app.name')}</span>
       </div>
       <nav class="space-y-5">
-        <a href="/dashboard" class="nav-link {isActive('/dashboard') ? 'nav-link-active' : ''}" onclick={closeSidebar}>{$t('nav.dashboard')}</a>
+        <a href="/dashboard" class="nav-link {isActive('/dashboard') ? 'nav-link-active' : ''}" onclick={closeSidebar}>
+          <Icon name="dashboard" />{$t('nav.dashboard')}
+        </a>
         {#each groups as g}
           {@const items = g.items.filter(visible)}
           {#if items.length}
@@ -123,7 +128,9 @@
               <p class="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">{$t(g.key)}</p>
               <div class="space-y-1">
                 {#each items as item}
-                  <a href={item.href} class="nav-link {isActive(item.href) ? 'nav-link-active' : ''}" onclick={closeSidebar}>{$t(item.label)}</a>
+                  <a href={item.href} class="nav-link {isActive(item.href) ? 'nav-link-active' : ''}" onclick={closeSidebar}>
+                    <Icon name={item.icon} />{$t(item.label)}
+                  </a>
                 {/each}
               </div>
             </div>

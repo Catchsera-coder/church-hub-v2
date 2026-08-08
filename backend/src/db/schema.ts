@@ -70,6 +70,10 @@ export const organisations = pgTable('organisations', {
   timezone: varchar('timezone', { length: 64 }).notNull().default('UTC'),
   locale: varchar('locale', { length: 8 }).notNull().default('en'),
   logoPath: text('logo_path'),
+  // Primary brand colour (hex, e.g. #7c3aed). Drives the app accent, branded
+  // email templates, the public check-in form, and export/print headers. Null =
+  // fall back to the built-in palette.
+  brandColor: varchar('brand_color', { length: 9 }),
   addressLine1: text('address_line1'),
   addressLine2: text('address_line2'),
   city: varchar('city', { length: 120 }),
