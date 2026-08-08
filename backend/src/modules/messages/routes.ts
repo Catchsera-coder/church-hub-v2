@@ -9,6 +9,7 @@ import { authenticate, requirePermission } from '../../middleware/auth.js';
 import { badRequest, notFound } from '../../http/errors.js';
 import { logActivity } from '../activity/service.js';
 import { resolveMessaging, sendMessage } from './delivery.js';
+import { buildContext, renderText, brandedEmailHtml } from './render.js';
 import { resolveAi, draftMessages, type AiChannel } from './ai.js';
 import { currentOrg } from '../settings/routes.js';
 import { config } from '../../config.js';
@@ -118,26 +119,36 @@ messagesRouter.post('/:id/send', sendLimiter, requirePermission('update message'
     : c.channel === 'whatsapp' ? people.whatsappOptOut
     : people.smsOptOut;
   const audience = await db
-    .select({ id: people.id, contact: contactCol, lang: people.preferredLanguage, unsubToken: people.unsubToken })
+    .select({
+      id: people.id, contact: contactCol, lang: people.preferredLanguage, unsubToken: people.unsubToken,
+      givenName: people.givenName, familyName: people.familyName, email: people.email, mobile: people.mobile,
+    })
     .from(people)
     .where(and(eq(people.isActive, true), isNull(people.deletedAt), isNotNull(contactCol), ne(contactCol, ''), eq(optOutCol, false)));
 
   await db.update(messageCampaigns).set({ status: 'sending', updatedAt: new Date() }).where(eq(messageCampaigns.id, id));
 
   // Resolve this church's messaging config once (Settings-tab values over env).
-  const messaging = resolveMessaging((await currentOrg()).messaging);
+  const org = await currentOrg();
+  const messaging = resolveMessaging(org.messaging);
   const appUrl = config.PUBLIC_APP_URL?.replace(/\/+$/, '');
+  const now = new Date();
 
   let sent = 0;
   for (const p of audience) {
     const [rec] = await db.insert(messageRecipients).values({ messageCampaignId: id, personId: p.id }).onConflictDoNothing().returning();
     if (!rec) continue;
-    let body = c.body[p.lang] ?? c.body.en ?? '';
-    // Email footer with a one-click unsubscribe link (CAN-SPAM / lawful sending).
-    if (c.channel === 'email' && appUrl) {
-      body += `\n\n—\nTo stop receiving these emails, unsubscribe: ${appUrl}/unsubscribe/${p.unsubToken}`;
-    }
-    const ok = await sendMessage(messaging, c.channel, p.contact as string, c.subject[p.lang] ?? c.subject.en ?? '', body);
+    const lang = p.lang || 'en';
+    // Personalise: merge fields ({{firstName}} etc.), then brand HTML for email.
+    const ctx = buildContext(p, org, now, lang);
+    const subject = renderText(c.subject[lang] ?? c.subject.en ?? '', ctx);
+    const body = renderText(c.body[lang] ?? c.body.en ?? '', ctx);
+    const footer = c.channel === 'email' && appUrl
+      ? `To stop receiving these emails, unsubscribe: ${appUrl}/unsubscribe/${p.unsubToken}`
+      : '';
+    const html = c.channel === 'email' ? brandedEmailHtml(body, org, { footer, lang }) : undefined;
+    const plain = footer ? `${body}\n\n—\n${footer}` : body;
+    const ok = await sendMessage(messaging, c.channel, p.contact as string, subject, plain, html);
     await db.update(messageRecipients).set({ status: ok ? 'sent' : 'failed' }).where(eq(messageRecipients.id, rec.id));
     if (ok) sent++;
   }

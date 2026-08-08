@@ -16,6 +16,9 @@
   });
   let error = $state('');
   let saving = $state(false);
+  // Merge tokens the backend fills per person at send time (kept as a plain
+  // string so the literal braces render, not Svelte expressions).
+  const MERGE = '{{firstName}} · {{lastName}} · {{fullName}} · {{churchName}} · {{date}}';
 
   async function submit(e: Event) {
     e.preventDefault();
@@ -46,6 +49,12 @@
       </label>
     </div>
 
+    <div class="rounded-lg bg-slate-50 p-3 text-xs text-slate-600 dark:bg-slate-800/50 dark:text-slate-300">
+      <p class="mb-1 font-medium text-slate-700 dark:text-slate-200">✨ {tr({ en: 'Personalise with merge fields', ar: 'التخصيص بحقول الدمج' }, $locale)}</p>
+      <p>{tr({ en: 'Type any of these — each is filled in per person when the message is sent:', ar: 'اكتب أياً منها — يُملأ لكل شخص عند إرسال الرسالة:' }, $locale)}</p>
+      <p class="mt-1 font-mono text-slate-700 dark:text-slate-200">{MERGE}</p>
+    </div>
+
     {#if form.channel === 'email'}
       {#each $enabledLocales as l}
         <label class="block space-y-1">
@@ -56,7 +65,7 @@
       {#each $enabledLocales as l}
         <label class="block space-y-1">
           <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Branded header', ar: 'ترويسة' }, $locale)} ({l.native})</span>
-          <textarea class="input" dir={l.dir} rows="2" bind:value={form.header[l.code]} placeholder={tr({ en: 'e.g. Grace and peace to you from {church}', ar: 'مثال: نعمة لكم وسلام من {church}' }, $locale)}></textarea>
+          <textarea class="input" dir={l.dir} rows="2" bind:value={form.header[l.code]} placeholder={tr({ en: 'e.g. Grace and peace to you from {{churchName}}', ar: 'مثال: نعمة لكم وسلام من {{churchName}}' }, $locale)}></textarea>
         </label>
       {/each}
     {/if}
@@ -72,7 +81,7 @@
       {#each $enabledLocales as l}
         <label class="block space-y-1">
           <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Branded footer', ar: 'تذييل' }, $locale)} ({l.native})</span>
-          <textarea class="input" dir={l.dir} rows="2" bind:value={form.footer[l.code]} placeholder={tr({ en: 'e.g. In Christ, the {church} team', ar: 'مثال: في المسيح، فريق {church}' }, $locale)}></textarea>
+          <textarea class="input" dir={l.dir} rows="2" bind:value={form.footer[l.code]} placeholder={tr({ en: 'e.g. In Christ, the {{churchName}} team', ar: 'مثال: في المسيح، فريق {{churchName}}' }, $locale)}></textarea>
         </label>
       {/each}
     {/if}

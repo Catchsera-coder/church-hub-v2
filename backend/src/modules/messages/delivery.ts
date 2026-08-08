@@ -82,11 +82,12 @@ export async function sendMessage(
   to: string,
   subject: string,
   body: string,
+  html?: string, // optional branded HTML for email (plain `body` is the fallback)
 ): Promise<boolean> {
   try {
     if (channel === 'email') {
-      if (m.emailProvider === 'sendgrid') return await sendEmailSendgrid(m, to, subject, body);
-      if (m.emailProvider === 'acs') return await sendEmailAcs(m, to, subject, body);
+      if (m.emailProvider === 'sendgrid') return await sendEmailSendgrid(m, to, subject, body, html);
+      if (m.emailProvider === 'acs') return await sendEmailAcs(m, to, subject, body, html);
     } else if (channel === 'whatsapp') {
       if (m.whatsappProvider === 'twilio') return await sendWhatsappTwilio(m, to, body);
     } else if (m.smsProvider === 'twilio') {
@@ -108,7 +109,11 @@ export async function sendMessage(
 }
 
 // --- Email: SendGrid ---------------------------------------------------------
-async function sendEmailSendgrid(m: ResolvedMessaging, to: string, subject: string, body: string): Promise<boolean> {
+async function sendEmailSendgrid(m: ResolvedMessaging, to: string, subject: string, body: string, html?: string): Promise<boolean> {
+  // SendGrid requires text/plain before text/html; include both when we have HTML.
+  const content = html
+    ? [{ type: 'text/plain', value: body }, { type: 'text/html', value: html }]
+    : [{ type: 'text/plain', value: body }];
   const res = await fetch('https://api.sendgrid.com/v3/mail/send', {
     method: 'POST',
     headers: { Authorization: `Bearer ${m.sendgridApiKey}`, 'Content-Type': 'application/json' },
@@ -116,7 +121,7 @@ async function sendEmailSendgrid(m: ResolvedMessaging, to: string, subject: stri
       personalizations: [{ to: [{ email: to }] }],
       from: { email: m.mailFrom },
       subject: subject || '(no subject)',
-      content: [{ type: 'text/plain', value: body }],
+      content,
     }),
   });
   if (res.ok) return true; // 202 Accepted
@@ -125,13 +130,13 @@ async function sendEmailSendgrid(m: ResolvedMessaging, to: string, subject: stri
 }
 
 // --- Email: Azure Communication Services -------------------------------------
-async function sendEmailAcs(m: ResolvedMessaging, to: string, subject: string, body: string): Promise<boolean> {
+async function sendEmailAcs(m: ResolvedMessaging, to: string, subject: string, body: string, html?: string): Promise<boolean> {
   const res = await acsSignedFetch(
     m.acsConnectionString!,
     '/emails:send?api-version=2023-03-31',
     {
       senderAddress: m.acsMailFrom,
-      content: { subject: subject || '(no subject)', plainText: body },
+      content: { subject: subject || '(no subject)', plainText: body, ...(html ? { html } : {}) },
       recipients: { to: [{ address: to }] },
     },
   );

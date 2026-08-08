@@ -1,6 +1,6 @@
 import { eq, sql } from 'drizzle-orm';
 import { db, pool } from './index.js';
-import { organisations, users, roles, permissions, userRoles, rolePermissions, funds, serviceTypes, checkinForms } from './schema.js';
+import { organisations, users, roles, permissions, userRoles, rolePermissions, funds, serviceTypes, checkinForms, messageTemplates } from './schema.js';
 import { hashPassword } from '../auth/password.js';
 import { config } from '../config.js';
 import { DEFAULT_FORM_FIELDS } from '../modules/checkin/forms.routes.js';
@@ -88,6 +88,34 @@ async function seed() {
       fields: DEFAULT_FORM_FIELDS,
       isDefault: true,
     });
+  }
+
+  // Starter message templates with merge fields (used by Phase 5 automations).
+  const [{ count: tplCount }] = await db.select({ count: sql<number>`count(*)::int` }).from(messageTemplates);
+  if (tplCount === 0) {
+    await db.insert(messageTemplates).values([
+      {
+        name: 'Birthday greeting', channel: 'email',
+        subject: { en: 'Happy Birthday, {{firstName}}! 🎂', ar: 'عيد ميلاد سعيد يا {{firstName}}! 🎂' },
+        header: { en: 'Happy birthday from {{churchName}}', ar: 'عيد ميلاد سعيد من {{churchName}}' },
+        body: { en: 'Dear {{firstName}},\n\nWishing you a joyful birthday! May God bless you richly in the year ahead. We thank Him for you.', ar: 'عزيزي {{firstName}}،\n\nنتمنى لك عيد ميلاد مليئاً بالفرح! بارك الله حياتك في العام القادم. نشكر الله من أجلك.' },
+        footer: { en: 'With love, the {{churchName}} family', ar: 'بمحبة، عائلة {{churchName}}' },
+      },
+      {
+        name: 'Membership anniversary', channel: 'email',
+        subject: { en: 'Celebrating you, {{firstName}} 🎉', ar: 'نحتفل بك يا {{firstName}} 🎉' },
+        header: { en: 'A special day at {{churchName}}', ar: 'يوم مميز في {{churchName}}' },
+        body: { en: 'Dear {{firstName}},\n\nToday marks another year since you joined our church family. Thank you for being part of {{churchName}}!', ar: 'عزيزي {{firstName}}،\n\nيصادف اليوم عاماً آخر منذ انضمامك إلى عائلة كنيستنا. شكراً لكونك جزءاً من {{churchName}}!' },
+        footer: { en: 'In Christ, the {{churchName}} team', ar: 'في المسيح، فريق {{churchName}}' },
+      },
+      {
+        name: 'Welcome', channel: 'email',
+        subject: { en: 'Welcome to {{churchName}}, {{firstName}}!', ar: 'أهلاً بك في {{churchName}} يا {{firstName}}!' },
+        header: { en: 'Welcome!', ar: 'أهلاً وسهلاً!' },
+        body: { en: 'Hi {{firstName}},\n\nWe are so glad you joined us at {{churchName}}. If there is anything we can pray for or help with, just reply to this message.', ar: 'مرحباً {{firstName}}،\n\nيسعدنا انضمامك إلينا في {{churchName}}. إن كان هناك ما يمكننا الصلاة من أجله أو مساعدتك به، فقط ردّ على هذه الرسالة.' },
+        footer: { en: 'Blessings, the {{churchName}} team', ar: 'بركات، فريق {{churchName}}' },
+      },
+    ]);
   }
 
   // eslint-disable-next-line no-console

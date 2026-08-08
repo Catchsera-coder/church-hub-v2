@@ -15,7 +15,7 @@ import {
   timestamp, date, jsonb, uuid, uniqueIndex, index, type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 
-type I18n = Record<string, string>;
+export type I18n = Record<string, string>;
 
 /**
  * Per-church messaging config, editable from the Settings tab (stored here so a
