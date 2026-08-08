@@ -4,6 +4,7 @@
   import { api, ApiError } from '$lib/api.js';
   import { t, locale, tr } from '$lib/i18n.js';
   import { can } from '$lib/stores/auth.js';
+  import { dateTime } from '$lib/format.js';
   import PageHeader from '$lib/components/PageHeader.svelte';
 
   let events = $state<any[]>([]);
@@ -13,6 +14,8 @@
   let busy = $state(false);
   let qrDataUrl = $state('');
   let loadingEvents = $state(true);
+  let expanded = $state(false); // fullscreen QR for projecting
+  let scanInput = $state<HTMLInputElement | null>(null);
 
   // Inline "new gathering" so you can start a check-in without leaving the page.
   let showNew = $state(false);
@@ -34,6 +37,7 @@
       ? `${window.location.origin}/checkin/self/${selected.publicToken}`
       : '',
   );
+  const selName = $derived(selected ? tr(selected.title, $locale) || `#${selected.id}` : '');
 
   onMount(async () => {
     try {
@@ -103,6 +107,8 @@
       last = { ok: false, msg: err instanceof ApiError ? err.message : (err as Error).message };
     } finally {
       busy = false;
+      // Keep focus on the box so the next scan lands immediately (kiosk mode).
+      scanInput?.focus();
     }
   }
 </script>
@@ -152,9 +158,13 @@
     {#if !selected}
       <p class="py-16 text-slate-400">{tr({ en: 'Select or create a gathering to show the QR.', ar: 'اختر أو أنشئ اجتماعاً لعرض الرمز.' }, $locale)}</p>
     {:else if qrDataUrl}
+      <!-- Clear gathering name above the QR so multiple services aren't confused. -->
+      <p class="text-xl font-bold text-slate-900 dark:text-white">{selName}</p>
+      <p class="mb-3 text-xs text-slate-500 force-ltr">{dateTime(selected.startsAt)}</p>
       <img src={qrDataUrl} alt="Check-in QR" class="mx-auto h-auto w-64 rounded-lg bg-white p-2" />
-      <div class="mt-4 flex items-center justify-center gap-2">
-        <button class="btn-primary" onclick={shareLink}>
+      <div class="mt-4 flex flex-wrap items-center justify-center gap-2">
+        <button class="btn-primary" onclick={() => (expanded = true)}>⛶ {tr({ en: 'Expand', ar: 'تكبير' }, $locale)}</button>
+        <button class="btn-ghost" onclick={shareLink}>
           {copied ? tr({ en: 'Copied ✓', ar: 'تم النسخ ✓' }, $locale) : tr({ en: 'Share link', ar: 'مشاركة الرابط' }, $locale)}
         </button>
         <a href={selfUrl} target="_blank" rel="noopener" class="btn-ghost">{tr({ en: 'Open', ar: 'فتح' }, $locale)}</a>
@@ -168,10 +178,10 @@
   <!-- Manual: scan a member's personal QR / kiosk -->
   <div class="card p-6">
     <h2 class="mb-1 text-lg font-semibold">{tr({ en: 'Scan a member card', ar: 'مسح بطاقة العضو' }, $locale)}</h2>
-    <p class="mb-4 text-sm text-slate-500 dark:text-slate-400">{tr({ en: "For a kiosk with a scanner: scan a member's personal QR code (from their member page). To check people in by name, open the gathering under Gatherings.", ar: 'لجهاز به ماسح: امسح رمز العضو الشخصي (من صفحة العضو). لتسجيل الحضور بالاسم، افتح الاجتماع من قسم الاجتماعات.' }, $locale)}</p>
-    <form class="space-y-4" onsubmit={submit}>
+    <p class="mb-3 text-sm text-slate-500 dark:text-slate-400">{tr({ en: 'Checking in to:', ar: 'التسجيل في:' }, $locale)} <b class="text-slate-700 dark:text-slate-200">{selName || '—'}</b></p>
+    <form class="space-y-3" onsubmit={submit}>
       <!-- svelte-ignore a11y_autofocus -->
-      <input class="input force-ltr" bind:value={token} autofocus placeholder="00000000-0000-0000-0000-000000000000" />
+      <input class="input force-ltr" bind:this={scanInput} bind:value={token} autofocus placeholder={tr({ en: 'Scan a card, or type/paste a code…', ar: 'امسح بطاقة أو اكتب/الصق رمزاً…' }, $locale)} />
       <button class="btn-primary w-full" type="submit" disabled={busy || !eventId}>{tr({ en: 'Check in', ar: 'تسجيل الحضور' }, $locale)}</button>
     </form>
     {#if last}
@@ -179,5 +189,26 @@
         {last.msg}
       </div>
     {/if}
+
+    <!-- How the kiosk scan works -->
+    <div class="mt-5 rounded-lg bg-slate-50 p-4 text-sm text-slate-600 dark:bg-slate-800/50 dark:text-slate-300">
+      <p class="mb-2 font-medium text-slate-700 dark:text-slate-200">{tr({ en: 'How this works', ar: 'كيف يعمل هذا' }, $locale)}</p>
+      <ul class="list-disc space-y-1.5 ps-5">
+        <li>{tr({ en: 'Use any QR/barcode scanner that works as a keyboard (USB or Bluetooth "HID" mode) — the common, plug-and-play kind (~$15–30). It types the scanned code into the box above and checks the person in automatically.', ar: 'استخدم أي ماسح QR/باركود يعمل كلوحة مفاتيح (USB أو بلوتوث بوضع "HID") — النوع الشائع الجاهز للتشغيل (~15–30$). يكتب الرمز الممسوح في الحقل أعلاه ويسجّل الشخص تلقائياً.' }, $locale)}</li>
+        <li>{tr({ en: 'No scanner? A phone camera works too — keep this box focused and scan/paste the code.', ar: 'لا يوجد ماسح؟ كاميرا الهاتف تعمل أيضاً — أبقِ المؤشر في الحقل وامسح/الصق الرمز.' }, $locale)}</li>
+        <li>{tr({ en: "It reads each member's personal QR — found on their member page (Members → open a person → Check-in card), which you can print as a wallet card.", ar: 'يقرأ رمز العضو الشخصي — الموجود في صفحة العضو (الأعضاء ← افتح شخصاً ← بطاقة الحضور)، ويمكنك طباعته كبطاقة.' }, $locale)}</li>
+        <li>{tr({ en: 'Scanning is instant and repeatable — a second scan of the same person is safely ignored.', ar: 'المسح فوري وقابل للتكرار — يُتجاهل مسح نفس الشخص مرة ثانية بأمان.' }, $locale)}</li>
+      </ul>
+    </div>
   </div>
 </div>
+
+<!-- Fullscreen QR for projecting (click anywhere to collapse) -->
+{#if expanded && qrDataUrl}
+  <button class="fixed inset-0 z-50 flex flex-col items-center justify-center gap-6 bg-white p-6 dark:bg-slate-950" onclick={() => (expanded = false)} aria-label={tr({ en: 'Close', ar: 'إغلاق' }, $locale)}>
+    <p class="text-3xl font-bold text-slate-900 dark:text-white sm:text-5xl">{selName}</p>
+    <img src={qrDataUrl} alt="Check-in QR" class="h-auto w-[70vmin] max-w-[80vw] rounded-xl bg-white p-3" style="image-rendering: pixelated" />
+    <p class="text-lg text-slate-500">{tr({ en: 'Scan with your phone to check in', ar: 'امسح بهاتفك لتسجيل الحضور' }, $locale)}</p>
+    <p class="text-sm text-slate-400">{tr({ en: 'Tap anywhere to close', ar: 'اضغط في أي مكان للإغلاق' }, $locale)}</p>
+  </button>
+{/if}
