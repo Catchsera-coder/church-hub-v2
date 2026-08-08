@@ -72,8 +72,11 @@
   function clearFilters() { f = { ...EMPTY }; page = 1; load(); }
   function toggleReview() { reviewOnly = !reviewOnly; page = 1; load(); }
 
-  async function markReviewed(p: Person) {
-    await api(`/people/${p.id}/review`, { method: 'POST', body: JSON.stringify({}) });
+  async function markReviewed(p: Person, sendWelcome = false) {
+    const r = await api<{ welcomeSent?: boolean }>(`/people/${p.id}/review`, { method: 'POST', body: JSON.stringify({ sendWelcome }) });
+    if (sendWelcome) alert(r.welcomeSent
+      ? tr({ en: 'Approved and welcome message sent.', ar: 'تمت الموافقة وأُرسلت رسالة الترحيب.' }, $locale)
+      : tr({ en: 'Approved. (No welcome sent — set up the Welcome automation with a template first.)', ar: 'تمت الموافقة. (لم تُرسل رسالة ترحيب — فعّل أتمتة الترحيب مع قالب أولاً.)' }, $locale));
     await Promise.all([load(), loadPendingCount()]);
   }
 
@@ -224,7 +227,10 @@
             {#if reviewOnly}
               <td class="p-3">
                 {#if can('update person')}
-                  <button class="btn-ghost text-xs text-emerald-700 dark:text-emerald-300" onclick={() => markReviewed(p)}>{tr({ en: 'Mark reviewed', ar: 'تم المراجعة' }, $locale)}</button>
+                  <div class="flex flex-wrap gap-1">
+                    <button class="btn-ghost text-xs text-emerald-700 dark:text-emerald-300" onclick={() => markReviewed(p)}>{tr({ en: 'Approve', ar: 'موافقة' }, $locale)}</button>
+                    <button class="btn-ghost text-xs" style="color: var(--brand)" onclick={() => markReviewed(p, true)}>{tr({ en: '+ welcome', ar: '+ ترحيب' }, $locale)}</button>
+                  </div>
                 {/if}
               </td>
             {/if}

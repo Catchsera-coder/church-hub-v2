@@ -49,7 +49,10 @@
     },
     {
       key: 'group.communication',
-      items: [{ href: '/messages', label: 'nav.messages', icon: 'messages', perm: 'view message' }],
+      items: [
+        { href: '/messages', label: 'nav.messages', icon: 'messages', perm: 'view message' },
+        { href: '/automations', label: 'nav.automations', icon: 'automations', role: 'Admin' },
+      ],
     },
     {
       key: 'group.admin',

@@ -54,6 +54,8 @@ export const campaignChannel = pgEnum('campaign_channel', ['email', 'sms', 'what
 export const campaignStatus = pgEnum('campaign_status', ['draft', 'scheduled', 'sending', 'sent', 'failed']);
 export const recipientStatus = pgEnum('recipient_status', ['pending', 'sent', 'failed']);
 export const activityEvent = pgEnum('activity_event', ['created', 'updated', 'deleted']);
+export const automationType = pgEnum('automation_type', ['birthday', 'join_anniversary', 'first_visit_anniversary', 'welcome', 'absence_followup']);
+export const automationMode = pgEnum('automation_mode', ['auto', 'manual']);
 
 const timestamps = {
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -301,6 +303,22 @@ export const checkinForms = pgTable('checkin_forms', {
 }, (t) => ({
   publicTokenIdx: uniqueIndex('checkin_forms_public_token_idx').on(t.publicToken),
 }));
+
+// Automated messages (Phase 5). One row per automation type. Each is toggled on/
+// off and set to auto (worker sends) or manual (staff triggers) by an Admin.
+// config holds per-type knobs (e.g. { absenceWeeks: 4 }). lastRunOn guards
+// once-per-day/week sends. templateId + channel decide what/how to send.
+export const automations = pgTable('automations', {
+  id: serial('id').primaryKey(),
+  type: automationType('type').notNull(),
+  enabled: boolean('enabled').notNull().default(false),
+  mode: automationMode('mode').notNull().default('auto'),
+  channel: campaignChannel('channel').notNull().default('email'),
+  templateId: integer('template_id').references((): AnyPgColumn => messageTemplates.id, { onDelete: 'set null' }),
+  config: jsonb('config').$type<Record<string, number | string>>().notNull().default({}),
+  lastRunOn: date('last_run_on'),
+  ...timestamps,
+}, (t) => ({ typeIdx: uniqueIndex('automations_type_idx').on(t.type) }));
 
 // ---------------------------------------------------------------------------
 // Giving

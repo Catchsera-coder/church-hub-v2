@@ -2,11 +2,13 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { db } from '../../db/index.js';
-import { people, personServiceType, serviceTypes, attendanceRecords } from '../../db/schema.js';
+import { people, personServiceType, serviceTypes, attendanceRecords, automations, messageTemplates } from '../../db/schema.js';
 import { asyncHandler } from '../../http/asyncHandler.js';
 import { authenticate, requirePermission } from '../../middleware/auth.js';
 import { notFound } from '../../http/errors.js';
 import { logActivity } from '../activity/service.js';
+import { sendTemplateToPerson, resolveMessaging } from '../automations/service.js';
+import { currentOrg } from '../settings/routes.js';
 
 export const peopleRouter = Router();
 peopleRouter.use(authenticate);
@@ -144,8 +146,11 @@ peopleRouter.post(
   requirePermission('update person'),
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
-    const { membershipStatus } = z
-      .object({ membershipStatus: z.enum(['visitor', 'regular', 'member', 'inactive']).optional() })
+    const { membershipStatus, sendWelcome } = z
+      .object({
+        membershipStatus: z.enum(['visitor', 'regular', 'member', 'inactive']).optional(),
+        sendWelcome: z.boolean().optional(),
+      })
       .parse(req.body ?? {});
     const [row] = await db
       .update(people)
@@ -154,7 +159,19 @@ peopleRouter.post(
       .returning();
     if (!row) throw notFound();
     await logActivity(req, 'updated', 'person', id, 'reviewed');
-    res.json({ data: row });
+
+    // Optional branded welcome via the "welcome" automation's template + channel.
+    let welcomeSent = false;
+    if (sendWelcome) {
+      const [wa] = await db.select().from(automations).where(eq(automations.type, 'welcome')).limit(1);
+      if (wa?.templateId) {
+        const org = await currentOrg();
+        const messaging = resolveMessaging(org.messaging);
+        welcomeSent = await sendTemplateToPerson(row as never, wa.channel as 'email' | 'sms' | 'whatsapp',
+          (await db.select().from(messageTemplates).where(eq(messageTemplates.id, wa.templateId)).limit(1))[0] ?? {}, org, messaging);
+      }
+    }
+    res.json({ data: row, welcomeSent });
   }),
 );
 

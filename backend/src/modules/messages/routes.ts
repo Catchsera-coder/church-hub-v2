@@ -1,18 +1,16 @@
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
-import { and, desc, eq, isNotNull, isNull, ne, sql } from 'drizzle-orm';
+import { desc, eq, sql } from 'drizzle-orm';
 import { db } from '../../db/index.js';
-import { messageCampaigns, messageRecipients, people } from '../../db/schema.js';
+import { messageCampaigns, messageRecipients } from '../../db/schema.js';
 import { asyncHandler } from '../../http/asyncHandler.js';
 import { authenticate, requirePermission } from '../../middleware/auth.js';
 import { badRequest, notFound } from '../../http/errors.js';
 import { logActivity } from '../activity/service.js';
-import { resolveMessaging, sendMessage } from './delivery.js';
-import { buildContext, renderText, brandedEmailHtml } from './render.js';
+import { sendCampaignNow } from './send.js';
 import { resolveAi, draftMessages, type AiChannel } from './ai.js';
 import { currentOrg } from '../settings/routes.js';
-import { config } from '../../config.js';
 
 export const messagesRouter = Router();
 messagesRouter.use(authenticate);
@@ -100,64 +98,28 @@ messagesRouter.put('/:id', requirePermission('update message'), asyncHandler(asy
   res.json({ data: row });
 }));
 
-/**
- * Send now. Recipients = active people who have the channel's contact field.
- * Sent SYNCHRONOUSLY through the delivery adapter — deliberately NOT a database
- * queue with no worker (the v1 bug where campaigns silently never sent). For
- * large lists this should move to a real worker; see delivery.ts.
- */
+// Send now. Personalises per recipient (merge fields) and brands email as HTML;
+// see messages/send.ts (shared with the scheduler for scheduled campaigns).
 messagesRouter.post('/:id/send', sendLimiter, requirePermission('update message'), asyncHandler(async (req, res) => {
   const id = Number(req.params.id);
-  const [c] = await db.select().from(messageCampaigns).where(eq(messageCampaigns.id, id)).limit(1);
+  const [c] = await db.select({ status: messageCampaigns.status }).from(messageCampaigns).where(eq(messageCampaigns.id, id)).limit(1);
   if (!c) throw notFound();
   if (c.status === 'sent' || c.status === 'sending') throw badRequest('Already sent');
+  const result = await sendCampaignNow(id);
+  await logActivity(req, 'updated', 'message', id, `sent: ${result.sent}/${result.total}`);
+  res.json({ data: result });
+}));
 
-  // Email uses the email address; SMS and WhatsApp both use the mobile number.
-  const contactCol = c.channel === 'email' ? people.email : people.mobile;
-  // Lawful sending: never message people who opted out of this channel.
-  const optOutCol = c.channel === 'email' ? people.emailOptOut
-    : c.channel === 'whatsapp' ? people.whatsappOptOut
-    : people.smsOptOut;
-  const audience = await db
-    .select({
-      id: people.id, contact: contactCol, lang: people.preferredLanguage, unsubToken: people.unsubToken,
-      givenName: people.givenName, familyName: people.familyName, email: people.email, mobile: people.mobile,
-    })
-    .from(people)
-    .where(and(eq(people.isActive, true), isNull(people.deletedAt), isNotNull(contactCol), ne(contactCol, ''), eq(optOutCol, false)));
-
-  await db.update(messageCampaigns).set({ status: 'sending', updatedAt: new Date() }).where(eq(messageCampaigns.id, id));
-
-  // Resolve this church's messaging config once (Settings-tab values over env).
-  const org = await currentOrg();
-  const messaging = resolveMessaging(org.messaging);
-  const appUrl = config.PUBLIC_APP_URL?.replace(/\/+$/, '');
-  const now = new Date();
-
-  let sent = 0;
-  for (const p of audience) {
-    const [rec] = await db.insert(messageRecipients).values({ messageCampaignId: id, personId: p.id }).onConflictDoNothing().returning();
-    if (!rec) continue;
-    const lang = p.lang || 'en';
-    // Personalise: merge fields ({{firstName}} etc.), then brand HTML for email.
-    const ctx = buildContext(p, org, now, lang);
-    const subject = renderText(c.subject[lang] ?? c.subject.en ?? '', ctx);
-    const body = renderText(c.body[lang] ?? c.body.en ?? '', ctx);
-    const footer = c.channel === 'email' && appUrl
-      ? `To stop receiving these emails, unsubscribe: ${appUrl}/unsubscribe/${p.unsubToken}`
-      : '';
-    const html = c.channel === 'email' ? brandedEmailHtml(body, org, { footer, lang }) : undefined;
-    const plain = footer ? `${body}\n\n—\n${footer}` : body;
-    const ok = await sendMessage(messaging, c.channel, p.contact as string, subject, plain, html);
-    await db.update(messageRecipients).set({ status: ok ? 'sent' : 'failed' }).where(eq(messageRecipients.id, rec.id));
-    if (ok) sent++;
-  }
-
-  // Honest campaign status: if there were recipients but not one delivery was
-  // accepted (e.g. the channel's provider isn't configured), the campaign failed
-  // — don't paint it green. Otherwise it sent (fully or partially).
-  const finalStatus = audience.length > 0 && sent === 0 ? 'failed' : 'sent';
-  await db.update(messageCampaigns).set({ status: finalStatus, sentAt: new Date(), updatedAt: new Date() }).where(eq(messageCampaigns.id, id));
-  await logActivity(req, 'updated', 'message', id, `${finalStatus}: ${sent}/${audience.length}`);
-  res.json({ data: { sent, total: audience.length } });
+// Schedule (or reschedule) a campaign to send later — the worker picks it up.
+messagesRouter.post('/:id/schedule', requirePermission('update message'), asyncHandler(async (req, res) => {
+  const id = Number(req.params.id);
+  const { scheduledFor } = z.object({ scheduledFor: z.string() }).parse(req.body);
+  const when = new Date(scheduledFor);
+  if (Number.isNaN(when.getTime()) || when.getTime() < Date.now()) throw badRequest('Pick a future date and time.');
+  const [existing] = await db.select({ status: messageCampaigns.status }).from(messageCampaigns).where(eq(messageCampaigns.id, id)).limit(1);
+  if (!existing) throw notFound();
+  if (existing.status === 'sent' || existing.status === 'sending') throw badRequest('This campaign has already been sent.');
+  const [row] = await db.update(messageCampaigns).set({ status: 'scheduled', scheduledFor: when, updatedAt: new Date() }).where(eq(messageCampaigns.id, id)).returning();
+  await logActivity(req, 'updated', 'message', id, 'scheduled');
+  res.json({ data: row });
 }));
