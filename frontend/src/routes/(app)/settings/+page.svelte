@@ -28,6 +28,14 @@
   ];
   const ALL_WIDGET_KEYS = DASH_WIDGETS.map((w) => w.key);
 
+  // Azure OpenAI models, named so admins understand the cost/quality trade-off.
+  const AZURE_MODELS = [
+    { id: 'gpt-4o-mini', name: 'GPT-4o mini — recommended (smart, low cost)', hint: 'Best value for church messages.' },
+    { id: 'gpt-4.1-mini', name: 'GPT-4.1 mini (newer, low cost)', hint: 'Newer small model.' },
+    { id: 'gpt-4o', name: 'GPT-4o (highest quality)', hint: 'Higher cost, top quality.' },
+    { id: 'gpt-4.1', name: 'GPT-4.1 (top quality)', hint: 'Higher cost, latest full model.' },
+  ];
+
   function toggleWidget(key: string) {
     const set = new Set(form.dashboard?.widgets ?? ALL_WIDGET_KEYS);
     if (set.has(key)) set.delete(key); else set.add(key);
@@ -60,7 +68,7 @@
     if (isAdmin) {
       const m = await api<{ data: any }>('/settings/messaging');
       // secret fields start blank; blank on save = leave unchanged
-      msg = { ...m.data, sendgridApiKey: '', twilioAuthToken: '', acsConnectionString: '', aiApiKey: '' };
+      msg = { ...m.data, sendgridApiKey: '', twilioAuthToken: '', acsConnectionString: '', aiApiKey: '', azureOpenaiKey: '' };
     }
   });
 
@@ -109,12 +117,15 @@
         smsProvider: msg.smsProvider, smsFrom: msg.smsFrom,
         twilioAccountSid: msg.twilioAccountSid, twilioAuthToken: msg.twilioAuthToken,
         acsSmsFrom: msg.acsSmsFrom, acsConnectionString: msg.acsConnectionString,
-        whatsappFrom: msg.whatsappFrom, aiModel: msg.aiModel, aiApiKey: msg.aiApiKey,
+        whatsappFrom: msg.whatsappFrom,
+        aiProvider: msg.aiProvider, aiModel: msg.aiModel, aiApiKey: msg.aiApiKey,
+        azureOpenaiEndpoint: msg.azureOpenaiEndpoint, azureOpenaiDeployment: msg.azureOpenaiDeployment,
+        azureOpenaiApiVersion: msg.azureOpenaiApiVersion, azureOpenaiKey: msg.azureOpenaiKey,
       }) });
       msgSaved = true;
       // refresh the "set" indicators
       const m = await api<{ data: any }>('/settings/messaging');
-      msg = { ...m.data, sendgridApiKey: '', twilioAuthToken: '', acsConnectionString: '', aiApiKey: '' };
+      msg = { ...m.data, sendgridApiKey: '', twilioAuthToken: '', acsConnectionString: '', aiApiKey: '', azureOpenaiKey: '' };
     } finally { msgSaving = false; }
   }
 
@@ -341,16 +352,54 @@
       </div>
 
       <div class="card space-y-4 p-6">
-        <h3 class="font-semibold">✨ {tr({ en: 'AI compose', ar: 'الصياغة بالذكاء الاصطناعي' }, $locale)}</h3>
-        <p class="text-xs text-slate-500 dark:text-slate-400">{tr({ en: 'Add an Anthropic API key to draft messages from a short brief. Left blank, the AI compose button is disabled.', ar: 'أضف مفتاح Anthropic لصياغة الرسائل من وصف قصير. إذا تُرك فارغاً، يتعطّل زر الصياغة.' }, $locale)}{#if msg.envAiDefault} {tr({ en: '(An environment key is already active.)', ar: '(مفتاح بيئة مفعّل بالفعل.)' }, $locale)}{/if}</p>
+        <h3 class="font-semibold">✨ {tr({ en: 'AI writing assistant', ar: 'مساعد الكتابة بالذكاء الاصطناعي' }, $locale)}</h3>
+        <p class="text-xs text-slate-500 dark:text-slate-400">{tr({ en: 'Powers "Write with AI" in messages and templates. Choose your provider.', ar: 'يشغّل «الكتابة بالذكاء الاصطناعي» في الرسائل والقوالب. اختر المزوّد.' }, $locale)}</p>
+
         <label class="block space-y-1">
-          <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Anthropic API key', ar: 'مفتاح Anthropic' }, $locale)}</span>
-          <input class="input force-ltr" type="password" bind:value={msg.aiApiKey} placeholder={secretPlaceholder(msg.aiApiKeySet)} />
+          <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Provider', ar: 'المزوّد' }, $locale)}</span>
+          <select class="input" bind:value={msg.aiProvider}>
+            <option value="">{tr({ en: 'Auto / deploy default', ar: 'تلقائي / الافتراضي' }, $locale)}</option>
+            <option value="azure">{tr({ en: 'Azure OpenAI', ar: 'Azure OpenAI' }, $locale)}</option>
+            <option value="anthropic">{tr({ en: 'Anthropic (Claude)', ar: 'Anthropic (Claude)' }, $locale)}</option>
+          </select>
         </label>
-        <label class="block space-y-1">
-          <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Model (optional)', ar: 'النموذج (اختياري)' }, $locale)}</span>
-          <input class="input force-ltr" bind:value={msg.aiModel} placeholder="claude-opus-5" />
-        </label>
+
+        {#if msg.aiProvider === 'azure'}
+          <div class="grid gap-4 sm:grid-cols-2">
+            <label class="block space-y-1 sm:col-span-2">
+              <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Azure endpoint', ar: 'نقطة نهاية Azure' }, $locale)}</span>
+              <input class="input force-ltr" bind:value={msg.azureOpenaiEndpoint} placeholder="https://your-resource.openai.azure.com" />
+            </label>
+            <label class="block space-y-1 sm:col-span-2">
+              <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Azure API key', ar: 'مفتاح Azure' }, $locale)}</span>
+              <input class="input force-ltr" type="password" bind:value={msg.azureOpenaiKey} placeholder={secretPlaceholder(msg.azureOpenaiKeySet)} />
+            </label>
+            <label class="block space-y-1">
+              <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Model', ar: 'النموذج' }, $locale)}</span>
+              <select class="input" value={msg.aiModel || 'gpt-4o-mini'} onchange={(e) => { const v = (e.currentTarget as HTMLSelectElement).value; msg.aiModel = v; if (!msg.azureOpenaiDeployment) msg.azureOpenaiDeployment = v; }}>
+                {#each AZURE_MODELS as m}<option value={m.id}>{m.name}</option>{/each}
+              </select>
+              <span class="text-xs text-slate-400">{AZURE_MODELS.find((m) => m.id === (msg.aiModel || 'gpt-4o-mini'))?.hint ?? ''}</span>
+            </label>
+            <label class="block space-y-1">
+              <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Deployment name', ar: 'اسم النشر' }, $locale)}</span>
+              <input class="input force-ltr" bind:value={msg.azureOpenaiDeployment} placeholder={msg.aiModel || 'gpt-4o-mini'} />
+              <span class="text-xs text-slate-400">{tr({ en: 'The name you gave the deployment in Azure (often the same as the model).', ar: 'الاسم الذي أعطيته للنشر في Azure (غالباً نفس النموذج).' }, $locale)}</span>
+            </label>
+          </div>
+          <p class="rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:bg-slate-800/50 dark:text-slate-300">
+            {tr({ en: 'Recommended: GPT-4o mini — smart enough for church messages and the lowest cost. Pick GPT-4o / GPT-4.1 for the highest quality.', ar: 'مُوصى به: GPT-4o mini — ذكي بما يكفي لرسائل الكنيسة وأقل تكلفة. اختر GPT-4o / GPT-4.1 لأعلى جودة.' }, $locale)}
+          </p>
+        {:else}
+          <label class="block space-y-1">
+            <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Anthropic API key', ar: 'مفتاح Anthropic' }, $locale)}</span>
+            <input class="input force-ltr" type="password" bind:value={msg.aiApiKey} placeholder={secretPlaceholder(msg.aiApiKeySet)} />
+          </label>
+          <label class="block space-y-1">
+            <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Model (optional)', ar: 'النموذج (اختياري)' }, $locale)}</span>
+            <input class="input force-ltr" bind:value={msg.aiModel} placeholder="claude-opus-5" />
+          </label>
+        {/if}
       </div>
 
       <div class="flex items-center gap-3">

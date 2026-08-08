@@ -92,12 +92,18 @@ settingsRouter.get(
         acsSmsFrom: m.acsSmsFrom ?? '',
         acsConnectionStringSet: Boolean(m.acsConnectionString),
         whatsappFrom: m.whatsappFrom ?? '',
+        aiProvider: m.aiProvider ?? '',
         aiModel: m.aiModel ?? '',
         aiApiKeySet: Boolean(m.aiApiKey),
+        azureOpenaiEndpoint: m.azureOpenaiEndpoint ?? '',
+        azureOpenaiDeployment: m.azureOpenaiDeployment ?? '',
+        azureOpenaiApiVersion: m.azureOpenaiApiVersion ?? '',
+        azureOpenaiKeySet: Boolean(m.azureOpenaiKey),
         // Surfaced so admins know an env default is active even if unset here.
         envEmailDefault: Boolean(config.SENDGRID_API_KEY && config.MAIL_FROM),
         envSmsDefault: config.smsProvider ?? '',
         envAiDefault: Boolean(config.ANTHROPIC_API_KEY),
+        envAzureAiDefault: Boolean(config.AZURE_OPENAI_ENDPOINT && config.AZURE_OPENAI_KEY),
       },
     });
   }),
@@ -115,8 +121,13 @@ const messagingSchema = z.object({
   acsSmsFrom: z.string().optional(),
   acsConnectionString: z.string().optional(),
   whatsappFrom: z.string().optional(),
+  aiProvider: z.enum(['anthropic', 'azure']).or(z.literal('')).optional(),
   aiModel: z.string().optional(),
   aiApiKey: z.string().optional(),
+  azureOpenaiEndpoint: z.string().optional(),
+  azureOpenaiDeployment: z.string().optional(),
+  azureOpenaiApiVersion: z.string().optional(),
+  azureOpenaiKey: z.string().optional(),
 });
 
 settingsRouter.put(
@@ -140,7 +151,11 @@ settingsRouter.put(
       next.whatsappFrom = body.whatsappFrom || undefined;
       next.whatsappProvider = body.whatsappFrom ? 'twilio' : undefined;
     }
+    if (body.aiProvider !== undefined) next.aiProvider = body.aiProvider === '' ? undefined : body.aiProvider;
     if (body.aiModel !== undefined) next.aiModel = body.aiModel || undefined;
+    if (body.azureOpenaiEndpoint !== undefined) next.azureOpenaiEndpoint = body.azureOpenaiEndpoint || undefined;
+    if (body.azureOpenaiDeployment !== undefined) next.azureOpenaiDeployment = body.azureOpenaiDeployment || undefined;
+    if (body.azureOpenaiApiVersion !== undefined) next.azureOpenaiApiVersion = body.azureOpenaiApiVersion || undefined;
 
     // Secrets: only overwrite when a non-empty value is supplied (the UI sends
     // blank to mean "leave unchanged"). To clear, we'd add an explicit action.
@@ -148,6 +163,7 @@ settingsRouter.put(
     if (body.twilioAuthToken) next.twilioAuthToken = body.twilioAuthToken;
     if (body.acsConnectionString) next.acsConnectionString = body.acsConnectionString;
     if (body.aiApiKey) next.aiApiKey = body.aiApiKey;
+    if (body.azureOpenaiKey) next.azureOpenaiKey = body.azureOpenaiKey;
 
     await db.update(organisations).set({ messaging: next, updatedAt: new Date() }).where(eq(organisations.id, 1));
     res.json({ data: { ok: true } });

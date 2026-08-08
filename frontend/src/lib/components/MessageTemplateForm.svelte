@@ -1,10 +1,27 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { get } from 'svelte/store';
   import { api } from '$lib/api.js';
   import { t, locale, tr, enabledLocales } from '$lib/i18n.js';
 
   let { initial = null, id = null }: { initial?: any; id?: number | null } = $props();
+
+  // Church branding + a sample person for a realistic preview.
+  let org = $state<{ name?: Record<string, string>; logoPath?: string | null; brandColor?: string | null }>({});
+  let showPreview = $state(true);
+  onMount(async () => {
+    try { org = (await api<{ data: any }>('/settings')).data; } catch { /* preview branding is best-effort */ }
+  });
+  const brand = $derived(org.brandColor && /^#([0-9a-fA-F]{6})$/.test(org.brandColor) ? org.brandColor : '#3b3f8c');
+  const churchName = $derived(tr(org.name ?? {}, $locale) || 'Your Church');
+  const sample: Record<string, string> = {
+    firstName: 'John', lastName: 'Doe', fullName: 'John Doe', date: new Date().toISOString().slice(0, 10),
+  };
+  function fill(text: string): string {
+    return (text ?? '').replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_m, k: string) => (k === 'churchName' ? churchName : sample[k] ?? ''));
+  }
+  const pv = (v: Record<string, string> | undefined) => fill(v?.[$locale] ?? v?.en ?? '');
 
   let form = $state({
     name: initial?.name ?? '',
@@ -169,6 +186,39 @@
     {/if}
 
     <label class="flex items-center gap-2 text-sm"><input type="checkbox" bind:checked={form.isActive} /> {tr({ en: 'Active (available when composing)', ar: 'مُفعّل (متاح عند الإنشاء)' }, $locale)}</label>
+  </div>
+
+  <!-- Live preview: shows the real message as members will see it -->
+  <div class="space-y-2">
+    <div class="flex items-center justify-between">
+      <h3 class="text-sm font-semibold">👁 {tr({ en: 'Preview', ar: 'معاينة' }, $locale)}</h3>
+      <button type="button" class="text-xs text-slate-500 hover:underline" onclick={() => (showPreview = !showPreview)}>{showPreview ? tr({ en: 'Hide', ar: 'إخفاء' }, $locale) : tr({ en: 'Show', ar: 'إظهار' }, $locale)}</button>
+    </div>
+    {#if showPreview}
+      {#if form.channel === 'email'}
+        <div class="overflow-hidden rounded-xl border border-slate-200 shadow-sm dark:border-slate-700">
+          <div class="flex items-center gap-2 px-4 py-3" style="background:{brand}">
+            {#if org.logoPath}<img src={org.logoPath} alt="" class="h-6 object-contain" />{/if}
+            <span class="font-semibold text-white">{churchName}</span>
+          </div>
+          <div class="bg-white p-4 dark:bg-slate-900" dir={$locale === 'ar' ? 'rtl' : 'ltr'}>
+            <p class="mb-2 font-semibold text-slate-900 dark:text-white">{pv(form.subject) || tr({ en: '(no subject)', ar: '(بدون موضوع)' }, $locale)}</p>
+            <div class="whitespace-pre-line text-sm leading-relaxed text-slate-700 dark:text-slate-200">{[pv(form.header), pv(form.body)].filter(Boolean).join('\n\n')}</div>
+            {#if pv(form.footer)}<div class="mt-3 whitespace-pre-line border-t border-slate-100 pt-2 text-xs text-slate-400 dark:border-slate-800">{pv(form.footer)}</div>{/if}
+          </div>
+        </div>
+      {:else if form.channel === 'whatsapp'}
+        <div class="rounded-xl p-4" style="background:#e5ddd5">
+          <div class="ms-auto max-w-[85%] whitespace-pre-line rounded-2xl rounded-br-sm px-3 py-2 text-sm text-slate-800 shadow" style="background:#dcf8c6" dir={$locale === 'ar' ? 'rtl' : 'ltr'}>{pv(form.body) || '…'}</div>
+        </div>
+      {:else}
+        <div class="rounded-xl bg-slate-100 p-4 dark:bg-slate-800">
+          <div class="max-w-[85%] whitespace-pre-line rounded-2xl rounded-bl-sm bg-white px-3 py-2 text-sm text-slate-800 shadow dark:bg-slate-700 dark:text-slate-100" dir={$locale === 'ar' ? 'rtl' : 'ltr'}>{pv(form.body) || '…'}</div>
+          <p class="mt-1 text-xs text-slate-400">{pv(form.body).length} {tr({ en: 'characters', ar: 'حرف' }, $locale)}</p>
+        </div>
+      {/if}
+      <p class="text-xs text-slate-400">{tr({ en: 'Sample values shown (John Doe, ' , ar: 'قيم تجريبية معروضة (John Doe، ' }, $locale)}{churchName}{tr({ en: ', today’s date).', ar: '، تاريخ اليوم).' }, $locale)}</p>
+    {/if}
   </div>
 
   <p class="text-xs text-slate-500 dark:text-slate-400">

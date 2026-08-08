@@ -57,6 +57,11 @@ const schema = z.object({
   // then reports "AI not configured" rather than failing silently.
   ANTHROPIC_API_KEY: z.string().optional(),
   AI_MODEL: z.string().default('claude-opus-5'),
+  // Azure OpenAI (optional env defaults; a church normally sets its own in Settings).
+  AZURE_OPENAI_ENDPOINT: z.string().optional(),
+  AZURE_OPENAI_KEY: z.string().optional(),
+  AZURE_OPENAI_DEPLOYMENT: z.string().optional(),
+  AZURE_OPENAI_API_VERSION: z.string().optional(),
 });
 
 const parsed = schema.safeParse(process.env);

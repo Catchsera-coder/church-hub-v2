@@ -36,9 +36,15 @@ export type MessagingSettings = {
   // WhatsApp via Twilio (reuses the Twilio account; from is a WhatsApp sender).
   whatsappProvider?: 'twilio';
   whatsappFrom?: string; // e.g. "whatsapp:+14155238886"
-  // AI compose assistant (Anthropic). Off until a key is supplied here or in env.
-  aiApiKey?: string;
-  aiModel?: string; // defaults to claude-opus-5
+  // AI compose assistant. Provider is Anthropic (Claude) or Azure OpenAI.
+  aiProvider?: 'anthropic' | 'azure';
+  aiApiKey?: string;   // Anthropic key
+  aiModel?: string;    // Anthropic model, or the chosen Azure OpenAI model label
+  // Azure OpenAI (church's own Azure resource).
+  azureOpenaiEndpoint?: string;   // https://<resource>.openai.azure.com
+  azureOpenaiKey?: string;        // secret
+  azureOpenaiDeployment?: string; // deployment name (defaults to aiModel)
+  azureOpenaiApiVersion?: string; // defaults to a recent stable version
 };
 
 // ---------------------------------------------------------------------------
