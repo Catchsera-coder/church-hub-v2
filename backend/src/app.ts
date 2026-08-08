@@ -23,6 +23,7 @@ import { dashboardRouter } from './modules/dashboard/routes.js';
 import { settingsRouter } from './modules/settings/routes.js';
 import { publicCheckinRouter } from './modules/checkin/public.routes.js';
 import { checkinFormsRouter } from './modules/checkin/forms.routes.js';
+import { exportRouter } from './modules/export/routes.js';
 import { publicConsentRouter } from './modules/consent/public.routes.js';
 
 export function createApp() {
@@ -53,6 +54,7 @@ export function createApp() {
   app.use('/api/ministries', ministriesRouter);
   app.use('/api/attendance', attendanceRouter);
   app.use('/api/checkin-forms', checkinFormsRouter);
+  app.use('/api/export', exportRouter);
   app.use('/api/funds', fundsRouter);
   app.use('/api/contributions', contributionsRouter);
   app.use('/api/batches', batchesRouter);

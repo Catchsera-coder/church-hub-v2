@@ -5,6 +5,7 @@
   import { nameOrder } from '$lib/stores/prefs.js';
   import { can } from '$lib/stores/auth.js';
   import FilterBar from '$lib/components/FilterBar.svelte';
+  import ExportMenu from '$lib/components/ExportMenu.svelte';
 
   interface Person {
     id: number;
@@ -85,9 +86,12 @@
 
 <div class="mb-6 flex items-center justify-between gap-3">
   <h1 class="text-2xl font-semibold">{$t('nav.members')}</h1>
-  {#if can('create person')}
-    <a href="/members/new" class="btn-primary">{$t('common.new')}</a>
-  {/if}
+  <div class="flex items-center gap-2">
+    <ExportMenu resource="members" title={tr({ en: 'Members', ar: 'الأعضاء' }, $locale)} />
+    {#if can('create person')}
+      <a href="/members/new" class="btn-primary">{$t('common.new')}</a>
+    {/if}
+  </div>
 </div>
 
 {#if pendingCount > 0 && !reviewOnly}

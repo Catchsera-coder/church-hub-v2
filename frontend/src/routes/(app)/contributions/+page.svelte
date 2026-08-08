@@ -6,6 +6,7 @@
   import { can } from '$lib/stores/auth.js';
   import DataTable from '$lib/components/DataTable.svelte';
   import PageHeader from '$lib/components/PageHeader.svelte';
+  import ExportMenu from '$lib/components/ExportMenu.svelte';
 
   let rows = $state<any[]>([]);
   let net = $state(0);
@@ -33,6 +34,7 @@
 
 <PageHeader title={$t('nav.contributions')}>
   {#snippet actions()}
+    <ExportMenu resource="giving" title={tr({ en: 'Giving', ar: 'العطاء' }, $locale)} />
     {#if can('create contribution')}<a href="/contributions/new" class="btn-primary">{tr({ en: 'Record a gift', ar: 'تسجيل عطية' }, $locale)}</a>{/if}
   {/snippet}
 </PageHeader>

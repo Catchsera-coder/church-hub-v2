@@ -6,6 +6,7 @@
   import DataTable from '$lib/components/DataTable.svelte';
   import PageHeader from '$lib/components/PageHeader.svelte';
   import FilterBar from '$lib/components/FilterBar.svelte';
+  import ExportMenu from '$lib/components/ExportMenu.svelte';
 
   let rows = $state<any[]>([]);
   let loading = $state(true);
@@ -35,6 +36,7 @@
 
 <PageHeader title={$t('nav.families')}>
   {#snippet actions()}
+    <ExportMenu resource="families" title={tr({ en: 'Families', ar: 'العائلات' }, $locale)} />
     {#if can('create household')}<a href="/families/new" class="btn-primary">{$t('common.new')}</a>{/if}
   {/snippet}
 </PageHeader>
