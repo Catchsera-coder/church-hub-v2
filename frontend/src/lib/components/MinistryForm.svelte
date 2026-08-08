@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { api } from '$lib/api.js';
   import { t, locale, tr, LOCALES } from '$lib/i18n.js';
@@ -10,11 +11,29 @@
     description: initial?.description ?? {},
     ageGroup: initial?.ageGroup ?? '',
     defaultSchedule: initial?.defaultSchedule ?? '',
+    parentId: initial?.parentId ? String(initial.parentId) : '',
     sortOrder: initial?.sortOrder ?? 0,
     isActive: initial?.isActive ?? true,
   });
   let error = $state('');
   let saving = $state(false);
+
+  // Candidate parents: every other ministry, minus this one and its descendants
+  // (so you can't create a cycle).
+  let parentOptions = $state<any[]>([]);
+  onMount(async () => {
+    const all = (await api<{ data: any[] }>('/ministries')).data;
+    if (id == null) { parentOptions = all; return; }
+    const blocked = new Set<number>([id]);
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const m of all) {
+        if (m.parentId != null && blocked.has(m.parentId) && !blocked.has(m.id)) { blocked.add(m.id); grew = true; }
+      }
+    }
+    parentOptions = all.filter((m) => !blocked.has(m.id));
+  });
 
   const AGE_GROUPS = [
     { v: 'children', label: { en: 'Children', ar: 'أطفال' } },
@@ -30,6 +49,7 @@
         ...form,
         ageGroup: form.ageGroup || null,
         defaultSchedule: form.defaultSchedule || null,
+        parentId: form.parentId === '' ? null : Number(form.parentId),
         sortOrder: Number(form.sortOrder),
       };
       if (id) await api(`/ministries/${id}`, { method: 'PUT', body: JSON.stringify(body) });
@@ -48,6 +68,16 @@
         <input class="input" dir={l.dir} bind:value={form.name[l.code]} required={l.code === 'en'} />
       </label>
     {/each}
+
+    <label class="block space-y-1">
+      <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Parent group (optional)', ar: 'المجموعة الأم (اختياري)' }, $locale)}</span>
+      <select class="input" bind:value={form.parentId}>
+        <option value="">{tr({ en: '— None (top-level) —', ar: '— بدون (مستوى أعلى) —' }, $locale)}</option>
+        {#each parentOptions as p}<option value={String(p.id)}>{tr(p.name, $locale)}</option>{/each}
+      </select>
+      <span class="text-xs text-slate-400">{tr({ en: 'Make this a sub-ministry by choosing a parent. A ministry with sub-ministries acts as a group.', ar: 'اجعلها خدمة فرعية باختيار خدمة أم. الخدمة التي لها خدمات فرعية تعمل كمجموعة.' }, $locale)}</span>
+    </label>
+
     {#each LOCALES as l}
       <label class="block space-y-1">
         <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Description', ar: 'الوصف' }, $locale)} ({l.native})</span>

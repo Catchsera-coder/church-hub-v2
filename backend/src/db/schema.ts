@@ -12,7 +12,7 @@
  */
 import {
   pgTable, pgEnum, serial, integer, bigint, varchar, text, boolean,
-  timestamp, date, jsonb, uuid, uniqueIndex, index,
+  timestamp, date, jsonb, uuid, uniqueIndex, index, type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 
 type I18n = Record<string, string>;
@@ -204,11 +204,15 @@ export const serviceTypes = pgTable('service_types', {
   description: jsonb('description').$type<I18n>().notNull().default({}),
   ageGroup: ageGroup('age_group'),
   defaultSchedule: varchar('default_schedule', { length: 120 }),
+  // Self-referential parent: a ministry with a parent is a sub-ministry; one
+  // with children acts as a group. onDelete set null so removing a parent just
+  // ungroups its children (and soft-delete means it rarely fires anyway).
+  parentId: integer('parent_id').references((): AnyPgColumn => serviceTypes.id, { onDelete: 'set null' }),
   sortOrder: integer('sort_order').notNull().default(0),
   isActive: boolean('is_active').notNull().default(true),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
   ...timestamps,
-});
+}, (t) => ({ parentIdx: index('service_types_parent_idx').on(t.parentId) }));
 
 export const personServiceType = pgTable('person_service_type', {
   personId: integer('person_id').notNull().references(() => people.id, { onDelete: 'cascade' }),

@@ -5,7 +5,7 @@ import { db } from '../../db/index.js';
 import { serviceTypes } from '../../db/schema.js';
 import { asyncHandler } from '../../http/asyncHandler.js';
 import { authenticate, requirePermission } from '../../middleware/auth.js';
-import { notFound } from '../../http/errors.js';
+import { badRequest, notFound } from '../../http/errors.js';
 import { logActivity } from '../activity/service.js';
 
 export const ministriesRouter = Router();
@@ -16,6 +16,8 @@ const schema = z.object({
   description: z.record(z.string()).default({}),
   ageGroup: z.enum(['children', 'youth', 'adult']).nullable().optional(),
   defaultSchedule: z.string().max(120).nullable().optional(),
+  // Parent ministry (group). null/omitted = top-level.
+  parentId: z.number().int().positive().nullable().optional(),
   sortOrder: z.number().int().default(0),
   isActive: z.boolean().default(true),
 });
@@ -33,7 +35,9 @@ ministriesRouter.post('/', requirePermission('create ministry'), asyncHandler(as
 
 ministriesRouter.put('/:id', requirePermission('update ministry'), asyncHandler(async (req, res) => {
   const id = Number(req.params.id);
-  const [row] = await db.update(serviceTypes).set({ ...schema.partial().parse(req.body), updatedAt: new Date() }).where(and(eq(serviceTypes.id, id), isNull(serviceTypes.deletedAt))).returning();
+  const body = schema.partial().parse(req.body);
+  if (body.parentId === id) throw badRequest('A ministry cannot be its own parent');
+  const [row] = await db.update(serviceTypes).set({ ...body, updatedAt: new Date() }).where(and(eq(serviceTypes.id, id), isNull(serviceTypes.deletedAt))).returning();
   if (!row) throw notFound();
   await logActivity(req, 'updated', 'ministry', id);
   res.json({ data: row });
