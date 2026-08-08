@@ -2,10 +2,11 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { db } from '../../db/index.js';
-import { attendanceEvents, attendanceRecords, households, people } from '../../db/schema.js';
+import { attendanceEvents, attendanceRecords, checkinForms, households, people } from '../../db/schema.js';
 import { asyncHandler } from '../../http/asyncHandler.js';
 import { badRequest, notFound } from '../../http/errors.js';
 import { currentOrg } from '../settings/routes.js';
+import { STANDARD_FIELD_KEYS } from './forms.routes.js';
 
 /**
  * PUBLIC self-check-in (no auth). A person scans the big-screen/kiosk QR, which
@@ -54,6 +55,8 @@ publicCheckinRouter.post(
     const { q } = z.object({ q: z.string().trim().min(2).max(80) }).parse(req.body);
 
     const like = `%${q}%`;
+    // Match by name (either locale) OR phone number, so people can find themselves
+    // however they think of their identity.
     const matched = await db
       .select({ id: people.id, givenName: people.givenName, familyName: people.familyName, householdId: people.householdId })
       .from(people)
@@ -61,7 +64,8 @@ publicCheckinRouter.post(
         isNull(people.deletedAt),
         eq(people.isActive, true),
         sql`(${people.givenName}->>'en' ILIKE ${like} OR ${people.familyName}->>'en' ILIKE ${like}
-          OR ${people.givenName}->>'ar' ILIKE ${like} OR ${people.familyName}->>'ar' ILIKE ${like})`,
+          OR ${people.givenName}->>'ar' ILIKE ${like} OR ${people.familyName}->>'ar' ILIKE ${like}
+          OR ${people.mobile} ILIKE ${like})`,
       ))
       .limit(8);
 
@@ -198,5 +202,92 @@ publicCheckinRouter.post(
     }
 
     res.json({ data: { checkedIn, registered } });
+  }),
+);
+
+// --- Admin-built standalone forms (Phase 3) ---------------------------------
+// A shareable connect/registration form. Fields are configured by an admin; the
+// public renders them dynamically. Standard keys map to people columns, the rest
+// go to people.customFields. People are created as visitors flagged for review.
+const str = (v: unknown): string => (typeof v === 'string' ? v.trim() : v == null ? '' : String(v));
+
+async function activeFormByToken(token: string) {
+  const [form] = await db
+    .select()
+    .from(checkinForms)
+    .where(and(eq(checkinForms.publicToken, token), eq(checkinForms.active, true)))
+    .limit(1);
+  return form;
+}
+
+publicCheckinRouter.get(
+  '/form/:token',
+  asyncHandler(async (req, res) => {
+    const form = await activeFormByToken(req.params.token);
+    if (!form) throw notFound('This form is not active.');
+    const org = await currentOrg();
+    res.json({
+      data: {
+        name: form.name, intro: form.intro, fields: form.fields,
+        showFamily: form.showFamily, showConsent: form.showConsent,
+        church: { name: org.name },
+      },
+    });
+  }),
+);
+
+const formRegisterSchema = z.object({
+  consent: z
+    .object({ email: z.boolean().default(false), sms: z.boolean().default(false), whatsapp: z.boolean().default(false) })
+    .default({ email: false, sms: false, whatsapp: false }),
+  people: z.array(z.record(z.any())).min(1).max(16),
+});
+
+publicCheckinRouter.post(
+  '/form/:token/register',
+  asyncHandler(async (req, res) => {
+    const form = await activeFormByToken(req.params.token);
+    if (!form) throw notFound('This form is not active.');
+    const body = formRegisterSchema.parse(req.body);
+    const first = body.people[0]!;
+    const firstGiven = str(first.givenName);
+    if (!firstGiven) throw badRequest('Please enter your first name.');
+    const familyName = str(first.familyName) || firstGiven;
+
+    const [household] = await db.insert(households).values({ name: { en: familyName } }).returning();
+    let registered = 0;
+    for (const vals of body.people) {
+      const given = str(vals.givenName);
+      if (!given) continue;
+      const email = str(vals.email);
+      const mobile = str(vals.mobile);
+      const custom: Record<string, string> = {};
+      for (const [k, v] of Object.entries(vals)) {
+        if (STANDARD_FIELD_KEYS.has(k) || k === 'attending' || k === 'role') continue;
+        const s = str(v);
+        if (s) custom[k] = s;
+      }
+      const [person] = await db
+        .insert(people)
+        .values({
+          givenName: { en: given },
+          familyName: { en: str(vals.familyName) || familyName },
+          householdId: household?.id ?? null,
+          membershipStatus: 'visitor',
+          email: email ? email.toLowerCase() : null,
+          mobile: mobile || null,
+          dateOfBirth: str(vals.dateOfBirth) || null,
+          preferredLanguage: vals.preferredLanguage === 'ar' ? 'ar' : 'en',
+          householdRole: str(vals.householdRole) || str(vals.role) || null,
+          selfRegistered: true,
+          customFields: custom,
+          emailOptOut: !(body.consent.email && email),
+          smsOptOut: !(body.consent.sms && mobile),
+          whatsappOptOut: !(body.consent.whatsapp && mobile),
+        })
+        .returning();
+      if (person) registered++;
+    }
+    res.json({ data: { registered } });
   }),
 );

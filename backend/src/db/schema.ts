@@ -274,6 +274,34 @@ export const attendanceRecords = pgTable('attendance_records', {
   checkedInIdx: index('attendance_records_checked_in_idx').on(t.checkedInAt),
 }));
 
+// Admin-editable public intake/connect forms (Phase 3). Each has an unguessable
+// publicToken for a shareable link/QR. `fields` is an ordered array of field defs
+// (see FormField below). Standard field keys map to people columns; anything else
+// is stored in people.customFields.
+export type FormField = {
+  key: string;
+  label: I18n;
+  type: 'text' | 'tel' | 'email' | 'date' | 'select' | 'checkbox';
+  required: boolean;
+  forWhom: 'primary' | 'all'; // primary = the main registrant; all = every person added
+  options?: string[];         // for select
+};
+
+export const checkinForms = pgTable('checkin_forms', {
+  id: serial('id').primaryKey(),
+  name: jsonb('name').$type<I18n>().notNull().default({}),
+  intro: jsonb('intro').$type<I18n>().notNull().default({}),
+  fields: jsonb('fields').$type<FormField[]>().notNull().default([]),
+  showFamily: boolean('show_family').notNull().default(true),
+  showConsent: boolean('show_consent').notNull().default(true),
+  isDefault: boolean('is_default').notNull().default(false),
+  active: boolean('active').notNull().default(true),
+  publicToken: uuid('public_token').notNull().defaultRandom(),
+  ...timestamps,
+}, (t) => ({
+  publicTokenIdx: uniqueIndex('checkin_forms_public_token_idx').on(t.publicToken),
+}));
+
 // ---------------------------------------------------------------------------
 // Giving
 // ---------------------------------------------------------------------------

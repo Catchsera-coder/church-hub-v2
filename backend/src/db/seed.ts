@@ -1,8 +1,9 @@
 import { eq, sql } from 'drizzle-orm';
 import { db, pool } from './index.js';
-import { organisations, users, roles, permissions, userRoles, rolePermissions, funds, serviceTypes } from './schema.js';
+import { organisations, users, roles, permissions, userRoles, rolePermissions, funds, serviceTypes, checkinForms } from './schema.js';
 import { hashPassword } from '../auth/password.js';
 import { config } from '../config.js';
+import { DEFAULT_FORM_FIELDS } from '../modules/checkin/forms.routes.js';
 
 const RESOURCES = ['person', 'household', 'ministry', 'attendance', 'contribution', 'batch', 'fund', 'sermon', 'event', 'message', 'user'];
 const ACTIONS = ['view', 'create', 'update', 'delete'];
@@ -76,6 +77,17 @@ async function seed() {
     for (const [i, m] of ministrySeed.entries()) {
       await db.insert(serviceTypes).values({ name: m, sortOrder: i + 1 });
     }
+  }
+
+  // Default check-in / connect form (Phase 3). Seed once (idempotent on isDefault).
+  const [{ count: formCount }] = await db.select({ count: sql<number>`count(*)::int` }).from(checkinForms);
+  if (formCount === 0) {
+    await db.insert(checkinForms).values({
+      name: { en: 'Connect Card', ar: 'بطاقة تعارف' },
+      intro: { en: "Welcome! Tell us a little about you so we can stay in touch.", ar: 'أهلاً بك! أخبرنا القليل عنك لنبقى على تواصل.' },
+      fields: DEFAULT_FORM_FIELDS,
+      isDefault: true,
+    });
   }
 
   // eslint-disable-next-line no-console

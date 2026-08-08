@@ -28,6 +28,7 @@
       items: [
         { href: '/attendance', label: 'nav.attendance', icon: 'attendance', perm: 'view attendance' },
         { href: '/checkin', label: 'nav.checkin', icon: 'checkin', perm: 'create attendance' },
+        { href: '/forms', label: 'nav.forms', icon: 'forms', role: 'Admin' },
         { href: '/ministries', label: 'nav.ministries', icon: 'ministries', perm: 'view ministry' },
       ],
     },
