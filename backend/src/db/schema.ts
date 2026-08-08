@@ -186,6 +186,13 @@ export const people = pgTable('people', {
   smsOptOut: boolean('sms_opt_out').notNull().default(false),
   whatsappOptOut: boolean('whatsapp_opt_out').notNull().default(false),
   unsubToken: uuid('unsub_token').notNull().defaultRandom(), // one-click email unsubscribe
+  // Self-registration (public QR): people who added themselves. selfRegistered
+  // marks the origin permanently; reviewedAt is null until a staff member vets
+  // them (the "flag for review" queue). householdRole is a free relationship
+  // label captured at self-registration (e.g. wife/son) for staff context.
+  selfRegistered: boolean('self_registered').notNull().default(false),
+  householdRole: varchar('household_role', { length: 20 }),
+  reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
   isActive: boolean('is_active').notNull().default(true),
   notes: text('notes'),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
@@ -196,6 +203,7 @@ export const people = pgTable('people', {
   emailIdx: index('people_email_idx').on(t.email),
   mobileIdx: index('people_mobile_idx').on(t.mobile),
   qrUnique: uniqueIndex('people_qr_unique').on(t.qrToken),
+  reviewIdx: index('people_review_idx').on(t.selfRegistered, t.reviewedAt),
 }));
 
 // ---------------------------------------------------------------------------

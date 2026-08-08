@@ -52,6 +52,25 @@
     QRCode.toDataURL(url, { width: 360, margin: 1 }).then((d) => (qrDataUrl = d)).catch(() => (qrDataUrl = ''));
   });
 
+  // Share the self check-in link to a servant's phone (or any device) so they can
+  // walk the room. Uses the native share sheet where available, else copies.
+  let copied = $state(false);
+  async function shareLink() {
+    if (!selfUrl) return;
+    const title = selected ? tr(selected.title, $locale) : 'Check-in';
+    try {
+      if (typeof navigator !== 'undefined' && navigator.share) {
+        await navigator.share({ title, text: tr({ en: 'Scan or tap to check in', ar: 'امسح أو اضغط لتسجيل الحضور' }, $locale), url: selfUrl });
+        return;
+      }
+    } catch { /* user cancelled the share sheet — fall through to copy */ }
+    try {
+      await navigator.clipboard.writeText(selfUrl);
+      copied = true;
+      setTimeout(() => (copied = false), 2000);
+    } catch { /* clipboard blocked — the link is shown below to copy manually */ }
+  }
+
   async function createGathering(e: Event) {
     e.preventDefault();
     if (!newTitle.trim()) return;
@@ -134,6 +153,12 @@
       <p class="py-16 text-slate-400">{tr({ en: 'Select or create a gathering to show the QR.', ar: 'اختر أو أنشئ اجتماعاً لعرض الرمز.' }, $locale)}</p>
     {:else if qrDataUrl}
       <img src={qrDataUrl} alt="Check-in QR" class="mx-auto h-auto w-64 rounded-lg bg-white p-2" />
+      <div class="mt-4 flex items-center justify-center gap-2">
+        <button class="btn-primary" onclick={shareLink}>
+          {copied ? tr({ en: 'Copied ✓', ar: 'تم النسخ ✓' }, $locale) : tr({ en: 'Share link', ar: 'مشاركة الرابط' }, $locale)}
+        </button>
+        <a href={selfUrl} target="_blank" rel="noopener" class="btn-ghost">{tr({ en: 'Open', ar: 'فتح' }, $locale)}</a>
+      </div>
       <a href={selfUrl} target="_blank" rel="noopener" class="mt-3 inline-block break-all text-xs text-primary-600 hover:underline dark:text-primary-300">{selfUrl}</a>
     {:else}
       <p class="py-16 text-slate-400">{tr({ en: 'Generating QR…', ar: 'جارٍ إنشاء الرمز…' }, $locale)}</p>

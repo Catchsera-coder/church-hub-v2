@@ -33,6 +33,8 @@ const listQuery = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(25),
   search: z.string().trim().optional(),
   status: z.enum(['visitor', 'regular', 'member', 'inactive']).optional(),
+  // 'pending' → people who self-registered and haven't been vetted by staff yet.
+  review: z.enum(['pending']).optional(),
 });
 
 // GET /api/people — paginated, searchable across both locales of the name.
@@ -40,9 +42,10 @@ peopleRouter.get(
   '/',
   requirePermission('view person'),
   asyncHandler(async (req, res) => {
-    const { page, limit, search, status } = listQuery.parse(req.query);
+    const { page, limit, search, status, review } = listQuery.parse(req.query);
     const filters = [isNull(people.deletedAt)];
     if (status) filters.push(eq(people.membershipStatus, status));
+    if (review === 'pending') filters.push(eq(people.selfRegistered, true), isNull(people.reviewedAt));
     if (search) {
       const like = `%${search}%`;
       filters.push(
@@ -99,6 +102,27 @@ peopleRouter.put(
       .returning();
     if (!row) throw notFound();
     await logActivity(req, 'updated', 'person', id);
+    res.json({ data: row });
+  }),
+);
+
+// Mark a self-registered person as reviewed (clears them from the review queue).
+// Optionally promote their membership status in the same call.
+peopleRouter.post(
+  '/:id/review',
+  requirePermission('update person'),
+  asyncHandler(async (req, res) => {
+    const id = Number(req.params.id);
+    const { membershipStatus } = z
+      .object({ membershipStatus: z.enum(['visitor', 'regular', 'member', 'inactive']).optional() })
+      .parse(req.body ?? {});
+    const [row] = await db
+      .update(people)
+      .set({ reviewedAt: new Date(), ...(membershipStatus ? { membershipStatus } : {}), updatedAt: new Date() })
+      .where(and(eq(people.id, id), isNull(people.deletedAt)))
+      .returning();
+    if (!row) throw notFound();
+    await logActivity(req, 'updated', 'person', id, 'reviewed');
     res.json({ data: row });
   }),
 );
