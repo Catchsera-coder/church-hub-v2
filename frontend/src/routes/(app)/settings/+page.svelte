@@ -19,6 +19,11 @@
     { key: 'members', label: { en: 'Members', ar: 'الأعضاء' } },
     { key: 'families', label: { en: 'Families', ar: 'العائلات' } },
     { key: 'attendance', label: { en: 'Attendance this month', ar: 'الحضور هذا الشهر' } },
+    { key: 'newMembers', label: { en: 'New this month', ar: 'جدد هذا الشهر' } },
+    { key: 'awaitingApproval', label: { en: 'Awaiting approval', ar: 'بانتظار الموافقة' } },
+    { key: 'birthdays', label: { en: 'Birthdays this month', ar: 'أعياد ميلاد هذا الشهر' } },
+    { key: 'upcoming', label: { en: 'Upcoming gatherings', ar: 'الاجتماعات القادمة' } },
+    { key: 'services', label: { en: 'Attendance by service', ar: 'الحضور حسب الخدمة' } },
     { key: 'giving', label: { en: 'Giving this month', ar: 'العطاء هذا الشهر' } },
   ];
   const ALL_WIDGET_KEYS = DASH_WIDGETS.map((w) => w.key);

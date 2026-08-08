@@ -34,6 +34,18 @@
     { v: 'monthly', label: { en: 'Monthly', ar: 'شهرياً' } },
   ];
 
+  // Quick-name presets so a gathering is one tap to name (still fully editable).
+  const PRESETS = [
+    { en: 'Sunday Service', ar: 'خدمة الأحد' },
+    { en: 'Prayer Meeting', ar: 'اجتماع صلاة' },
+    { en: 'Bible Study', ar: 'دراسة كتاب' },
+    { en: 'Youth Night', ar: 'ليلة الشباب' },
+    { en: 'Kids Church', ar: 'كنيسة الأطفال' },
+  ];
+  function usePreset(p: Record<string, string>) {
+    form.title = { ...form.title, en: p.en, ...(p.ar ? { ar: p.ar } : {}) };
+  }
+
   onMount(async () => { ministries = (await api<{ data: any[] }>('/ministries')).data; });
 
   async function submit(e: Event) {
@@ -59,11 +71,16 @@
   }
 </script>
 
-<PageHeader title={tr({ en: 'New gathering', ar: 'اجتماع جديد' }, $locale)} />
+<PageHeader title={tr({ en: 'New gathering', ar: 'اجتماع جديد' }, $locale)} back="/attendance" />
 
 <form class="max-w-lg space-y-6" onsubmit={submit}>
   {#if error}<p class="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:bg-rose-900/30 dark:text-rose-300">{error}</p>{/if}
   <div class="card space-y-4 p-6">
+    <div class="flex flex-wrap gap-2">
+      {#each PRESETS as p}
+        <button type="button" class="rounded-full border border-slate-300 px-3 py-1 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" onclick={() => usePreset(p)}>{tr(p, $locale)}</button>
+      {/each}
+    </div>
     {#each $enabledLocales as l}
       <label class="block space-y-1">
         <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Title', ar: 'العنوان' }, $locale)} ({l.native})</span>

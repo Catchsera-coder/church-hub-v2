@@ -4,7 +4,7 @@ import { desc, eq } from 'drizzle-orm';
 import { db } from '../../db/index.js';
 import { attendanceEvents, attendanceRecords, people } from '../../db/schema.js';
 import { asyncHandler } from '../../http/asyncHandler.js';
-import { authenticate, requirePermission } from '../../middleware/auth.js';
+import { authenticate, requirePermission, requireRole } from '../../middleware/auth.js';
 import { badRequest, notFound } from '../../http/errors.js';
 import { logActivity } from '../activity/service.js';
 
@@ -69,6 +69,36 @@ attendanceRouter.post('/events/recurring', requirePermission('create attendance'
   res.status(201).json({ data: { count: created.length, first: created[0], events: created } });
 }));
 
+attendanceRouter.get('/events/:id', requirePermission('view attendance'), asyncHandler(async (req, res) => {
+  const [row] = await db.select().from(attendanceEvents).where(eq(attendanceEvents.id, Number(req.params.id))).limit(1);
+  if (!row) throw notFound();
+  res.json({ data: row });
+}));
+
+// Rename / reschedule a gathering (not delete — that's Super-Admin only below).
+attendanceRouter.put('/events/:id', requirePermission('update attendance'), asyncHandler(async (req, res) => {
+  const id = Number(req.params.id);
+  const b = eventSchema.partial().parse(req.body);
+  const patch: Record<string, unknown> = { updatedAt: new Date() };
+  if (b.title !== undefined) patch.title = b.title;
+  if (b.serviceTypeId !== undefined) patch.serviceTypeId = b.serviceTypeId ?? null;
+  if (b.startsAt !== undefined) patch.startsAt = new Date(b.startsAt);
+  const [row] = await db.update(attendanceEvents).set(patch).where(eq(attendanceEvents.id, id)).returning();
+  if (!row) throw notFound();
+  await logActivity(req, 'updated', 'attendance_event', id);
+  res.json({ data: row });
+}));
+
+// Delete a gathering (and its attendance records, via FK cascade). Restricted to
+// Super Admin — a deliberately high bar, matched by a two-step confirm in the UI.
+attendanceRouter.delete('/events/:id', requireRole('Super Admin'), asyncHandler(async (req, res) => {
+  const id = Number(req.params.id);
+  const [row] = await db.delete(attendanceEvents).where(eq(attendanceEvents.id, id)).returning();
+  if (!row) throw notFound();
+  await logActivity(req, 'deleted', 'attendance_event', id);
+  res.status(204).end();
+}));
+
 attendanceRouter.get('/events/:id/records', requirePermission('view attendance'), asyncHandler(async (req, res) => {
   const eventId = Number(req.params.id);
   const rows = await db
@@ -78,6 +108,9 @@ attendanceRouter.get('/events/:id/records', requirePermission('view attendance')
       checkedInAt: attendanceRecords.checkedInAt,
       givenName: people.givenName,
       familyName: people.familyName,
+      // For the new-vs-member filter on the attendee list.
+      membershipStatus: people.membershipStatus,
+      selfRegistered: people.selfRegistered,
     })
     .from(attendanceRecords)
     .innerJoin(people, eq(people.id, attendanceRecords.personId))
