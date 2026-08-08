@@ -1,20 +1,18 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import * as QRCode from 'qrcode';
   import { api, ApiError } from '$lib/api.js';
   import { t, locale, tr } from '$lib/i18n.js';
   import { can } from '$lib/stores/auth.js';
-  import { dateTime } from '$lib/format.js';
   import PageHeader from '$lib/components/PageHeader.svelte';
+  import GatheringQr from '$lib/components/GatheringQr.svelte';
 
   let events = $state<any[]>([]);
   let eventId = $state<number | null>(null);
   let token = $state('');
   let last = $state<{ ok: boolean; msg: string } | null>(null);
   let busy = $state(false);
-  let qrDataUrl = $state('');
   let loadingEvents = $state(true);
-  let expanded = $state(false); // fullscreen QR for projecting
+  let viewAll = $state(false); // show a grid of every gathering's QR at once
   let scanInput = $state<HTMLInputElement | null>(null);
 
   // Inline "new gathering" so you can start a check-in without leaving the page.
@@ -32,11 +30,6 @@
   let newStartsAt = $state(nowLocal());
 
   const selected = $derived(events.find((e) => e.id === eventId) ?? null);
-  const selfUrl = $derived(
-    selected && typeof window !== 'undefined'
-      ? `${window.location.origin}/checkin/self/${selected.publicToken}`
-      : '',
-  );
   const selName = $derived(selected ? tr(selected.title, $locale) || `#${selected.id}` : '');
 
   onMount(async () => {
@@ -48,32 +41,6 @@
       loadingEvents = false;
     }
   });
-
-  // Regenerate the big-screen QR whenever the selected gathering changes.
-  $effect(() => {
-    const url = selfUrl;
-    if (!url) { qrDataUrl = ''; return; }
-    QRCode.toDataURL(url, { width: 360, margin: 1 }).then((d) => (qrDataUrl = d)).catch(() => (qrDataUrl = ''));
-  });
-
-  // Share the self check-in link to a servant's phone (or any device) so they can
-  // walk the room. Uses the native share sheet where available, else copies.
-  let copied = $state(false);
-  async function shareLink() {
-    if (!selfUrl) return;
-    const title = selected ? tr(selected.title, $locale) : 'Check-in';
-    try {
-      if (typeof navigator !== 'undefined' && navigator.share) {
-        await navigator.share({ title, text: tr({ en: 'Scan or tap to check in', ar: 'امسح أو اضغط لتسجيل الحضور' }, $locale), url: selfUrl });
-        return;
-      }
-    } catch { /* user cancelled the share sheet — fall through to copy */ }
-    try {
-      await navigator.clipboard.writeText(selfUrl);
-      copied = true;
-      setTimeout(() => (copied = false), 2000);
-    } catch { /* clipboard blocked — the link is shown below to copy manually */ }
-  }
 
   async function createGathering(e: Event) {
     e.preventDefault();
@@ -134,6 +101,13 @@
     <p class="text-sm text-slate-500 dark:text-slate-400">{tr({ en: 'No gatherings yet — create one to start checking people in.', ar: 'لا توجد اجتماعات بعد — أنشئ واحداً لبدء تسجيل الحضور.' }, $locale)}</p>
   {/if}
 
+  {#if events.length > 1}
+    <label class="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+      <input type="checkbox" bind:checked={viewAll} />
+      {tr({ en: 'Show all service QRs at once (for simultaneous services)', ar: 'إظهار جميع رموز الخدمات معاً (للخدمات المتزامنة)' }, $locale)}
+    </label>
+  {/if}
+
   {#if showNew}
     <form class="card space-y-3 p-4" onsubmit={createGathering}>
       <p class="text-sm font-medium">{tr({ en: 'New gathering', ar: 'اجتماع جديد' }, $locale)}</p>
@@ -148,32 +122,29 @@
   {/if}
 </div>
 
-<div class="grid gap-6 lg:grid-cols-2">
-  <!-- Big-screen self check-in QR -->
-  <div class="card p-6 text-center">
-    <h2 class="mb-1 text-lg font-semibold">{tr({ en: 'Self check-in', ar: 'تسجيل ذاتي' }, $locale)}</h2>
-    <p class="mb-4 text-sm text-slate-500 dark:text-slate-400">
-      {tr({ en: 'Show this on a screen. Members scan it, find their name, and tick who is here.', ar: 'اعرض هذا على شاشة. يمسحه الأعضاء، يجدون أسماءهم، ويحددون الحاضرين.' }, $locale)}
-    </p>
-    {#if !selected}
-      <p class="py-16 text-slate-400">{tr({ en: 'Select or create a gathering to show the QR.', ar: 'اختر أو أنشئ اجتماعاً لعرض الرمز.' }, $locale)}</p>
-    {:else if qrDataUrl}
-      <!-- Clear gathering name above the QR so multiple services aren't confused. -->
-      <p class="text-xl font-bold text-slate-900 dark:text-white">{selName}</p>
-      <p class="mb-3 text-xs text-slate-500 force-ltr">{dateTime(selected.startsAt)}</p>
-      <img src={qrDataUrl} alt="Check-in QR" class="mx-auto h-auto w-64 rounded-lg bg-white p-2" />
-      <div class="mt-4 flex flex-wrap items-center justify-center gap-2">
-        <button class="btn-primary" onclick={() => (expanded = true)}>⛶ {tr({ en: 'Expand', ar: 'تكبير' }, $locale)}</button>
-        <button class="btn-ghost" onclick={shareLink}>
-          {copied ? tr({ en: 'Copied ✓', ar: 'تم النسخ ✓' }, $locale) : tr({ en: 'Share link', ar: 'مشاركة الرابط' }, $locale)}
-        </button>
-        <a href={selfUrl} target="_blank" rel="noopener" class="btn-ghost">{tr({ en: 'Open', ar: 'فتح' }, $locale)}</a>
-      </div>
-      <a href={selfUrl} target="_blank" rel="noopener" class="mt-3 inline-block break-all text-xs text-primary-600 hover:underline dark:text-primary-300">{selfUrl}</a>
-    {:else}
-      <p class="py-16 text-slate-400">{tr({ en: 'Generating QR…', ar: 'جارٍ إنشاء الرمز…' }, $locale)}</p>
-    {/if}
+{#if viewAll}
+  <!-- Every gathering's QR at once — project on multiple screens or print a sheet
+       for simultaneous services. Each is independent and safe to use in parallel. -->
+  <div class="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+    {#each events as ev (ev.id)}<GatheringQr event={ev} />{/each}
   </div>
+{/if}
+
+<div class="grid gap-6 lg:grid-cols-2">
+  <!-- Big-screen self check-in QR (the selected gathering) -->
+  {#if !viewAll}
+    <div>
+      <h2 class="mb-1 text-lg font-semibold">{tr({ en: 'Self check-in', ar: 'تسجيل ذاتي' }, $locale)}</h2>
+      <p class="mb-4 text-sm text-slate-500 dark:text-slate-400">
+        {tr({ en: 'Show this on a screen. Members scan it, find their name, and tick who is here.', ar: 'اعرض هذا على شاشة. يمسحه الأعضاء، يجدون أسماءهم، ويحددون الحاضرين.' }, $locale)}
+      </p>
+      {#if selected}
+        <GatheringQr event={selected} />
+      {:else}
+        <p class="card p-6 py-16 text-center text-slate-400">{tr({ en: 'Select or create a gathering to show the QR.', ar: 'اختر أو أنشئ اجتماعاً لعرض الرمز.' }, $locale)}</p>
+      {/if}
+    </div>
+  {/if}
 
   <!-- Manual: scan a member's personal QR / kiosk -->
   <div class="card p-6">
@@ -202,13 +173,3 @@
     </div>
   </div>
 </div>
-
-<!-- Fullscreen QR for projecting (click anywhere to collapse) -->
-{#if expanded && qrDataUrl}
-  <button class="fixed inset-0 z-50 flex flex-col items-center justify-center gap-6 bg-white p-6 dark:bg-slate-950" onclick={() => (expanded = false)} aria-label={tr({ en: 'Close', ar: 'إغلاق' }, $locale)}>
-    <p class="text-3xl font-bold text-slate-900 dark:text-white sm:text-5xl">{selName}</p>
-    <img src={qrDataUrl} alt="Check-in QR" class="h-auto w-[70vmin] max-w-[80vw] rounded-xl bg-white p-3" style="image-rendering: pixelated" />
-    <p class="text-lg text-slate-500">{tr({ en: 'Scan with your phone to check in', ar: 'امسح بهاتفك لتسجيل الحضور' }, $locale)}</p>
-    <p class="text-sm text-slate-400">{tr({ en: 'Tap anywhere to close', ar: 'اضغط في أي مكان للإغلاق' }, $locale)}</p>
-  </button>
-{/if}
