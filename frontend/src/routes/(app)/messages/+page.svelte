@@ -17,7 +17,7 @@
   }
   onMount(load);
 
-  const statusColor = (s: string) => s === 'sent' ? 'text-emerald-600' : s === 'failed' ? 'text-rose-600' : 'text-slate-500';
+  const statusColor = (s: string) => s === 'sent' ? 'text-emerald-600' : s === 'failed' ? 'text-rose-600' : s === 'scheduled' ? 'text-amber-600 dark:text-amber-400' : 'text-slate-500';
 
   async function sendNow(m: any) {
     if (!confirm(tr({ en: `Send "${m.name}" now to all matching members?`, ar: `إرسال «${m.name}» الآن لكل الأعضاء المطابقين؟` }, $locale))) return;
@@ -43,11 +43,14 @@
   {#snippet row(m)}
     <td class="p-3 font-medium">{m.name}</td>
     <td class="p-3 uppercase text-xs text-slate-500">{m.channel}</td>
-    <td class="p-3 capitalize font-medium {statusColor(m.status)}">{m.status}</td>
+    <td class="p-3 capitalize font-medium {statusColor(m.status)}">
+      {m.status}
+      {#if m.status === 'scheduled' && m.scheduledFor}<span class="block text-xs font-normal text-slate-400 force-ltr">{dateTime(m.scheduledFor)}</span>{/if}
+    </td>
     <td class="p-3 text-end">{m.recipients ?? 0}</td>
     <td class="p-3 force-ltr text-slate-600 dark:text-slate-300">{m.sentAt ? dateTime(m.sentAt) : '—'}</td>
     <td class="p-3 text-end">
-      {#if m.status === 'draft' && can('update message')}
+      {#if (m.status === 'draft' || m.status === 'scheduled') && can('update message')}
         <button class="text-xs text-primary-600 hover:underline dark:text-primary-300 disabled:opacity-50" disabled={sending === m.id} onclick={() => sendNow(m)}>
           {sending === m.id ? $t('common.loading') : tr({ en: 'Send now', ar: 'إرسال الآن' }, $locale)}
         </button>

@@ -14,6 +14,17 @@
   });
   let error = $state('');
   let saving = $state(false);
+  let scheduleAt = $state('');
+  const MERGE = '{{firstName}} · {{lastName}} · {{fullName}} · {{churchName}} · {{date}}';
+
+  // Live audience count for the chosen channel = active people opted-in with a
+  // matching contact (exactly who a send would reach).
+  let audience = $state<number | null>(null);
+  $effect(() => {
+    const ch = form.channel;
+    audience = null;
+    api<{ meta: { total: number } }>(`/people?optedIn=${ch}&limit=1`).then((r) => { audience = r.meta.total; }).catch(() => { audience = null; });
+  });
 
   // Branded templates (#20b): pick one to prefill subject + body. Header/footer
   // are joined around the body per language so the branded copy carries through.
@@ -69,19 +80,46 @@
     } catch (err) { aiError = (err as Error).message; } finally { aiLoading = false; }
   }
 
-  async function submit(e: Event) {
-    e.preventDefault();
+  async function create(): Promise<number> {
+    const { data } = await api<{ data: any }>('/messages', { method: 'POST', body: JSON.stringify(form) });
+    return data.id;
+  }
+  function valid(): boolean {
+    if (!form.name.trim()) { error = tr({ en: 'Give the message an internal name.', ar: 'أعطِ الرسالة اسماً داخلياً.' }, $locale); return false; }
+    if (!form.body.en?.trim()) { error = tr({ en: 'Write the message body (English).', ar: 'اكتب نص الرسالة (بالإنجليزية).' }, $locale); return false; }
+    return true;
+  }
+  async function saveDraft() {
+    if (!valid()) return;
+    saving = true; error = '';
+    try { await create(); await goto('/messages'); } catch (err) { error = (err as Error).message; } finally { saving = false; }
+  }
+  async function sendNow() {
+    if (!valid()) return;
+    if (!confirm(tr({ en: `Send now to ${audience ?? 'all matching'} people?`, ar: `إرسال الآن إلى ${audience ?? 'كل المطابقين'} شخص؟` }, $locale))) return;
     saving = true; error = '';
     try {
-      const { data } = await api<{ data: any }>('/messages', { method: 'POST', body: JSON.stringify(form) });
-      await goto(`/messages?created=${data.id}`);
-    } catch (err) { error = (err as Error).message; } finally { saving = false; }
+      const id = await create();
+      const { data } = await api<{ data: { sent: number; total: number } }>(`/messages/${id}/send`, { method: 'POST' });
+      alert(tr({ en: `Sent to ${data.sent} of ${data.total}.`, ar: `أُرسلت إلى ${data.sent} من ${data.total}.` }, $locale));
+      await goto('/messages');
+    } catch (err) { error = (err as Error).message; saving = false; }
+  }
+  async function schedule() {
+    if (!valid()) return;
+    if (!scheduleAt) { error = tr({ en: 'Pick a date and time to schedule.', ar: 'اختر التاريخ والوقت للجدولة.' }, $locale); return; }
+    saving = true; error = '';
+    try {
+      const id = await create();
+      await api(`/messages/${id}/schedule`, { method: 'POST', body: JSON.stringify({ scheduledFor: new Date(scheduleAt).toISOString() }) });
+      await goto('/messages');
+    } catch (err) { error = (err as Error).message; saving = false; }
   }
 </script>
 
 <PageHeader title={tr({ en: 'New message', ar: 'رسالة جديدة' }, $locale)} />
 
-<form class="max-w-2xl space-y-6" onsubmit={submit}>
+<div class="max-w-2xl space-y-6">
   {#if error}<p class="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:bg-rose-900/30 dark:text-rose-300">{error}</p>{/if}
   <div class="card space-y-4 p-6">
     <div class="grid gap-3 sm:grid-cols-2">
@@ -148,14 +186,31 @@
         <textarea class="input" dir={l.dir} rows="4" bind:value={form.body[l.code]} required={l.code === 'en'}></textarea>
       </label>
     {/each}
+
+    <div class="rounded-lg bg-slate-50 p-3 text-xs text-slate-600 dark:bg-slate-800/50 dark:text-slate-300">
+      <p class="mb-1 font-medium text-slate-700 dark:text-slate-200">✨ {tr({ en: 'Personalise with merge fields', ar: 'التخصيص بحقول الدمج' }, $locale)}</p>
+      <p class="font-mono text-slate-700 dark:text-slate-200">{MERGE}</p>
+    </div>
   </div>
 
-  <p class="text-xs text-slate-500 dark:text-slate-400">
-    {tr({ en: 'Recipients are active members with a matching contact detail. Save the draft, then use "Send now" from the list.', ar: 'المستلمون هم الأعضاء النشطون الذين لديهم بيانات اتصال مطابقة. احفظ المسودة ثم استخدم «إرسال الآن» من القائمة.' }, $locale)}
-  </p>
+  <!-- Audience + actions -->
+  <div class="card space-y-4 p-6">
+    <p class="text-sm text-slate-600 dark:text-slate-300">
+      {tr({ en: 'Will reach', ar: 'ستصل إلى' }, $locale)}
+      <b style="color: var(--brand)">{audience === null ? '…' : audience}</b>
+      {tr({ en: 'people opted-in on this channel.', ar: 'شخص موافق على هذه القناة.' }, $locale)}
+    </p>
 
-  <div class="flex gap-3">
-    <button class="btn-primary" type="submit" disabled={saving}>{saving ? $t('common.loading') : $t('common.save')}</button>
-    <a class="btn-ghost" href="/messages">✕</a>
+    <div class="flex flex-wrap items-end gap-3">
+      <button class="btn-ghost border border-slate-300 dark:border-slate-700" onclick={saveDraft} disabled={saving}>{saving ? $t('common.loading') : tr({ en: 'Save draft', ar: 'حفظ مسودة' }, $locale)}</button>
+      <button class="btn-primary" onclick={sendNow} disabled={saving}>{tr({ en: 'Send now', ar: 'إرسال الآن' }, $locale)}</button>
+      <span class="text-slate-300 dark:text-slate-600">|</span>
+      <label class="space-y-1 text-sm">
+        <span class="block text-slate-500">{tr({ en: 'Schedule for later', ar: 'جدولة لاحقاً' }, $locale)}</span>
+        <input class="input force-ltr" type="datetime-local" bind:value={scheduleAt} />
+      </label>
+      <button class="btn-ghost border border-slate-300 dark:border-slate-700" onclick={schedule} disabled={saving || !scheduleAt}>🕐 {tr({ en: 'Schedule', ar: 'جدولة' }, $locale)}</button>
+    </div>
+    <a class="text-sm text-slate-500 hover:underline" href="/messages">← {tr({ en: 'Cancel', ar: 'إلغاء' }, $locale)}</a>
   </div>
-</form>
+</div>
