@@ -58,6 +58,35 @@
     } catch (err) { createErr = err instanceof ApiError ? err.message : (err as Error).message; } finally { creating = false; }
   }
 
+  // --- Manual check-in by name (works for whichever gathering is selected) ---
+  let nameQuery = $state('');
+  let nameResults = $state<any[]>([]);
+  let nameTimer: ReturnType<typeof setTimeout>;
+  let recent = $state<{ name: string; dup: boolean }[]>([]);
+
+  function searchByName() {
+    clearTimeout(nameTimer);
+    nameTimer = setTimeout(async () => {
+      if (!nameQuery.trim()) { nameResults = []; return; }
+      const q = new URLSearchParams({ search: nameQuery.trim(), limit: '8' });
+      nameResults = (await api<{ data: any[] }>(`/people?${q}`)).data;
+    }, 250);
+  }
+
+  async function checkInPerson(p: any) {
+    if (!eventId) return;
+    const name = `${tr(p.givenName, $locale)} ${tr(p.familyName, $locale)}`.trim();
+    try {
+      const r = await api<{ data: { duplicate?: boolean } }>(`/attendance/events/${eventId}/records`, {
+        method: 'POST', body: JSON.stringify({ personId: p.id }),
+      });
+      recent = [{ name, dup: !!r.data?.duplicate }, ...recent].slice(0, 8);
+      nameQuery = ''; nameResults = [];
+    } catch (err) {
+      last = { ok: false, msg: err instanceof ApiError ? err.message : (err as Error).message };
+    }
+  }
+
   async function submit(e: Event) {
     e.preventDefault();
     if (!eventId || !token.trim()) return;
@@ -146,13 +175,47 @@
     </div>
   {/if}
 
-  <!-- Manual: scan a member's personal QR / kiosk -->
+  <!-- Check people in: by name (manual) or by card (scan) -->
   <div class="card p-6">
-    <h2 class="mb-1 text-lg font-semibold">{tr({ en: 'Scan a member card', ar: 'مسح بطاقة العضو' }, $locale)}</h2>
-    <p class="mb-3 text-sm text-slate-500 dark:text-slate-400">{tr({ en: 'Checking in to:', ar: 'التسجيل في:' }, $locale)} <b class="text-slate-700 dark:text-slate-200">{selName || '—'}</b></p>
+    <h2 class="mb-1 text-lg font-semibold">{tr({ en: 'Check people in', ar: 'تسجيل الحضور' }, $locale)}</h2>
+    <p class="mb-4 text-sm text-slate-500 dark:text-slate-400">{tr({ en: 'To:', ar: 'إلى:' }, $locale)} <b class="text-slate-700 dark:text-slate-200">{selName || tr({ en: 'select a gathering above', ar: 'اختر اجتماعاً أعلاه' }, $locale)}</b></p>
+
+    <!-- By name -->
+    <div class="relative">
+      <label class="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">{tr({ en: 'By name', ar: 'بالاسم' }, $locale)}</label>
+      <input class="input" bind:value={nameQuery} oninput={searchByName} disabled={!eventId}
+        placeholder={tr({ en: 'Type a name to check in…', ar: 'اكتب اسماً لتسجيل الحضور…' }, $locale)} />
+      {#if nameResults.length}
+        <div class="absolute z-10 mt-1 w-full rounded-lg border border-slate-200 bg-white shadow dark:border-slate-700 dark:bg-slate-900">
+          {#each nameResults as p}
+            <button type="button" class="flex w-full items-center justify-between px-3 py-2 text-start text-sm hover:bg-slate-100 dark:hover:bg-slate-800" onclick={() => checkInPerson(p)}>
+              <span>{tr(p.givenName, $locale)} {tr(p.familyName, $locale)}</span>
+              <span class="text-xs capitalize text-slate-400">{p.membershipStatus}</span>
+            </button>
+          {/each}
+        </div>
+      {/if}
+    </div>
+
+    <!-- Recently checked in this session -->
+    {#if recent.length}
+      <div class="mt-3 space-y-1">
+        {#each recent as r}
+          <div class="flex items-center gap-2 rounded-md bg-emerald-50 px-3 py-1.5 text-sm text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
+            <span>✓</span><span class="flex-1">{r.name}</span>
+            {#if r.dup}<span class="text-xs text-emerald-600/70">{tr({ en: 'already in', ar: 'مسجّل مسبقاً' }, $locale)}</span>{/if}
+          </div>
+        {/each}
+      </div>
+    {/if}
+
+    <!-- By card -->
+    <div class="my-4 flex items-center gap-3 text-xs uppercase tracking-wide text-slate-400">
+      <span class="h-px flex-1 bg-slate-200 dark:bg-slate-700"></span>{tr({ en: 'or by card', ar: 'أو بالبطاقة' }, $locale)}<span class="h-px flex-1 bg-slate-200 dark:bg-slate-700"></span>
+    </div>
     <form class="space-y-3" onsubmit={submit}>
       <!-- svelte-ignore a11y_autofocus -->
-      <input class="input force-ltr" bind:this={scanInput} bind:value={token} autofocus placeholder={tr({ en: 'Scan a card, or type/paste a code…', ar: 'امسح بطاقة أو اكتب/الصق رمزاً…' }, $locale)} />
+      <input class="input force-ltr" bind:this={scanInput} bind:value={token} placeholder={tr({ en: 'Scan a card, or type/paste a code…', ar: 'امسح بطاقة أو اكتب/الصق رمزاً…' }, $locale)} />
       <button class="btn-primary w-full" type="submit" disabled={busy || !eventId}>{tr({ en: 'Check in', ar: 'تسجيل الحضور' }, $locale)}</button>
     </form>
     {#if last}
