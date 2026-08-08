@@ -17,6 +17,13 @@
   let f = $state({ ...EMPTY });
   const activeCount = $derived(Object.values(f).filter((v) => v !== '').length);
 
+  const exportParams = $derived.by(() => {
+    const p = new URLSearchParams();
+    if (search.trim()) p.set('search', search.trim());
+    for (const [k, v] of Object.entries(f)) if (v !== '') p.set(k, String(v));
+    return p.toString();
+  });
+
   async function load() {
     loading = true;
     try {
@@ -36,7 +43,7 @@
 
 <PageHeader title={$t('nav.families')}>
   {#snippet actions()}
-    <ExportMenu resource="families" title={tr({ en: 'Families', ar: 'العائلات' }, $locale)} />
+    <ExportMenu resource="families" title={tr({ en: 'Families', ar: 'العائلات' }, $locale)} params={exportParams} />
     {#if can('create household')}<a href="/families/new" class="btn-primary">{$t('common.new')}</a>{/if}
   {/snippet}
 </PageHeader>

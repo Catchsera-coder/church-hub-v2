@@ -1,11 +1,14 @@
 import { Router } from 'express';
 import ExcelJS from 'exceljs';
-import { and, desc, eq, isNull, sql } from 'drizzle-orm';
+import { desc, eq, isNull } from 'drizzle-orm';
 import { db } from '../../db/index.js';
 import { people, households, contributions, funds } from '../../db/schema.js';
 import { asyncHandler } from '../../http/asyncHandler.js';
 import { authenticate, requirePermission } from '../../middleware/auth.js';
 import { currentOrg } from '../settings/routes.js';
+import { peopleListQuery, peopleFilters } from '../people/filters.js';
+import { familyListQuery, familyWhere, memberCountExpr, childCountExpr } from '../families/filters.js';
+import { and } from 'drizzle-orm';
 
 /**
  * Data export (CSV + branded XLSX). The frontend also offers a branded
@@ -85,7 +88,10 @@ async function sendXlsx(
 const isXlsx = (req: import('express').Request) => String(req.query.format).toLowerCase() === 'xlsx';
 
 // --- Members -----------------------------------------------------------------
+// Honours the same filters as the Members list, so a filtered view exports/prints
+// only those people (no filters → everyone).
 exportRouter.get('/members', requirePermission('view person'), asyncHandler(async (req, res) => {
+  const q = peopleListQuery.parse(req.query);
   const rows = await db
     .select({
       given: people.givenName, family: people.familyName, status: people.membershipStatus,
@@ -94,7 +100,7 @@ exportRouter.get('/members', requirePermission('view person'), asyncHandler(asyn
     })
     .from(people)
     .leftJoin(households, eq(households.id, people.householdId))
-    .where(isNull(people.deletedAt))
+    .where(and(...peopleFilters(q)))
     .orderBy(desc(people.createdAt));
   const headers = ['First name', 'Last name', 'Status', 'Email', 'Mobile', 'Date of birth', 'Joined', 'Family'];
   const data: Row[] = rows.map((r) => [en(r.given), en(r.family), r.status, r.email ?? '', r.mobile ?? '', r.dob ?? '', r.joined ?? '', en(r.household)]);
@@ -105,12 +111,11 @@ exportRouter.get('/members', requirePermission('view person'), asyncHandler(asyn
 
 // --- Families ----------------------------------------------------------------
 exportRouter.get('/families', requirePermission('view household'), asyncHandler(async (req, res) => {
-  const memberCount = sql<number>`(SELECT count(*)::int FROM ${people} p WHERE p.household_id = ${households.id} AND p.deleted_at IS NULL AND p.is_active = true)`;
-  const childCount = sql<number>`(SELECT count(*)::int FROM ${people} p WHERE p.household_id = ${households.id} AND p.deleted_at IS NULL AND p.date_of_birth IS NOT NULL AND extract(year from age(p.date_of_birth)) < 13)`;
+  const q = familyListQuery.parse(req.query);
   const rows = await db
-    .select({ name: households.name, members: memberCount, children: childCount, phone: households.homePhone, city: households.city })
+    .select({ name: households.name, members: memberCountExpr, children: childCountExpr, phone: households.homePhone, city: households.city })
     .from(households)
-    .where(isNull(households.deletedAt))
+    .where(familyWhere(q))
     .orderBy(desc(households.createdAt));
   const headers = ['Family', 'Members', 'Children', 'Phone', 'City'];
   const data: Row[] = rows.map((r) => [en(r.name), r.members, r.children, r.phone ?? '', r.city ?? '']);

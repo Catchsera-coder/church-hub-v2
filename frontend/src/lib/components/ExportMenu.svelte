@@ -5,17 +5,22 @@
 
   // Export the given resource. CSV + Excel download from the backend; Print builds
   // a branded print-to-PDF (browser print) from the same data, with logo/date
-  // toggles the exporter chooses.
-  let { resource, title }: { resource: string; title: string } = $props();
+  // toggles the exporter chooses. `params` carries the page's active filters so a
+  // filtered view exports only those rows (empty → everyone).
+  let { resource, title, params = '' }: { resource: string; title: string; params?: string } = $props();
 
   let open = $state(false);
   let busy = $state(false);
   let withLogo = $state(true);
   let withDate = $state(true);
 
+  const filtered = $derived(params.replace(/^[?&]+/, '').length > 0);
+
   async function fetchBlob(format: 'csv' | 'xlsx'): Promise<Blob> {
     const token = get(auth).accessToken;
-    const res = await fetch(`/api/export/${resource}?format=${format}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    const extra = params.replace(/^[?&]+/, '');
+    const url = `/api/export/${resource}?format=${format}${extra ? '&' + extra : ''}`;
+    const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
     if (!res.ok) throw new Error('Export failed');
     return res.blob();
   }
@@ -90,7 +95,10 @@
   </button>
   {#if open}
     <button class="fixed inset-0 z-10 cursor-default" aria-label="close" onclick={() => (open = false)}></button>
-    <div class="absolute end-0 z-20 mt-1 w-56 rounded-lg border border-slate-200 bg-white p-2 text-sm shadow-lg dark:border-slate-700 dark:bg-slate-900">
+    <div class="absolute end-0 z-20 mt-1 w-60 rounded-lg border border-slate-200 bg-white p-2 text-sm shadow-lg dark:border-slate-700 dark:bg-slate-900">
+      <p class="px-3 pb-1 pt-1 text-xs {filtered ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'}">
+        {filtered ? tr({ en: 'Only the current filter', ar: 'المرشّح الحالي فقط' }, $locale) : tr({ en: 'All records', ar: 'كل السجلات' }, $locale)}
+      </p>
       <button class="block w-full rounded px-3 py-2 text-start hover:bg-slate-100 dark:hover:bg-slate-800" onclick={() => download('xlsx')}>📊 {tr({ en: 'Excel (.xlsx)', ar: 'إكسل (.xlsx)' }, $locale)}</button>
       <button class="block w-full rounded px-3 py-2 text-start hover:bg-slate-100 dark:hover:bg-slate-800" onclick={() => download('csv')}>📄 {tr({ en: 'CSV', ar: 'CSV' }, $locale)}</button>
       <button class="block w-full rounded px-3 py-2 text-start hover:bg-slate-100 dark:hover:bg-slate-800" onclick={printPdf}>🖨 {tr({ en: 'Print / PDF', ar: 'طباعة / PDF' }, $locale)}</button>

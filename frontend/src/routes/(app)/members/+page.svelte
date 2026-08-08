@@ -37,6 +37,15 @@
   let f = $state({ ...EMPTY });
   const activeCount = $derived(Object.values(f).filter((v) => v !== '').length);
 
+  // Active filters as a query string so Export/Print honours the current view.
+  const exportParams = $derived.by(() => {
+    const p = new URLSearchParams();
+    if (search.trim()) p.set('search', search.trim());
+    if (reviewOnly) p.set('review', 'pending');
+    for (const [k, v] of Object.entries(f)) if (v !== '') p.set(k, String(v));
+    return p.toString();
+  });
+
   let rows = $state<Person[]>([]);
   let meta = $state<Meta>({ page: 1, limit: 25, total: 0, pages: 1 });
   let search = $state('');
@@ -90,7 +99,7 @@
 <div class="mb-6 flex items-center justify-between gap-3">
   <h1 class="text-2xl font-semibold">{$t('nav.members')}</h1>
   <div class="flex items-center gap-2">
-    <ExportMenu resource="members" title={tr({ en: 'Members', ar: 'الأعضاء' }, $locale)} />
+    <ExportMenu resource="members" title={tr({ en: 'Members', ar: 'الأعضاء' }, $locale)} params={exportParams} />
     {#if can('create person')}
       <a href="/members/new" class="btn-primary">{$t('common.new')}</a>
     {/if}
