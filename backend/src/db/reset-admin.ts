@@ -26,7 +26,7 @@ if (!email || !password) {
 }
 
 const hash = await hashPassword(password);
-let userId: string | number;
+let userId: number;
 const existing = await db.select().from(users).where(eq(users.email, email)).limit(1);
 if (existing.length) {
   await db.update(users).set({ passwordHash: hash }).where(eq(users.email, email));
@@ -49,4 +49,3 @@ if (sr.length) {
   console.log('WARN: Super Admin role not found - run db:seed first.');
 }
 process.exit(0);
-
