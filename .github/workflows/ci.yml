@@ -30,10 +30,17 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 20 }
-      # npm install (not ci): no committed lockfile yet — the author's machine has
+      # npm install (not ci): no committed lockfile yet - the author's machine has
       # no Node. First green run: commit the generated package-lock.json and switch
       # this back to `npm ci` for reproducible installs (v1 lesson).
       - run: npm install --no-audit --no-fund
+      # Work around npm optional-dependencies bug (npm/cli#4828): npm can skip
+      # Rollup's platform-specific native binary, which Vite/Vitest then fail to
+      # load ("Cannot find module @rollup/rollup-linux-x64-gnu"). Install the
+      # binary matching the resolved Rollup version. The runner is always linux-x64.
+      - run: |
+          ver=$(node -p "require('rollup/package.json').version" 2>/dev/null || true)
+          if [ -n "$ver" ]; then npm install --no-save --no-audit --no-fund "@rollup/rollup-linux-x64-gnu@$ver"; fi
       - run: npm run typecheck
       - run: npm run db:generate
       - run: npm run db:migrate
@@ -50,5 +57,9 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 20 }
       - run: npm install --no-audit --no-fund
+      # Same Rollup native-binary workaround as the backend job (npm/cli#4828).
+      - run: |
+          ver=$(node -p "require('rollup/package.json').version" 2>/dev/null || true)
+          if [ -n "$ver" ]; then npm install --no-save --no-audit --no-fund "@rollup/rollup-linux-x64-gnu@$ver"; fi
       - run: npm run typecheck
       - run: npm run build
