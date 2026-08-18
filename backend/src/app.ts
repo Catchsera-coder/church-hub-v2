@@ -26,6 +26,7 @@ import { checkinFormsRouter } from './modules/checkin/forms.routes.js';
 import { exportRouter } from './modules/export/routes.js';
 import { automationsRouter } from './modules/automations/routes.js';
 import { vendorsRouter } from './modules/vendors/routes.js';
+import { importRouter } from './modules/import/routes.js';
 import { publicConsentRouter } from './modules/consent/public.routes.js';
 
 export function createApp() {
@@ -34,6 +35,9 @@ export function createApp() {
   app.set('trust proxy', 1);
   app.use(helmet());
   app.use(cors({ origin: config.corsOrigins, credentials: true }));
+  // Import uploads (base64 Excel/CSV) can exceed the default; parse them larger
+  // before the global limit applies to everything else.
+  app.use('/api/import', express.json({ limit: '15mb' }));
   app.use(express.json({ limit: '1mb' }));
   app.use(cookieParser());
 
@@ -59,6 +63,7 @@ export function createApp() {
   app.use('/api/export', exportRouter);
   app.use('/api/automations', automationsRouter);
   app.use('/api/vendors', vendorsRouter);
+  app.use('/api/import', importRouter);
   app.use('/api/funds', fundsRouter);
   app.use('/api/contributions', contributionsRouter);
   app.use('/api/batches', batchesRouter);

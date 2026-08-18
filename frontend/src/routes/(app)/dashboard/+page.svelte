@@ -8,6 +8,7 @@
     members: number; households: number; attendanceThisMonth: number;
     newMembersThisMonth: number; awaitingApproval: number; birthdaysThisMonth: number;
     upcomingGatherings: number; attendanceByService: ServiceCount[];
+    liveGathering?: { id: number; title: Record<string, string>; startsAt: string; publicToken: string } | null;
     givingThisMonthCents?: number;
   }
   let stats = $state<Stats | null>(null);
@@ -52,6 +53,19 @@
 </script>
 
 <h1 class="mb-6 text-2xl font-semibold">{$t('nav.dashboard')}</h1>
+
+{#if stats?.liveGathering}
+  {@const g = stats.liveGathering}
+  <div class="mb-6 flex flex-wrap items-center gap-3 rounded-2xl p-4 text-white shadow-sm" style="background: var(--brand)">
+    <span class="relative flex h-3 w-3"><span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-white/70"></span><span class="relative inline-flex h-3 w-3 rounded-full bg-white"></span></span>
+    <div class="flex-1">
+      <p class="text-sm opacity-90">{tr({ en: 'Happening now', ar: 'يحدث الآن' }, $locale)}</p>
+      <p class="text-lg font-bold">{tr(g.title, $locale)}</p>
+    </div>
+    <a href="/checkin" class="rounded-lg bg-white/20 px-4 py-2 text-sm font-medium hover:bg-white/30">{tr({ en: 'Open check-in', ar: 'فتح التسجيل' }, $locale)}</a>
+    <a href="/attendance/{g.id}" class="rounded-lg bg-white px-4 py-2 text-sm font-medium" style="color: var(--brand)">{tr({ en: 'View', ar: 'عرض' }, $locale)}</a>
+  </div>
+{/if}
 
 {#if loading}
   <p class="text-slate-400">{$t('common.loading')}</p>

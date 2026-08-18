@@ -101,6 +101,7 @@
   <div class="flex items-center gap-2">
     <ExportMenu resource="members" title={tr({ en: 'Members', ar: 'الأعضاء' }, $locale)} params={exportParams} />
     {#if can('create person')}
+      <a href="/members/import" class="btn-ghost border border-slate-300 dark:border-slate-700">{tr({ en: 'Import', ar: 'استيراد' }, $locale)}</a>
       <a href="/members/new" class="btn-primary">{$t('common.new')}</a>
     {/if}
   </div>

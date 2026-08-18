@@ -77,6 +77,16 @@ dashboardRouter.get(
 
     const stats: Record<string, unknown> = { ...base };
 
+    // "Happening now" — a gathering that started in the last 2h or starts within
+    // the next hour, so the dashboard can surface a live check-in banner.
+    const [live] = await db
+      .select({ id: attendanceEvents.id, title: attendanceEvents.title, startsAt: attendanceEvents.startsAt, publicToken: attendanceEvents.publicToken })
+      .from(attendanceEvents)
+      .where(and(gte(attendanceEvents.startsAt, new Date(now.getTime() - 2 * 3600_000)), lte(attendanceEvents.startsAt, new Date(now.getTime() + 3600_000))))
+      .orderBy(attendanceEvents.startsAt)
+      .limit(1);
+    stats.liveGathering = live ?? null;
+
     // Giving is sensitive: only for users who may view contributions.
     if (req.auth!.roles.includes('Super Admin') || req.auth!.perms.includes('view contribution')) {
       const [giving] = await db
