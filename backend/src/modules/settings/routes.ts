@@ -6,6 +6,7 @@ import { organisations, type MessagingSettings } from '../../db/schema.js';
 import { asyncHandler } from '../../http/asyncHandler.js';
 import { authenticate, requireRole } from '../../middleware/auth.js';
 import { config } from '../../config.js';
+import { resolveMessaging, verifyEmail } from '../messages/delivery.js';
 
 export const settingsRouter = Router();
 
@@ -167,5 +168,18 @@ settingsRouter.put(
 
     await db.update(organisations).set({ messaging: next, updatedAt: new Date() }).where(eq(organisations.id, 1));
     res.json({ data: { ok: true } });
+  }),
+);
+
+// Diagnostic: send a real test email and return the exact result so an admin can
+// confirm email works (this is why password-reset codes weren't arriving).
+settingsRouter.post(
+  '/messaging/test-email',
+  authenticate,
+  requireRole('Admin'),
+  asyncHandler(async (req, res) => {
+    const to = z.object({ to: z.string().email() }).parse(req.body).to;
+    const messaging = resolveMessaging((await currentOrg()).messaging);
+    res.json({ data: await verifyEmail(messaging, to) });
   }),
 );

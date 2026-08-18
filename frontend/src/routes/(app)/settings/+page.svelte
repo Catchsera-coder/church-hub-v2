@@ -129,6 +129,18 @@
     } finally { msgSaving = false; }
   }
 
+  // Test email diagnostic (why password-reset codes weren't arriving).
+  let testTo = $state('');
+  let testing = $state(false);
+  let testResult = $state<{ ok: boolean; detail: string } | null>(null);
+  async function sendTestEmail() {
+    if (!testTo.trim()) return;
+    testing = true; testResult = null;
+    try { testResult = (await api<{ data: any }>('/settings/messaging/test-email', { method: 'POST', body: JSON.stringify({ to: testTo.trim() }) })).data; }
+    catch (err) { testResult = { ok: false, detail: (err as Error).message }; }
+    finally { testing = false; }
+  }
+
   const secretPlaceholder = (isSet: boolean) =>
     isSet ? tr({ en: '•••••••• (leave blank to keep)', ar: '•••••••• (اتركه فارغاً للإبقاء)' }, $locale)
           : tr({ en: 'Not set', ar: 'غير محدد' }, $locale);
@@ -272,6 +284,18 @@
           </div>
         {/if}
         <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-200">{tr({ en: 'Email', ar: 'البريد الإلكتروني' }, $locale)}</h3>
+
+        <!-- Test email: confirm delivery works (fixes the "reset code never arrived" case) -->
+        <div class="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+          <p class="mb-2 text-xs text-slate-500 dark:text-slate-400">{tr({ en: 'Send a test email to confirm delivery (Save your settings first).', ar: 'أرسل بريداً تجريبياً للتأكد من التسليم (احفظ إعداداتك أولاً).' }, $locale)}</p>
+          <div class="flex flex-wrap gap-2">
+            <input class="input force-ltr max-w-xs" type="email" bind:value={testTo} placeholder="you@example.com" />
+            <button type="button" class="btn-ghost border border-slate-300 dark:border-slate-700" onclick={sendTestEmail} disabled={testing}>{testing ? $t('common.loading') : tr({ en: 'Send test email', ar: 'إرسال بريد تجريبي' }, $locale)}</button>
+          </div>
+          {#if testResult}
+            <p class="mt-2 rounded-md px-3 py-2 text-xs {testResult.ok ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-rose-50 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300'}">{testResult.ok ? '✓ ' : '⚠ '}{testResult.detail}</p>
+          {/if}
+        </div>
         <label class="block space-y-1">
           <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Email provider', ar: 'مزود البريد' }, $locale)}</span>
           <select class="input" bind:value={msg.emailProvider}>

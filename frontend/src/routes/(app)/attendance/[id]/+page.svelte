@@ -26,10 +26,15 @@
     return true;
   }));
 
-  // Rename
+  // Rename + reschedule
   let editing = $state(false);
   let title = $state<Record<string, string>>({});
+  let startsAt = $state('');
   let savingTitle = $state(false);
+  const toLocalInput = (iso: string) => {
+    const d = new Date(iso); const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
 
   // Delete
   let confirmDelete = $state(false);
@@ -50,6 +55,7 @@
       ]);
       event = ev.data;
       title = { ...(ev.data.title ?? {}) };
+      startsAt = toLocalInput(ev.data.startsAt);
       records = recs.data;
     } finally { loading = false; }
   }
@@ -58,8 +64,10 @@
   async function saveTitle() {
     savingTitle = true;
     try {
-      await api(`/attendance/events/${id}`, { method: 'PUT', body: JSON.stringify({ title }) });
-      event.title = { ...title };
+      const body: Record<string, unknown> = { title };
+      if (startsAt) body.startsAt = new Date(startsAt).toISOString();
+      const { data } = await api<{ data: any }>(`/attendance/events/${id}`, { method: 'PUT', body: JSON.stringify(body) });
+      event = data;
       editing = false;
     } catch (err) { alert(err instanceof ApiError ? err.message : (err as Error).message); }
     finally { savingTitle = false; }
@@ -96,7 +104,7 @@
 
 <PageHeader title={event ? tr(event.title, $locale) || tr({ en: 'Gathering', ar: 'اجتماع' }, $locale) : tr({ en: 'Gathering', ar: 'اجتماع' }, $locale)} back="/attendance">
   {#snippet actions()}
-    {#if canEdit}<button class="btn-ghost" onclick={() => (editing = !editing)}>{tr({ en: 'Rename', ar: 'إعادة تسمية' }, $locale)}</button>{/if}
+    {#if canEdit}<button class="btn-ghost" onclick={() => (editing = !editing)}>{tr({ en: 'Edit name / time', ar: 'تعديل الاسم / الوقت' }, $locale)}</button>{/if}
     {#if isSuper}<button class="btn-ghost text-rose-600 dark:text-rose-400" onclick={() => (confirmDelete = true)}>{$t('common.delete')}</button>{/if}
   {/snippet}
 </PageHeader>
@@ -113,6 +121,10 @@
         <input class="input" dir={l.dir} bind:value={title[l.code]} />
       </label>
     {/each}
+    <label class="block space-y-1">
+      <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Date & time', ar: 'التاريخ والوقت' }, $locale)}</span>
+      <input class="input force-ltr" type="datetime-local" bind:value={startsAt} />
+    </label>
     <div class="flex gap-2">
       <button class="btn-primary" onclick={saveTitle} disabled={savingTitle}>{savingTitle ? $t('common.loading') : $t('common.save')}</button>
       <button class="btn-ghost" onclick={() => { editing = false; title = { ...(event.title ?? {}) }; }}>{tr({ en: 'Cancel', ar: 'إلغاء' }, $locale)}</button>

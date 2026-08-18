@@ -46,6 +46,22 @@
     form.title = { ...form.title, en: p.en, ...(p.ar ? { ar: p.ar } : {}) };
   }
 
+  // Live preview of exactly which dates a recurring series will create — so 20
+  // occurrences never sneaks up on you.
+  const previewDates = $derived.by(() => {
+    if (repeat.frequency === 'none' || !form.startsAt) return [] as Date[];
+    const first = new Date(form.startsAt);
+    if (Number.isNaN(first.getTime())) return [] as Date[];
+    const n = Math.min(repeat.count, 6);
+    return Array.from({ length: n }, (_, i) => {
+      const d = new Date(first);
+      if (repeat.frequency === 'monthly') { d.setDate(1); d.setMonth(first.getMonth() + i); const last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate(); d.setDate(Math.min(first.getDate(), last)); }
+      else d.setDate(first.getDate() + i * (repeat.frequency === 'weekly' ? 7 : repeat.frequency === 'biweekly' ? 14 : 1));
+      return d;
+    });
+  });
+  const fmtDate = (d: Date) => d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+
   onMount(async () => { ministries = (await api<{ data: any[] }>('/ministries')).data; });
 
   async function submit(e: Event) {
@@ -114,9 +130,13 @@
       {/if}
     </div>
     {#if repeat.frequency !== 'none'}
-      <p class="text-xs text-slate-500 dark:text-slate-400">
-        {tr({ en: `Creates ${repeat.count} gatherings starting from the date above. Each can be edited or deleted individually.`, ar: `يُنشئ ${repeat.count} اجتماعاً بدءاً من التاريخ أعلاه. يمكن تعديل أو حذف كل منها على حدة.` }, $locale)}
-      </p>
+      <div class="rounded-lg bg-amber-50 p-3 text-xs text-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
+        <p class="font-medium">⚠ {tr({ en: `This will create ${repeat.count} separate gatherings`, ar: `سيُنشئ هذا ${repeat.count} اجتماعاً منفصلاً` }, $locale)}</p>
+        {#if previewDates.length}
+          <p class="mt-1">{tr({ en: 'On:', ar: 'في:' }, $locale)} {previewDates.map(fmtDate).join(' · ')}{#if repeat.count > previewDates.length} … (+{repeat.count - previewDates.length}){/if}</p>
+        {/if}
+        <p class="mt-1 text-amber-700/80 dark:text-amber-300/80">{tr({ en: 'Want just one? Set Repeat to “Doesn’t repeat”.', ar: 'تريد واحداً فقط؟ اضبط التكرار على «لا يتكرر».' }, $locale)}</p>
+      </div>
     {/if}
   </div>
   <div class="flex gap-3">

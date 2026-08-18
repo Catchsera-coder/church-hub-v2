@@ -108,6 +108,37 @@ export async function sendMessage(
   return false;
 }
 
+/**
+ * Diagnostic: try to send a real test email and return the exact result/detail.
+ * Powers the "Send test email" button in Settings so an admin can see WHY email
+ * (incl. password-reset codes) isn't delivering, and fix the config themselves.
+ */
+export async function verifyEmail(m: ResolvedMessaging, to: string): Promise<{ ok: boolean; detail: string }> {
+  if (!m.emailProvider) {
+    return { ok: false, detail: 'No email provider is configured. Add your Azure ACS connection string + verified sender address (or a SendGrid API key + from address) above, then Save and try again.' };
+  }
+  const subject = 'Church Hub — test email';
+  const body = 'This is a test from your Church Hub messaging settings. If you received it, email is working (including password-reset codes).';
+  try {
+    let res: Response;
+    if (m.emailProvider === 'sendgrid') {
+      res = await fetch('https://api.sendgrid.com/v3/mail/send', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${m.sendgridApiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ personalizations: [{ to: [{ email: to }] }], from: { email: m.mailFrom }, subject, content: [{ type: 'text/plain', value: body }] }),
+      });
+    } else {
+      res = await acsSignedFetch(m.acsConnectionString!, '/emails:send?api-version=2023-03-31', {
+        senderAddress: m.acsMailFrom, content: { subject, plainText: body }, recipients: { to: [{ address: to }] },
+      });
+    }
+    if (res.ok) return { ok: true, detail: `Accepted by ${m.emailProvider === 'sendgrid' ? 'SendGrid' : 'Azure'} for ${to}. Check the inbox (and spam) in a moment.` };
+    return { ok: false, detail: `${m.emailProvider === 'sendgrid' ? 'SendGrid' : 'Azure'} rejected it (HTTP ${res.status}): ${(await res.text()).slice(0, 400)}` };
+  } catch (e) {
+    return { ok: false, detail: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 // --- Email: SendGrid ---------------------------------------------------------
 async function sendEmailSendgrid(m: ResolvedMessaging, to: string, subject: string, body: string, html?: string): Promise<boolean> {
   // SendGrid requires text/plain before text/html; include both when we have HTML.
