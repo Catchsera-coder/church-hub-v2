@@ -310,6 +310,23 @@ export const checkinForms = pgTable('checkin_forms', {
   publicTokenIdx: uniqueIndex('checkin_forms_public_token_idx').on(t.publicToken),
 }));
 
+// Church vendors / suppliers / service providers (electrician, worship gear,
+// caterer, etc.). Simple contact directory managed by admins.
+export const vendors = pgTable('vendors', {
+  id: serial('id').primaryKey(),
+  name: varchar('name', { length: 190 }).notNull(),
+  title: varchar('title', { length: 120 }),     // role / occupation
+  category: varchar('category', { length: 120 }),
+  email: varchar('email', { length: 190 }),
+  phone: varchar('phone', { length: 40 }),
+  mobile: varchar('mobile', { length: 40 }),
+  website: varchar('website', { length: 190 }),
+  notes: text('notes'),
+  isActive: boolean('is_active').notNull().default(true),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  ...timestamps,
+}, (t) => ({ nameIdx: index('vendors_name_idx').on(t.name) }));
+
 // Automated messages (Phase 5). One row per automation type. Each is toggled on/
 // off and set to auto (worker sends) or manual (staff triggers) by an Admin.
 // config holds per-type knobs (e.g. { absenceWeeks: 4 }). lastRunOn guards

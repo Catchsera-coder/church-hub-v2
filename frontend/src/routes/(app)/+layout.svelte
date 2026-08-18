@@ -59,6 +59,7 @@
       key: 'group.admin',
       items: [
         { href: '/team', label: 'nav.team', icon: 'team', perm: 'view user' },
+        { href: '/vendors', label: 'nav.vendors', icon: 'vendors', role: 'Admin' },
         { href: '/activity', label: 'nav.activity', icon: 'activity', role: 'Admin' },
         { href: '/settings', label: 'nav.settings', icon: 'settings', role: 'Admin' },
       ],

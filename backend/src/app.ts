@@ -25,6 +25,7 @@ import { publicCheckinRouter } from './modules/checkin/public.routes.js';
 import { checkinFormsRouter } from './modules/checkin/forms.routes.js';
 import { exportRouter } from './modules/export/routes.js';
 import { automationsRouter } from './modules/automations/routes.js';
+import { vendorsRouter } from './modules/vendors/routes.js';
 import { publicConsentRouter } from './modules/consent/public.routes.js';
 
 export function createApp() {
@@ -57,6 +58,7 @@ export function createApp() {
   app.use('/api/checkin-forms', checkinFormsRouter);
   app.use('/api/export', exportRouter);
   app.use('/api/automations', automationsRouter);
+  app.use('/api/vendors', vendorsRouter);
   app.use('/api/funds', fundsRouter);
   app.use('/api/contributions', contributionsRouter);
   app.use('/api/batches', batchesRouter);
