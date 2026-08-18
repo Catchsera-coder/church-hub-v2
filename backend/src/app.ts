@@ -27,6 +27,7 @@ import { exportRouter } from './modules/export/routes.js';
 import { automationsRouter } from './modules/automations/routes.js';
 import { vendorsRouter } from './modules/vendors/routes.js';
 import { importRouter } from './modules/import/routes.js';
+import { analyticsRouter } from './modules/analytics/routes.js';
 import { publicConsentRouter } from './modules/consent/public.routes.js';
 
 export function createApp() {
@@ -64,6 +65,7 @@ export function createApp() {
   app.use('/api/automations', automationsRouter);
   app.use('/api/vendors', vendorsRouter);
   app.use('/api/import', importRouter);
+  app.use('/api/analytics', analyticsRouter);
   app.use('/api/funds', fundsRouter);
   app.use('/api/contributions', contributionsRouter);
   app.use('/api/batches', batchesRouter);

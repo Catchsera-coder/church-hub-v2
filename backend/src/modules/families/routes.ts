@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { db } from '../../db/index.js';
-import { households } from '../../db/schema.js';
+import { households, people } from '../../db/schema.js';
 import { asyncHandler } from '../../http/asyncHandler.js';
 import { authenticate, requirePermission } from '../../middleware/auth.js';
 import { notFound } from '../../http/errors.js';
@@ -49,6 +49,16 @@ familiesRouter.get('/:id', requirePermission('view household'), asyncHandler(asy
   const [row] = await db.select().from(households).where(and(eq(households.id, Number(req.params.id)), isNull(households.deletedAt))).limit(1);
   if (!row) throw notFound();
   res.json({ data: row });
+}));
+
+// People in this family (for the in-page member manager).
+familiesRouter.get('/:id/members', requirePermission('view household'), asyncHandler(async (req, res) => {
+  const rows = await db
+    .select({ id: people.id, givenName: people.givenName, familyName: people.familyName, membershipStatus: people.membershipStatus, email: people.email, mobile: people.mobile })
+    .from(people)
+    .where(and(eq(people.householdId, Number(req.params.id)), isNull(people.deletedAt)))
+    .orderBy(desc(people.createdAt));
+  res.json({ data: rows });
 }));
 
 familiesRouter.post('/', requirePermission('create household'), asyncHandler(async (req, res) => {
