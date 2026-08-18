@@ -28,6 +28,7 @@ import { automationsRouter } from './modules/automations/routes.js';
 import { vendorsRouter } from './modules/vendors/routes.js';
 import { importRouter } from './modules/import/routes.js';
 import { analyticsRouter } from './modules/analytics/routes.js';
+import { mediaRouter, publicMediaRouter } from './modules/media/routes.js';
 import { publicConsentRouter } from './modules/consent/public.routes.js';
 
 export function createApp() {
@@ -39,6 +40,7 @@ export function createApp() {
   // Import uploads (base64 Excel/CSV) can exceed the default; parse them larger
   // before the global limit applies to everything else.
   app.use('/api/import', express.json({ limit: '15mb' }));
+  app.use('/api/media', express.json({ limit: '8mb' }));
   app.use(express.json({ limit: '1mb' }));
   app.use(cookieParser());
 
@@ -50,6 +52,7 @@ export function createApp() {
   // Public self-check-in is unauthenticated — rate-limit to blunt directory scraping.
   app.use('/api/public/checkin', rateLimit({ windowMs: 60_000, max: 40 }));
   app.use('/api/public/checkin', publicCheckinRouter);
+  app.use('/api/public/media', publicMediaRouter);
   app.use('/api/public/unsubscribe', rateLimit({ windowMs: 60_000, max: 30 }));
   app.use('/api/public/unsubscribe', publicConsentRouter);
 
@@ -66,6 +69,7 @@ export function createApp() {
   app.use('/api/vendors', vendorsRouter);
   app.use('/api/import', importRouter);
   app.use('/api/analytics', analyticsRouter);
+  app.use('/api/media', mediaRouter);
   app.use('/api/funds', fundsRouter);
   app.use('/api/contributions', contributionsRouter);
   app.use('/api/batches', batchesRouter);

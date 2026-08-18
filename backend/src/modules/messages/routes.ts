@@ -26,6 +26,7 @@ const schema = z.object({
   subject: z.record(z.string()).default({}),
   body: z.record(z.string()).default({}),
   scheduledFor: z.string().nullable().optional(),
+  mediaUrl: z.string().nullable().optional(),
 });
 
 messagesRouter.get('/', requirePermission('view message'), asyncHandler(async (_req, res) => {
@@ -80,6 +81,7 @@ messagesRouter.post('/', requirePermission('create message'), asyncHandler(async
   const [row] = await db.insert(messageCampaigns).values({
     name: b.name, channel: b.channel, subject: b.subject, body: b.body,
     scheduledFor: b.scheduledFor ? new Date(b.scheduledFor) : null,
+    mediaUrl: b.mediaUrl ?? null,
     createdByUserId: req.auth!.sub,
   }).returning();
   await logActivity(req, 'created', 'message', row!.id);

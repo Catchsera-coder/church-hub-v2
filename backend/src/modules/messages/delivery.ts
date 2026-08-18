@@ -82,18 +82,19 @@ export async function sendMessage(
   to: string,
   subject: string,
   body: string,
-  html?: string, // optional branded HTML for email (plain `body` is the fallback)
+  html?: string,      // optional branded HTML for email (plain `body` is the fallback)
+  mediaUrl?: string,  // optional image for MMS (SMS) / media (WhatsApp) — Twilio only
 ): Promise<boolean> {
   try {
     if (channel === 'email') {
       if (m.emailProvider === 'sendgrid') return await sendEmailSendgrid(m, to, subject, body, html);
       if (m.emailProvider === 'acs') return await sendEmailAcs(m, to, subject, body, html);
     } else if (channel === 'whatsapp') {
-      if (m.whatsappProvider === 'twilio') return await sendWhatsappTwilio(m, to, body);
+      if (m.whatsappProvider === 'twilio') return await sendWhatsappTwilio(m, to, body, mediaUrl);
     } else if (m.smsProvider === 'twilio') {
-      return await sendSmsTwilio(m, to, body);
+      return await sendSmsTwilio(m, to, body, mediaUrl);
     } else if (m.smsProvider === 'azure') {
-      return await sendSmsAzure(m, to, body);
+      return await sendSmsAzure(m, to, body); // Azure SMS has no MMS media support
     }
   } catch (err) {
     console.error(`[${channel}] delivery error for ${to}:`, err instanceof Error ? err.message : err);
@@ -177,13 +178,15 @@ async function sendEmailAcs(m: ResolvedMessaging, to: string, subject: string, b
 }
 
 // --- SMS: Twilio -------------------------------------------------------------
-async function sendSmsTwilio(m: ResolvedMessaging, to: string, body: string): Promise<boolean> {
+async function sendSmsTwilio(m: ResolvedMessaging, to: string, body: string, mediaUrl?: string): Promise<boolean> {
   const url = `https://api.twilio.com/2010-04-01/Accounts/${m.twilioAccountSid}/Messages.json`;
   const auth = Buffer.from(`${m.twilioAccountSid}:${m.twilioAuthToken}`).toString('base64');
+  const params = new URLSearchParams({ To: to, From: m.smsFrom!, Body: body });
+  if (mediaUrl) params.append('MediaUrl', mediaUrl); // MMS
   const res = await fetch(url, {
     method: 'POST',
     headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ To: to, From: m.smsFrom!, Body: body }).toString(),
+    body: params.toString(),
   });
   if (res.ok) return true; // 201 Created
   console.error(`[sms] Twilio ${res.status}: ${(await res.text()).slice(0, 200)}`);
@@ -194,15 +197,17 @@ async function sendSmsTwilio(m: ResolvedMessaging, to: string, body: string): Pr
 // Same Messages endpoint as SMS, but both numbers carry the "whatsapp:" scheme.
 // The sender (whatsappFrom) is already stored with the prefix; the recipient's
 // stored mobile is a bare E.164 number, so prefix it here.
-async function sendWhatsappTwilio(m: ResolvedMessaging, to: string, body: string): Promise<boolean> {
+async function sendWhatsappTwilio(m: ResolvedMessaging, to: string, body: string, mediaUrl?: string): Promise<boolean> {
   const url = `https://api.twilio.com/2010-04-01/Accounts/${m.twilioAccountSid}/Messages.json`;
   const auth = Buffer.from(`${m.twilioAccountSid}:${m.twilioAuthToken}`).toString('base64');
   const from = m.whatsappFrom!.startsWith('whatsapp:') ? m.whatsappFrom! : `whatsapp:${m.whatsappFrom}`;
   const toAddr = to.startsWith('whatsapp:') ? to : `whatsapp:${to}`;
+  const params = new URLSearchParams({ To: toAddr, From: from, Body: body });
+  if (mediaUrl) params.append('MediaUrl', mediaUrl);
   const res = await fetch(url, {
     method: 'POST',
     headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ To: toAddr, From: from, Body: body }).toString(),
+    body: params.toString(),
   });
   if (res.ok) return true; // 201 Created
   console.error(`[whatsapp] Twilio ${res.status}: ${(await res.text()).slice(0, 200)}`);

@@ -11,9 +11,48 @@
     channel: 'email' as 'email' | 'sms' | 'whatsapp',
     subject: {} as Record<string, string>,
     body: {} as Record<string, string>,
+    mediaUrl: null as string | null,
   });
   let error = $state('');
   let saving = $state(false);
+
+  // Custom variables: {{speaker}}, {{link}} etc. (anything that isn't a per-person
+  // field) — filled once for the whole message and substituted before sending.
+  const PERSON_VARS = new Set(['firstName', 'lastName', 'fullName', 'churchName', 'date']);
+  let customValues = $state<Record<string, string>>({});
+  const customVars = $derived.by(() => {
+    const text = [...Object.values(form.subject), ...Object.values(form.body)].join(' ');
+    const found = new Set<string>();
+    for (const m of text.matchAll(/\{\{\s*([\w.]+)\s*\}\}/g)) if (!PERSON_VARS.has(m[1])) found.add(m[1]);
+    return [...found];
+  });
+  function fillCustom(text: string): string {
+    return (text ?? '').replace(/\{\{\s*([\w.]+)\s*\}\}/g, (whole, k: string) => (PERSON_VARS.has(k) ? whole : (customValues[k] ?? whole)));
+  }
+  function filledForm() {
+    const subject: Record<string, string> = {}; const body: Record<string, string> = {};
+    for (const [k, v] of Object.entries(form.subject)) subject[k] = fillCustom(v);
+    for (const [k, v] of Object.entries(form.body)) body[k] = fillCustom(v);
+    return { ...form, subject, body };
+  }
+
+  // Image upload (MMS/WhatsApp)
+  let uploading = $state(false);
+  async function onImage(e: Event) {
+    const file = (e.currentTarget as HTMLInputElement).files?.[0];
+    if (!file) return;
+    if (!['image/jpeg', 'image/png', 'image/gif'].includes(file.type)) { error = tr({ en: 'Use a JPEG, PNG or GIF.', ar: 'استخدم JPEG أو PNG أو GIF.' }, $locale); return; }
+    if (file.size > 5 * 1024 * 1024) { error = tr({ en: 'Image must be under 5 MB.', ar: 'يجب أن تكون الصورة أقل من 5 ميجابايت.' }, $locale); return; }
+    uploading = true; error = '';
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        const { data } = await api<{ data: { url: string } }>('/media', { method: 'POST', body: JSON.stringify({ base64: reader.result, contentType: file.type, filename: file.name }) });
+        form.mediaUrl = data.url;
+      } catch (err) { error = (err as Error).message; } finally { uploading = false; }
+    };
+    reader.readAsDataURL(file);
+  }
   let scheduleAt = $state('');
   const MERGE = '{{firstName}} · {{lastName}} · {{fullName}} · {{churchName}} · {{date}}';
 
@@ -81,7 +120,7 @@
   }
 
   async function create(): Promise<number> {
-    const { data } = await api<{ data: any }>('/messages', { method: 'POST', body: JSON.stringify(form) });
+    const { data } = await api<{ data: any }>('/messages', { method: 'POST', body: JSON.stringify(filledForm()) });
     return data.id;
   }
   function valid(): boolean {
@@ -190,7 +229,31 @@
     <div class="rounded-lg bg-slate-50 p-3 text-xs text-slate-600 dark:bg-slate-800/50 dark:text-slate-300">
       <p class="mb-1 font-medium text-slate-700 dark:text-slate-200">✨ {tr({ en: 'Personalise with merge fields', ar: 'التخصيص بحقول الدمج' }, $locale)}</p>
       <p class="font-mono text-slate-700 dark:text-slate-200">{MERGE}</p>
+      <p class="mt-1">{tr({ en: 'Add your own like {{speaker}} or {{link}} — you’ll fill those in below.', ar: 'أضف حقولك مثل {{speaker}} أو {{link}} — ستملؤها بالأسفل.' }, $locale)}</p>
     </div>
+
+    {#if customVars.length}
+      <div class="rounded-lg border border-primary-200 bg-primary-50/50 p-3 dark:border-primary-800 dark:bg-primary-900/10">
+        <p class="mb-2 text-sm font-medium">{tr({ en: 'Fill in the details', ar: 'املأ التفاصيل' }, $locale)}</p>
+        <div class="grid gap-2 sm:grid-cols-2">
+          {#each customVars as v}
+            <label class="text-sm"><span class="mb-1 block font-mono text-xs text-slate-500">{'{{' + v + '}}'}</span><input class="input" bind:value={customValues[v]} placeholder={v} /></label>
+          {/each}
+        </div>
+      </div>
+    {/if}
+
+    {#if form.channel === 'sms' || form.channel === 'whatsapp'}
+      <div class="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+        <p class="mb-1 text-sm font-medium">🖼 {tr({ en: 'Add an image (optional)', ar: 'أضف صورة (اختياري)' }, $locale)}</p>
+        <p class="mb-2 text-xs text-slate-500 dark:text-slate-400">{tr({ en: 'Sent as MMS (SMS) or media (WhatsApp). JPEG/PNG/GIF, under 5 MB. Note: MMS needs an MMS-capable number and may cost more.', ar: 'تُرسل كـ MMS (SMS) أو وسائط (واتساب). JPEG/PNG/GIF أقل من 5 ميجابايت. ملاحظة: يتطلب MMS رقماً يدعمه وقد تزيد التكلفة.' }, $locale)}</p>
+        {#if form.mediaUrl}
+          <div class="flex items-center gap-3"><img src={form.mediaUrl} alt="" class="h-16 w-16 rounded object-cover" /><button type="button" class="text-xs text-rose-600 hover:underline" onclick={() => (form.mediaUrl = null)}>{tr({ en: 'Remove', ar: 'إزالة' }, $locale)}</button></div>
+        {:else}
+          <label class="btn-ghost inline-block cursor-pointer border border-slate-300 text-sm dark:border-slate-700">{uploading ? $t('common.loading') : tr({ en: 'Choose image', ar: 'اختر صورة' }, $locale)}<input type="file" accept="image/jpeg,image/png,image/gif" class="hidden" onchange={onImage} /></label>
+        {/if}
+      </div>
+    {/if}
   </div>
 
   <!-- Audience + actions -->

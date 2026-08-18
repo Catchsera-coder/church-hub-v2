@@ -45,7 +45,7 @@ export async function sendCampaignNow(campaignId: number): Promise<{ sent: numbe
     const footer = c.channel === 'email' && appUrl ? `To stop receiving these emails, unsubscribe: ${appUrl}/unsubscribe/${p.unsubToken}` : '';
     const html = c.channel === 'email' ? brandedEmailHtml(body, org, { footer, lang }) : undefined;
     const plain = footer ? `${body}\n\n—\n${footer}` : body;
-    const ok = await sendMessage(messaging, c.channel, p.contact as string, subject, plain, html);
+    const ok = await sendMessage(messaging, c.channel, p.contact as string, subject, plain, html, c.mediaUrl ?? undefined);
     await db.update(messageRecipients).set({ status: ok ? 'sent' : 'failed' }).where(eq(messageRecipients.id, rec.id));
     if (ok) sent++;
   }

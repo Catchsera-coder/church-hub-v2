@@ -455,9 +455,22 @@ export const messageCampaigns = pgTable('message_campaigns', {
   status: campaignStatus('status').notNull().default('draft'),
   scheduledFor: timestamp('scheduled_for', { withTimezone: true }),
   sentAt: timestamp('sent_at', { withTimezone: true }),
+  // Optional image sent as MMS (SMS) / media (WhatsApp) — a public media URL.
+  mediaUrl: text('media_url'),
   createdByUserId: integer('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
   ...timestamps,
 }, (t) => ({ statusIdx: index('message_campaigns_status_idx').on(t.status) }));
+
+// Uploaded media (images for MMS/WhatsApp) stored in the DB and served at a
+// public URL (Twilio fetches it). base64 payload — MMS caps around 5 MB.
+export const media = pgTable('media', {
+  id: serial('id').primaryKey(),
+  token: uuid('token').notNull().defaultRandom(),
+  contentType: varchar('content_type', { length: 100 }).notNull(),
+  filename: varchar('filename', { length: 190 }),
+  data: text('data').notNull(),
+  ...timestamps,
+}, (t) => ({ tokenIdx: uniqueIndex('media_token_idx').on(t.token) }));
 
 /**
  * Reusable, branded message templates (#20b). Additive: a template is saved
