@@ -2,6 +2,15 @@ import 'dotenv/config';
 import { z } from 'zod';
 
 /**
+ * Treat an empty-string env var as absent. Deploy templates (bicep/Container
+ * Apps) pass "" for an unset optional param, which would otherwise fail a
+ * format-validated optional like `.url()`/`.email()` and crash boot. This makes
+ * "" behave the same as omitting the variable.
+ */
+const emptyToUndefined = <T extends z.ZodTypeAny>(s: T) =>
+  z.preprocess((v) => (v === '' ? undefined : v), s);
+
+/**
  * Fail fast on bad/missing config at boot rather than at the first request.
  * (v1 lesson: surface problems early, in one place.)
  */
@@ -21,9 +30,11 @@ const schema = z.object({
   ACCESS_TOKEN_TTL: z.string().default('15m'),
   REFRESH_TOKEN_TTL: z.string().default('30d'),
   CORS_ORIGINS: z.string().default('http://localhost:5173'),
-  // Public URL of the SPA, used to build links in emails (password reset). If
-  // unset, reset emails include the token and a relative /reset-password path.
-  PUBLIC_APP_URL: z.string().url().optional(),
+  // Public URL of the SPA (the church's own domain), used to build links in
+  // emails (password reset, unsubscribe) and public media URLs. Set this to the
+  // canonical host, e.g. https://www.abcbchurchhub.org. If unset, reset emails
+  // include the token and a relative /reset-password path.
+  PUBLIC_APP_URL: emptyToUndefined(z.string().url().optional()),
   DEFAULT_LOCALE: z.string().default('en'),
   DEFAULT_CURRENCY: z.string().default('USD'),
   DEFAULT_TIMEZONE: z.string().default('UTC'),
@@ -32,10 +43,10 @@ const schema = z.object({
   // HTTP with fetch/crypto, so there is no SDK dependency. When a channel has no
   // provider configured, delivery.ts reports failure honestly (no fake 'sent').
   // See docs/RUNNING.md. Each church deploy picks its own provider(s).
-  MAIL_FROM: z.string().email().optional(),
+  MAIL_FROM: emptyToUndefined(z.string().email().optional()),
   SENDGRID_API_KEY: z.string().optional(),
   // Azure Communication Services email (shares ACS_CONNECTION_STRING with SMS).
-  ACS_MAIL_FROM: z.string().optional(),
+  ACS_MAIL_FROM: emptyToUndefined(z.string().email().optional()),
 
   // SMS can run on Twilio OR Azure Communication Services. Leave SMS_PROVIDER
   // unset to auto-pick whichever is configured (Azure preferred when both are);

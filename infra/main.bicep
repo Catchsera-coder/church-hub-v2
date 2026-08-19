@@ -52,10 +52,16 @@ param jwtRefreshSecret string
 @description('Comma-separated public origin(s) of the frontend, for CORS.')
 param corsOrigins string
 
+@description('Canonical public URL of this church\'s app (its own domain), used for links in emails/unsubscribe and public media URLs, e.g. https://www.example.org. Leave empty to fall back to relative paths.')
+param publicAppUrl string = ''
+
 // Optional messaging secrets (leave empty to disable a channel; delivery.ts is honest).
 @secure()
 param sendgridApiKey string = ''
 param mailFrom string = ''
+// Azure Communication Services email sender (a verified MailFrom on the ACS
+// custom domain, e.g. DoNotReply@example.org). Pairs with acsConnectionString.
+param acsMailFrom string = ''
 @allowed(['', 'twilio', 'azure'])
 param smsProvider string = ''
 param smsFrom string = ''
@@ -135,7 +141,9 @@ resource backend 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'JWT_ACCESS_SECRET', secretRef: 'jwt-access-secret' }
             { name: 'JWT_REFRESH_SECRET', secretRef: 'jwt-refresh-secret' }
             { name: 'CORS_ORIGINS', value: corsOrigins }
+            { name: 'PUBLIC_APP_URL', value: publicAppUrl }
             { name: 'MAIL_FROM', value: mailFrom }
+            { name: 'ACS_MAIL_FROM', value: acsMailFrom }
             { name: 'SENDGRID_API_KEY', secretRef: 'sendgrid-api-key' }
             { name: 'SMS_PROVIDER', value: smsProvider }
             { name: 'SMS_FROM', value: smsFrom }
