@@ -19,6 +19,7 @@ const upsertSchema = z.object({
   givenName: i18n,
   familyName: i18n,
   householdId: z.number().int().positive().nullable().optional(),
+  householdRole: z.string().max(20).nullable().optional(),
   membershipStatus: z.enum(['visitor', 'regular', 'member', 'inactive']).default('visitor'),
   email: z.string().email().nullable().optional(),
   mobile: z.string().max(40).nullable().optional(),

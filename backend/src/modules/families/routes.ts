@@ -54,7 +54,7 @@ familiesRouter.get('/:id', requirePermission('view household'), asyncHandler(asy
 // People in this family (for the in-page member manager).
 familiesRouter.get('/:id/members', requirePermission('view household'), asyncHandler(async (req, res) => {
   const rows = await db
-    .select({ id: people.id, givenName: people.givenName, familyName: people.familyName, membershipStatus: people.membershipStatus, email: people.email, mobile: people.mobile })
+    .select({ id: people.id, givenName: people.givenName, familyName: people.familyName, membershipStatus: people.membershipStatus, email: people.email, mobile: people.mobile, householdRole: people.householdRole, dateOfBirth: people.dateOfBirth })
     .from(people)
     .where(and(eq(people.householdId, Number(req.params.id)), isNull(people.deletedAt)))
     .orderBy(desc(people.createdAt));

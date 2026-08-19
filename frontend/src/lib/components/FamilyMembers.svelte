@@ -76,10 +76,18 @@
     {:else}
       <div class="mb-3 divide-y divide-slate-100 dark:divide-slate-800">
         {#each members as m}
-          <div class="flex items-center gap-3 py-2 text-sm">
+          <div class="flex flex-wrap items-center gap-x-3 gap-y-0.5 py-2 text-sm">
             <a class="font-medium text-primary-700 hover:underline dark:text-primary-300" href="/members/{m.id}">{displayName(m, $nameOrder, $locale)}</a>
+            {#if m.householdRole}<span class="rounded-full bg-slate-100 px-2 py-0.5 text-xs capitalize text-slate-600 dark:bg-slate-800 dark:text-slate-300">{m.householdRole}</span>{/if}
             <span class="capitalize text-slate-400">{m.membershipStatus}</span>
             {#if editable}<button class="ms-auto text-xs text-rose-600 hover:underline dark:text-rose-400" onclick={() => remove(m)}>{tr({ en: 'Remove', ar: 'إزالة' }, $locale)}</button>{/if}
+            {#if m.mobile || m.email}
+              <div class="force-ltr w-full ps-0.5 text-xs text-slate-400">
+                {#if m.mobile}<a href="tel:{m.mobile}" class="hover:underline">{m.mobile}</a>{/if}
+                {#if m.mobile && m.email}<span class="mx-1">·</span>{/if}
+                {#if m.email}<a href="mailto:{m.email}" class="hover:underline">{m.email}</a>{/if}
+              </div>
+            {/if}
           </div>
         {/each}
       </div>

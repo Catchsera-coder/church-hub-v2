@@ -12,6 +12,7 @@
     givenName: initial?.givenName ?? {},
     familyName: initial?.familyName ?? {},
     householdId: initial?.householdId ? String(initial.householdId) : '',
+    householdRole: initial?.householdRole ?? '',
     membershipStatus: initial?.membershipStatus ?? 'visitor',
     email: initial?.email ?? '',
     mobile: initial?.mobile ?? '',
@@ -70,6 +71,7 @@
       const body = {
         ...form,
         householdId: form.householdId === '' ? null : Number(form.householdId),
+        householdRole: form.householdRole?.trim() || null,
         email: form.email || null,
         mobile: form.mobile || null,
         dateOfBirth: form.dateOfBirth || null,
@@ -143,6 +145,19 @@
         </div>
       {/if}
     </div>
+    {#if form.householdId}
+      <label class="block space-y-1">
+        <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Role in family', ar: 'الدور في العائلة' }, $locale)}</span>
+        <input class="input" list="household-roles" bind:value={form.householdRole} placeholder={tr({ en: 'e.g. Father, Mother, Son', ar: 'مثال: أب، أم، ابن' }, $locale)} maxlength="20" />
+        <datalist id="household-roles">
+          <option value={tr({ en: 'Father', ar: 'أب' }, $locale)}></option>
+          <option value={tr({ en: 'Mother', ar: 'أم' }, $locale)}></option>
+          <option value={tr({ en: 'Son', ar: 'ابن' }, $locale)}></option>
+          <option value={tr({ en: 'Daughter', ar: 'ابنة' }, $locale)}></option>
+          <option value={tr({ en: 'Guardian', ar: 'وصي' }, $locale)}></option>
+        </datalist>
+      </label>
+    {/if}
   </div>
 
   <div class="card space-y-3 p-6">
