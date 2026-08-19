@@ -102,7 +102,7 @@
   }
 </script>
 
-<PageHeader title={event ? tr(event.title, $locale) || tr({ en: 'Gathering', ar: 'اجتماع' }, $locale) : tr({ en: 'Gathering', ar: 'اجتماع' }, $locale)} back="/attendance">
+<PageHeader title={event ? tr(event.title, $locale) || tr({ en: 'Attendance', ar: 'الحضور' }, $locale) : tr({ en: 'Attendance', ar: 'الحضور' }, $locale)} back="/attendance">
   {#snippet actions()}
     {#if canEdit}<button class="btn-ghost" onclick={() => (editing = !editing)}>{tr({ en: 'Edit name / time', ar: 'تعديل الاسم / الوقت' }, $locale)}</button>{/if}
     {#if isSuper}<button class="btn-ghost text-rose-600 dark:text-rose-400" onclick={() => (confirmDelete = true)}>{$t('common.delete')}</button>{/if}
@@ -170,8 +170,8 @@
 <ConfirmDialog
   bind:open={confirmDelete}
   danger
-  title={tr({ en: 'Delete this gathering?', ar: 'حذف هذا الاجتماع؟' }, $locale)}
-  message={tr({ en: 'This permanently deletes the gathering AND all of its attendance records. This cannot be undone. Type the gathering name to confirm.', ar: 'سيؤدي هذا إلى حذف الاجتماع وكل سجلات الحضور نهائياً. لا يمكن التراجع. اكتب اسم الاجتماع للتأكيد.' }, $locale)}
+  title={tr({ en: 'Delete this attendance record?', ar: 'حذف سجل الحضور هذا؟' }, $locale)}
+  message={tr({ en: 'This permanently deletes this attendance record AND all of its check-ins. This cannot be undone. Type its name to confirm.', ar: 'سيؤدي هذا إلى حذف سجل الحضور وكل تسجيلاته نهائياً. لا يمكن التراجع. اكتب اسمه للتأكيد.' }, $locale)}
   requireText={event ? tr(event.title, $locale) : ''}
   confirmLabel={$t('common.delete')}
   busy={deleting}

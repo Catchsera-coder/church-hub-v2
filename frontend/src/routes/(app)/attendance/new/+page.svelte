@@ -87,7 +87,7 @@
   }
 </script>
 
-<PageHeader title={tr({ en: 'New gathering', ar: 'اجتماع جديد' }, $locale)} back="/attendance" />
+<PageHeader title={tr({ en: 'New attendance', ar: 'حضور جديد' }, $locale)} back="/attendance" />
 
 <form class="max-w-lg space-y-6" onsubmit={submit}>
   {#if error}<p class="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:bg-rose-900/30 dark:text-rose-300">{error}</p>{/if}
@@ -131,7 +131,7 @@
     </div>
     {#if repeat.frequency !== 'none'}
       <div class="rounded-lg bg-amber-50 p-3 text-xs text-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
-        <p class="font-medium">⚠ {tr({ en: `This will create ${repeat.count} separate gatherings`, ar: `سيُنشئ هذا ${repeat.count} اجتماعاً منفصلاً` }, $locale)}</p>
+        <p class="font-medium">⚠ {tr({ en: `This will create ${repeat.count} separate attendance records`, ar: `سيُنشئ هذا ${repeat.count} سجل حضور منفصل` }, $locale)}</p>
         {#if previewDates.length}
           <p class="mt-1">{tr({ en: 'On:', ar: 'في:' }, $locale)} {previewDates.map(fmtDate).join(' · ')}{#if repeat.count > previewDates.length} … (+{repeat.count - previewDates.length}){/if}</p>
         {/if}
@@ -140,7 +140,7 @@
     {/if}
   </div>
   <div class="flex gap-3">
-    <button class="btn-primary" type="submit" disabled={saving}>{saving ? $t('common.loading') : repeat.frequency === 'none' ? $t('common.save') : tr({ en: `Create ${repeat.count} gatherings`, ar: `إنشاء ${repeat.count} اجتماع` }, $locale)}</button>
+    <button class="btn-primary" type="submit" disabled={saving}>{saving ? $t('common.loading') : repeat.frequency === 'none' ? $t('common.save') : tr({ en: `Create ${repeat.count} records`, ar: `إنشاء ${repeat.count} سجل` }, $locale)}</button>
     <a class="btn-ghost" href="/attendance">✕</a>
   </div>
 </form>

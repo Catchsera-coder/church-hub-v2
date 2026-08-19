@@ -120,7 +120,7 @@
 <PageHeader title={$t('nav.checkin')}>
   {#snippet actions()}
     {#if can('create attendance') && events.length}
-      <button class="btn-ghost" onclick={() => (showNew = !showNew)}>+ {tr({ en: 'New gathering', ar: 'اجتماع جديد' }, $locale)}</button>
+      <button class="btn-ghost" onclick={() => (showNew = !showNew)}>+ {tr({ en: 'New attendance', ar: 'حضور جديد' }, $locale)}</button>
     {/if}
   {/snippet}
 </PageHeader>
@@ -129,18 +129,18 @@
 <div class="mb-5 max-w-md space-y-3">
   {#if events.length}
     <label class="block space-y-1">
-      <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Gathering', ar: 'الاجتماع' }, $locale)}</span>
+      <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Attendance', ar: 'الحضور' }, $locale)}</span>
       <select class="input" bind:value={eventId}>
         {#each events as ev}<option value={ev.id}>{tr(ev.title, $locale) || `#${ev.id}`}</option>{/each}
       </select>
     </label>
   {:else if !loadingEvents && !showNew}
-    <p class="text-sm text-slate-500 dark:text-slate-400">{tr({ en: 'No gatherings yet — create one to start checking people in.', ar: 'لا توجد اجتماعات بعد — أنشئ واحداً لبدء تسجيل الحضور.' }, $locale)}</p>
+    <p class="text-sm text-slate-500 dark:text-slate-400">{tr({ en: 'No attendance records yet — create one to start checking people in.', ar: 'لا توجد سجلات حضور بعد — أنشئ واحداً لبدء تسجيل الحضور.' }, $locale)}</p>
   {/if}
 
   {#if showNew}
     <form class="card space-y-3 p-4" onsubmit={createGathering}>
-      <p class="text-sm font-medium">{tr({ en: 'New gathering', ar: 'اجتماع جديد' }, $locale)}</p>
+      <p class="text-sm font-medium">{tr({ en: 'New attendance', ar: 'حضور جديد' }, $locale)}</p>
       {#if createErr}<p class="text-xs text-rose-600 dark:text-rose-400">{createErr}</p>{/if}
       <input class="input" bind:value={newTitle} required placeholder={tr({ en: 'Title, e.g. Sunday service', ar: 'العنوان، مثال: خدمة الأحد' }, $locale)} />
       <input class="input force-ltr" type="datetime-local" bind:value={newStartsAt} required />
@@ -186,7 +186,7 @@
       {:else if selected}
         <div class="max-w-sm"><GatheringQr event={selected} /></div>
       {:else}
-        <p class="card p-6 py-16 text-center text-slate-400">{tr({ en: 'Select a gathering to show the QR.', ar: 'اختر اجتماعاً لعرض الرمز.' }, $locale)}</p>
+        <p class="card p-6 py-16 text-center text-slate-400">{tr({ en: 'Select an attendance record to show the QR.', ar: 'اختر سجل حضور لعرض الرمز.' }, $locale)}</p>
       {/if}
     </div>
   {/if}

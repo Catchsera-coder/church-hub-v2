@@ -56,7 +56,7 @@
 </PageHeader>
 
 <div class="mb-4 flex flex-wrap items-center gap-3">
-  <input class="input max-w-xs" placeholder={tr({ en: 'Search gatherings…', ar: 'بحث عن الاجتماعات…' }, $locale)} bind:value={search} />
+  <input class="input max-w-xs" placeholder={tr({ en: 'Search attendance…', ar: 'بحث عن الحضور…' }, $locale)} bind:value={search} />
   {#if isSuper && search.trim() && shown.length > 0}
     <button class="btn-ghost text-sm text-rose-600 dark:text-rose-400" onclick={() => (confirmBulk = true)}>
       {tr({ en: `Delete these ${shown.length}`, ar: `حذف هذه (${shown.length})` }, $locale)}
@@ -64,7 +64,7 @@
   {/if}
 </div>
 
-<DataTable loading={loading} rows={shown} headers={[tr({ en: 'Gathering', ar: 'الاجتماع' }, $locale), tr({ en: 'Starts', ar: 'يبدأ' }, $locale), isSuper ? '' : '']}>
+<DataTable loading={loading} rows={shown} headers={[tr({ en: 'Attendance', ar: 'الحضور' }, $locale), tr({ en: 'Starts', ar: 'يبدأ' }, $locale), isSuper ? '' : '']}>
   {#snippet row(e)}
     <td class="p-3 font-medium">
       <a class="text-primary-700 hover:underline dark:text-primary-300" href="/attendance/{e.id}">{tr(e.title, $locale) || '—'}</a>
@@ -81,8 +81,8 @@
 <ConfirmDialog
   open={confirmOne !== null}
   danger
-  title={tr({ en: 'Delete this gathering?', ar: 'حذف هذا الاجتماع؟' }, $locale)}
-  message={tr({ en: 'This permanently deletes the gathering and its attendance records.', ar: 'يحذف هذا الاجتماع وسجلات حضوره نهائياً.' }, $locale)}
+  title={tr({ en: 'Delete this attendance record?', ar: 'حذف سجل الحضور هذا؟' }, $locale)}
+  message={tr({ en: 'This permanently deletes this attendance record and its check-ins.', ar: 'يحذف سجل الحضور هذا وتسجيلاته نهائياً.' }, $locale)}
   confirmLabel={$t('common.delete')}
   busy={deleting}
   onconfirm={doDeleteOne}
@@ -92,8 +92,8 @@
 <ConfirmDialog
   bind:open={confirmBulk}
   danger
-  title={tr({ en: `Delete ${shown.length} gatherings?`, ar: `حذف ${shown.length} اجتماعاً؟` }, $locale)}
-  message={tr({ en: 'This permanently deletes ALL gatherings currently shown (matching your search) and their attendance records. Type DELETE to confirm.', ar: 'يحذف نهائياً كل الاجتماعات المعروضة حالياً (المطابقة لبحثك) وسجلات حضورها. اكتب DELETE للتأكيد.' }, $locale)}
+  title={tr({ en: `Delete ${shown.length} attendance records?`, ar: `حذف ${shown.length} سجل حضور؟` }, $locale)}
+  message={tr({ en: 'This permanently deletes ALL attendance records currently shown (matching your search) and their check-ins. Type DELETE to confirm.', ar: 'يحذف نهائياً كل سجلات الحضور المعروضة حالياً (المطابقة لبحثك) وتسجيلاتها. اكتب DELETE للتأكيد.' }, $locale)}
   requireText="DELETE"
   confirmLabel={$t('common.delete')}
   busy={bulkBusy}

@@ -22,7 +22,7 @@
     { key: 'newMembers', label: { en: 'New this month', ar: 'جدد هذا الشهر' } },
     { key: 'awaitingApproval', label: { en: 'Awaiting approval', ar: 'بانتظار الموافقة' } },
     { key: 'birthdays', label: { en: 'Birthdays this month', ar: 'أعياد ميلاد هذا الشهر' } },
-    { key: 'upcoming', label: { en: 'Upcoming gatherings', ar: 'الاجتماعات القادمة' } },
+    { key: 'upcoming', label: { en: 'Upcoming attendance', ar: 'الحضور القادم' } },
     { key: 'services', label: { en: 'Attendance by service', ar: 'الحضور حسب الخدمة' } },
     { key: 'giving', label: { en: 'Giving this month', ar: 'العطاء هذا الشهر' } },
   ];

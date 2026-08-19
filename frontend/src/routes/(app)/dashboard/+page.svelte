@@ -23,7 +23,7 @@
     newMembers: { label: { en: 'New this month', ar: 'جدد هذا الشهر' }, value: (s) => s.newMembersThisMonth, emoji: '✨' },
     awaitingApproval: { label: { en: 'Awaiting approval', ar: 'بانتظار الموافقة' }, value: (s) => s.awaitingApproval, href: '/members', emoji: '🔔' },
     birthdays: { label: { en: 'Birthdays this month', ar: 'أعياد ميلاد هذا الشهر' }, value: (s) => s.birthdaysThisMonth, emoji: '🎂' },
-    upcoming: { label: { en: 'Upcoming gatherings', ar: 'الاجتماعات القادمة' }, value: (s) => s.upcomingGatherings, href: '/attendance', emoji: '📅' },
+    upcoming: { label: { en: 'Upcoming attendance', ar: 'الحضور القادم' }, value: (s) => s.upcomingGatherings, href: '/attendance', emoji: '📅' },
     giving: { label: { en: 'Giving this month', ar: 'العطاء هذا الشهر' }, value: (s) => s.givingThisMonthCents, money: true },
   };
   const DEFAULT_WIDGETS = ['members', 'families', 'attendance', 'newMembers', 'awaitingApproval', 'birthdays', 'upcoming', 'services', 'giving'];
