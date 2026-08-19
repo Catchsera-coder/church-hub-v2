@@ -7,7 +7,10 @@
 
   let { initial = null, id = null }: { initial?: any; id?: number | null } = $props();
 
-  let families = $state<any[]>([]);
+  // Type-ahead family picker (scales past the old flat 100-family list).
+  let familyResults = $state<any[]>([]);
+  let familyQuery = $state('');
+  let selectedFamily = $state<any>(null);
   let form = $state({
     givenName: initial?.givenName ?? {},
     familyName: initial?.familyName ?? {},
@@ -35,17 +38,24 @@
   const statuses = ['visitor', 'regular', 'member', 'inactive'];
 
   onMount(async () => {
-    families = (await api<{ data: any[] }>('/families?limit=100')).data;
-    // Ensure the member's current family stays selectable even if it's not in
-    // the newest 100 (else the link could silently drop on save).
+    // Show the member's current family (if editing) without loading everything.
     const hid = initial?.householdId;
-    if (hid && !families.some((f) => f.id === hid)) {
-      try {
-        const { data } = await api<{ data: any }>(`/families/${hid}`);
-        if (data) families = [data, ...families];
-      } catch { /* household may be gone; leave as-is */ }
+    if (hid) {
+      try { const { data } = await api<{ data: any }>(`/families/${hid}`); if (data) selectedFamily = data; } catch { /* household may be gone */ }
     }
   });
+
+  let searchTimer: ReturnType<typeof setTimeout>;
+  function searchFamilies() {
+    clearTimeout(searchTimer);
+    const q = familyQuery.trim();
+    if (!q) { familyResults = []; return; }
+    searchTimer = setTimeout(async () => {
+      try { familyResults = (await api<{ data: any[] }>(`/families?search=${encodeURIComponent(q)}&limit=15`)).data; } catch { familyResults = []; }
+    }, 200);
+  }
+  function pickFamily(f: any) { selectedFamily = f; form.householdId = String(f.id); familyResults = []; familyQuery = ''; }
+  function clearFamily() { selectedFamily = null; form.householdId = ''; familyQuery = ''; familyResults = []; }
 
   async function createFamily() {
     if (!newFamilyName.trim()) return;
@@ -55,8 +65,7 @@
         method: 'POST',
         body: JSON.stringify({ name: { en: newFamilyName.trim() } }),
       });
-      families = [...families, data];
-      form.householdId = String(data.id);
+      pickFamily(data);
       showNewFamily = false;
       newFamilyName = '';
     } catch (err) {
@@ -135,13 +144,24 @@
           <button type="button" class="btn-primary shrink-0" onclick={createFamily} disabled={creatingFamily}>{creatingFamily ? '…' : tr({ en: 'Add', ar: 'إضافة' }, $locale)}</button>
           <button type="button" class="btn-ghost shrink-0" onclick={() => { showNewFamily = false; }}>✕</button>
         </div>
+      {:else if selectedFamily}
+        <div class="flex items-center gap-2 rounded-md bg-slate-50 px-3 py-2 text-sm dark:bg-slate-800">
+          <span>👪 {tr(selectedFamily.name ?? {}, $locale)}</span>
+          <button type="button" class="ms-auto text-xs text-rose-600 hover:underline" onclick={clearFamily}>{tr({ en: 'Change', ar: 'تغيير' }, $locale)}</button>
+        </div>
       {:else}
-        <div class="flex gap-2">
-          <select class="input" bind:value={form.householdId}>
-            <option value="">{tr({ en: '— None —', ar: '— بدون —' }, $locale)}</option>
-            {#each families as f}<option value={String(f.id)}>{tr(f.name, $locale)}</option>{/each}
-          </select>
-          {#if can('create household')}<button type="button" class="btn-ghost shrink-0 whitespace-nowrap" onclick={() => { showNewFamily = true; }}>+ {tr({ en: 'New', ar: 'جديد' }, $locale)}</button>{/if}
+        <div class="relative">
+          <div class="flex gap-2">
+            <input class="input" bind:value={familyQuery} oninput={searchFamilies} placeholder={tr({ en: 'Search a family…', ar: 'ابحث عن عائلة…' }, $locale)} />
+            {#if can('create household')}<button type="button" class="btn-ghost shrink-0 whitespace-nowrap" onclick={() => { showNewFamily = true; }}>+ {tr({ en: 'New', ar: 'جديد' }, $locale)}</button>{/if}
+          </div>
+          {#if familyResults.length}
+            <div class="absolute z-10 mt-1 w-full rounded-lg border border-slate-200 bg-white shadow dark:border-slate-700 dark:bg-slate-900">
+              {#each familyResults as f}
+                <button type="button" class="block w-full px-3 py-2 text-start text-sm hover:bg-slate-100 dark:hover:bg-slate-800" onclick={() => pickFamily(f)}>{tr(f.name ?? {}, $locale)}{#if f.city}<span class="text-slate-400"> · {f.city}</span>{/if}</button>
+              {/each}
+            </div>
+          {/if}
         </div>
       {/if}
     </div>

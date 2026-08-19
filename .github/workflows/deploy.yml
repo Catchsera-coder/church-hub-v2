@@ -21,6 +21,16 @@ on:
         required: true
         default: rg-abchub-prod
         type: string
+      backend_app:
+        description: 'Backend Container App name (blank = <church>-backend). This church uses v2-backend.'
+        required: false
+        default: v2-backend
+        type: string
+      frontend_app:
+        description: 'Frontend Container App name (blank = <church>-frontend). This church uses v2-frontend.'
+        required: false
+        default: v2-frontend
+        type: string
 
 permissions:
   id-token: write # for azure/login OIDC
@@ -64,20 +74,20 @@ jobs:
       - name: Roll out backend (runs migrations on start)
         run: |
           az containerapp update \
-            --name "${{ inputs.church }}-backend" \
+            --name "${{ inputs.backend_app != '' && inputs.backend_app || format('{0}-backend', inputs.church) }}" \
             --resource-group "${{ inputs.resource_group }}" \
             --image "$ACR/church-hub-backend:$TAG"
 
       - name: Roll out frontend
         run: |
           az containerapp update \
-            --name "${{ inputs.church }}-frontend" \
+            --name "${{ inputs.frontend_app != '' && inputs.frontend_app || format('{0}-frontend', inputs.church) }}" \
             --resource-group "${{ inputs.resource_group }}" \
             --image "$ACR/church-hub-frontend:$TAG"
 
       - name: Show frontend URL
         run: |
           az containerapp show \
-            --name "${{ inputs.church }}-frontend" \
+            --name "${{ inputs.frontend_app != '' && inputs.frontend_app || format('{0}-frontend', inputs.church) }}" \
             --resource-group "${{ inputs.resource_group }}" \
             --query properties.configuration.ingress.fqdn -o tsv
