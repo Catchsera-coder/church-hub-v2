@@ -252,6 +252,10 @@ export const serviceTypes = pgTable('service_types', {
   description: jsonb('description').$type<I18n>().notNull().default({}),
   ageGroup: ageGroup('age_group'),
   defaultSchedule: varchar('default_schedule', { length: 120 }),
+  // Live-stream link for this ministry. 'manual' = a fixed URL; 'youtube' = a
+  // channel handle/id whose /live permalink always resolves to the current
+  // stream (no API needed). Used to auto-fill a "Watch live" link into messages.
+  streaming: jsonb('streaming').$type<{ mode: 'manual' | 'youtube'; url?: string; youtube?: string }>(),
   // Self-referential parent: a ministry with a parent is a sub-ministry; one
   // with children acts as a group. onDelete set null so removing a parent just
   // ungroups its children (and soft-delete means it rarely fires anyway).

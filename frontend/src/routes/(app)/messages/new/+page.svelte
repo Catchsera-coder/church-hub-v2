@@ -7,6 +7,7 @@
   import PageHeader from '$lib/components/PageHeader.svelte';
   import ScheduleEditor from '$lib/components/ScheduleEditor.svelte';
   import { type Schedule, defaultSchedule, describeSchedule } from '$lib/schedule.js';
+  import { resolveStreamLink } from '$lib/stream.js';
 
   let form = $state({
     name: '',
@@ -145,6 +146,25 @@
   onMount(async () => {
     try { templates = (await api<{ data: any[] }>('/message-templates')).data.filter((x) => x.isActive); } catch { /* templates are optional */ }
   });
+
+  // Ministry stream links: insert a "Watch live" link that auto-points to the
+  // current live stream (YouTube /live), or a fixed URL.
+  let ministries = $state<any[]>([]);
+  let streamMinistryId = $state<number | ''>('');
+  onMount(async () => {
+    try { ministries = (await api<{ data: any[] }>('/ministries')).data.filter((m) => resolveStreamLink(m.streaming)); } catch { /* optional */ }
+  });
+  function insertStreamLink() {
+    const m = ministries.find((x) => x.id === Number(streamMinistryId));
+    const link = m && resolveStreamLink(m.streaming);
+    if (!link) return;
+    for (const l of get(enabledLocales)) {
+      const c = l.code;
+      const label = c === 'ar' ? 'شاهد البث المباشر' : 'Watch live';
+      form.body[c] = (form.body[c] ? form.body[c] + '\n\n' : '') + `${label}: ${link}`;
+    }
+    if (form.channel === 'email') { if (!form.ctaLabel.en?.trim()) form.ctaLabel.en = 'Watch live'; form.ctaUrl = link; }
+  }
 
   function applyTemplate() {
     const tpl = templates.find((x) => x.id === Number(templateId));
@@ -346,6 +366,20 @@
   </div>
 
   <!-- Audience + actions -->
+  {#if ministries.length}
+    <div class="card space-y-2 p-6">
+      <p class="text-sm font-medium">📺 {tr({ en: "Insert a ministry's live-stream link", ar: 'أدرج رابط بث خدمة' }, $locale)}</p>
+      <div class="flex flex-wrap items-center gap-2">
+        <select class="input max-w-xs" bind:value={streamMinistryId}>
+          <option value="">{tr({ en: '— Choose a ministry —', ar: '— اختر خدمة —' }, $locale)}</option>
+          {#each ministries as m}<option value={m.id}>{tr(m.name, $locale)}</option>{/each}
+        </select>
+        <button type="button" class="btn-ghost border border-slate-300 text-sm dark:border-slate-700" disabled={!streamMinistryId} onclick={insertStreamLink}>{tr({ en: 'Insert link', ar: 'إدراج الرابط' }, $locale)}</button>
+      </div>
+      <p class="text-xs text-slate-400">{tr({ en: 'Adds a "Watch live" link (and the email button). The link always points to the current stream — great with a recurring weekly send.', ar: 'يضيف رابط «شاهد البث» (وزر البريد). يشير الرابط دائماً إلى البث الحالي — رائع مع الإرسال الأسبوعي المتكرر.' }, $locale)}</p>
+    </div>
+  {/if}
+
   <div class="card space-y-4 p-6">
     <!-- Recipients -->
     <div class="space-y-2">

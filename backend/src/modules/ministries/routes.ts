@@ -16,6 +16,12 @@ const schema = z.object({
   description: z.record(z.string()).default({}),
   ageGroup: z.enum(['children', 'youth', 'adult']).nullable().optional(),
   defaultSchedule: z.string().max(120).nullable().optional(),
+  // Live-stream link: a fixed URL, or a YouTube handle/channel for the /live permalink.
+  streaming: z.object({
+    mode: z.enum(['manual', 'youtube']),
+    url: z.string().max(500).optional(),
+    youtube: z.string().max(120).optional(),
+  }).nullable().optional(),
   // Parent ministry (group). null/omitted = top-level.
   parentId: z.number().int().positive().nullable().optional(),
   sortOrder: z.number().int().default(0),
