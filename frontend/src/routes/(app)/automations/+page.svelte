@@ -65,6 +65,8 @@
   }
 
   async function runNow(it: Automation) {
+    const n = previews[it.id];
+    if (!confirm(tr({ en: `Send this message now to ${n ?? 'all'} matching people?`, ar: `إرسال هذه الرسالة الآن إلى ${n ?? 'كل'} مطابق؟` }, $locale))) return;
     busy = it.id; runResult[it.id] = '';
     try {
       const r = await api<{ data: { sent: number; total: number } }>(`/automations/${it.id}/run`, { method: 'POST' });

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
+  import { page } from '$app/stores';
   import { api } from '$lib/api.js';
   import { get } from 'svelte/store';
   import { t, locale, tr, enabledLocales } from '$lib/i18n.js';
@@ -154,6 +155,14 @@
   onMount(async () => {
     try { ministries = (await api<{ data: any[] }>('/ministries')).data.filter((m) => resolveStreamLink(m.streaming)); } catch { /* optional */ }
   });
+  // Pre-select recipients from a ?people=1,2,3 deep link (e.g. "Message this family").
+  onMount(() => {
+    const p = get(page).url.searchParams.get('people');
+    if (!p) return;
+    const ids = p.split(',').map(Number).filter((n) => Number.isFinite(n) && n > 0);
+    if (ids.length) { recipMode = 'people'; selectedIds = new Set(ids); searchPeople(); }
+  });
+
   function insertStreamLink() {
     const m = ministries.find((x) => x.id === Number(streamMinistryId));
     const link = m && resolveStreamLink(m.streaming);

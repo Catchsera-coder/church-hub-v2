@@ -24,7 +24,17 @@ export type Schedule = {
   dayOfMonth?: number;       // 1..31, for monthly (clamped to the month's length)
   startDate?: string | null; // 'YYYY-MM-DD' inclusive
   endDate?: string | null;   // 'YYYY-MM-DD' inclusive
+  // Quiet hours: never send while the local time is in [quietStart, quietEnd)
+  // (wraps past midnight when start > end, e.g. 21:00–08:00). Both or neither.
+  quietStart?: string;       // 'HH:MM'
+  quietEnd?: string;         // 'HH:MM'
 };
+
+/** True when a local 'HH:MM' falls inside a (possibly overnight) quiet window. */
+function inQuietHours(time: string, start?: string, end?: string): boolean {
+  if (!start || !end || start === end) return false;
+  return start <= end ? (time >= start && time < end) : (time >= start || time < end);
+}
 
 type TzParts = { year: number; month: number; day: number; date: string; time: string; dow: number };
 
@@ -79,6 +89,7 @@ export function isRecurringDue(schedule: Schedule, lastRunOn: string | null, now
   }
 
   if (p.time < (schedule.time || '09:00')) return false; // wait for the time-of-day
+  if (inQuietHours(p.time, schedule.quietStart, schedule.quietEnd)) return false; // respect quiet hours
   if (lastRunOn === p.date) return false;                // once per due day
   return true;
 }
@@ -129,4 +140,6 @@ export const scheduleZod = z.object({
   dayOfMonth: z.number().int().min(1).max(31).optional(),
   startDate: z.string().nullable().optional(),
   endDate: z.string().nullable().optional(),
+  quietStart: z.string().regex(/^\d{2}:\d{2}$/).optional(),
+  quietEnd: z.string().regex(/^\d{2}:\d{2}$/).optional(),
 });

@@ -13,6 +13,8 @@ export type Schedule = {
   dayOfMonth?: number;       // 1..31
   startDate?: string | null; // 'YYYY-MM-DD'
   endDate?: string | null;   // 'YYYY-MM-DD'
+  quietStart?: string;       // 'HH:MM' — never send inside quiet hours
+  quietEnd?: string;         // 'HH:MM'
 };
 
 export const DOW_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];

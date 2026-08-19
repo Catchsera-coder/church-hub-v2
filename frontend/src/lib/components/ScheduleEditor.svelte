@@ -84,6 +84,15 @@
         <input class="input force-ltr" type="date" value={schedule.endDate ?? ''} onchange={(e) => (schedule.endDate = (e.currentTarget as HTMLInputElement).value || null)} />
       </label>
     </div>
+
+    <div class="space-y-1">
+      <span class="text-sm text-slate-600 dark:text-slate-300">🌙 {tr({ en: 'Quiet hours — never send between (optional)', ar: 'ساعات الهدوء — لا ترسل بين (اختياري)' }, $locale)}</span>
+      <div class="flex items-center gap-2">
+        <input class="input force-ltr w-28" type="time" value={schedule.quietStart ?? ''} onchange={(e) => (schedule.quietStart = (e.currentTarget as HTMLInputElement).value || undefined)} />
+        <span class="text-slate-400">–</span>
+        <input class="input force-ltr w-28" type="time" value={schedule.quietEnd ?? ''} onchange={(e) => (schedule.quietEnd = (e.currentTarget as HTMLInputElement).value || undefined)} />
+      </div>
+    </div>
   {/if}
 
   <p class="text-xs text-slate-500 dark:text-slate-400">🕑 {describeSchedule(schedule)}</p>
