@@ -64,7 +64,8 @@
     const r = await api<{ data: any }>('/settings');
     // Default the dashboard to all widgets when the church hasn't customized it.
     const widgets = r.data.dashboard?.widgets?.length ? r.data.dashboard.widgets : ALL_WIDGET_KEYS;
-    form = { ...r.data, name: r.data.name ?? {}, dashboard: { widgets } };
+    const es = r.data.emailSettings ?? {};
+    form = { ...r.data, name: r.data.name ?? {}, dashboard: { widgets }, emailSettings: { ...es, signature: es.signature ?? {}, social: es.social ?? {} } };
     if (isAdmin) {
       const m = await api<{ data: any }>('/settings/messaging');
       // secret fields start blank; blank on save = leave unchanged
@@ -83,6 +84,14 @@
         logoPath: form.logoPath ?? null, arabicEnabled: !!form.arabicEnabled,
         brandColor: form.brandColor || null,
         dashboard: { widgets: form.dashboard?.widgets ?? ALL_WIDGET_KEYS },
+        emailSettings: {
+          replyTo: form.emailSettings?.replyTo || '',
+          website: form.emailSettings?.website || '',
+          signature: form.emailSettings?.signature ?? {},
+          social: form.emailSettings?.social ?? {},
+          showContactFooter: form.emailSettings?.showContactFooter !== false,
+          buttonColor: form.emailSettings?.buttonColor || '',
+        },
       }) });
       saved = true;
       // Reflect the brand colour app-wide immediately.
@@ -144,6 +153,35 @@
   const secretPlaceholder = (isSet: boolean) =>
     isSet ? tr({ en: '•••••••• (leave blank to keep)', ar: '•••••••• (اتركه فارغاً للإبقاء)' }, $locale)
           : tr({ en: 'Not set', ar: 'غير محدد' }, $locale);
+
+  // Live email preview — renders the real branded shell from the current (unsaved)
+  // draft so admins see exactly what members receive as they edit.
+  let previewHtml = $state('');
+  let previewing = $state(false);
+  async function refreshEmailPreview() {
+    if (!form) return;
+    previewing = true;
+    try {
+      const r = await api<{ data: { html: string } }>('/settings/email-preview', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: form.name, brandColor: form.brandColor || '', logoPath: form.logoPath ?? null,
+          addressLine1: form.addressLine1 ?? null, addressLine2: form.addressLine2 ?? null,
+          city: form.city ?? null, region: form.region ?? null, postalCode: form.postalCode ?? null,
+          country: form.country ?? null, email: form.email ?? null, phone: form.phone ?? null,
+          emailSettings: {
+            replyTo: form.emailSettings?.replyTo || '',
+            website: form.emailSettings?.website || '',
+            signature: form.emailSettings?.signature ?? {},
+            social: form.emailSettings?.social ?? {},
+            showContactFooter: form.emailSettings?.showContactFooter !== false,
+            buttonColor: form.emailSettings?.buttonColor || '',
+          },
+        }),
+      });
+      previewHtml = r.data.html;
+    } finally { previewing = false; }
+  }
 </script>
 
 <PageHeader title={$t('nav.settings')} />
@@ -262,6 +300,70 @@
       <label class="block space-y-1"><span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Phone', ar: 'الهاتف' }, $locale)}</span><input class="input force-ltr" bind:value={form.phone} /></label>
       <label class="block space-y-1"><span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Address', ar: 'العنوان' }, $locale)}</span><input class="input" bind:value={form.addressLine1} /></label>
       <label class="block space-y-1"><span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'City', ar: 'المدينة' }, $locale)}</span><input class="input" bind:value={form.city} /></label>
+    </div>
+
+    <!-- Email branding: drives every email (password reset, reminders, welcomes, birthdays, announcements). -->
+    <div class="card space-y-4 p-6">
+      <div>
+        <h2 class="text-lg font-semibold">{tr({ en: 'Email branding', ar: 'هوية البريد' }, $locale)}</h2>
+        <p class="text-sm text-slate-500 dark:text-slate-400">{tr({ en: 'One professional look for every email — password resets, reminders, welcomes, birthday wishes, and announcements. Uses your logo, colours, address, and the details below.', ar: 'مظهر احترافي موحّد لكل بريد — إعادة تعيين كلمة المرور والتذكيرات والترحيب وأعياد الميلاد والإعلانات. يستخدم شعارك وألوانك وعنوانك والتفاصيل أدناه.' }, $locale)}</p>
+      </div>
+
+      <div class="grid gap-4 sm:grid-cols-2">
+        <label class="block space-y-1">
+          <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Reply-to address', ar: 'عنوان الرد' }, $locale)}</span>
+          <input class="input force-ltr" type="email" placeholder={form.email || 'replies@yourchurch.org'} bind:value={form.emailSettings.replyTo} />
+          <span class="text-xs text-slate-400">{tr({ en: 'Where replies go (not the no-reply sender). Defaults to your church email.', ar: 'إلى أين تذهب الردود (وليس المُرسِل بلا رد). الافتراضي هو بريد الكنيسة.' }, $locale)}</span>
+        </label>
+        <label class="block space-y-1">
+          <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Website', ar: 'الموقع' }, $locale)}</span>
+          <input class="input force-ltr" placeholder="https://www.abcbchurchhub.org" bind:value={form.emailSettings.website} />
+        </label>
+      </div>
+
+      <label class="block space-y-1">
+        <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Sign-off (English)', ar: 'التوقيع (إنجليزي)' }, $locale)}</span>
+        <textarea class="input min-h-[64px]" placeholder="Blessings,&#10;The Arabic Baptist Church Boston" bind:value={form.emailSettings.signature.en}></textarea>
+        <span class="text-xs text-slate-400">{tr({ en: 'Appears at the end of every email. You can use {{churchName}}.', ar: 'يظهر في نهاية كل بريد. يمكنك استخدام {{churchName}}.' }, $locale)}</span>
+      </label>
+      {#if form.arabicEnabled}
+        <label class="block space-y-1">
+          <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Sign-off (Arabic)', ar: 'التوقيع (عربي)' }, $locale)}</span>
+          <textarea class="input min-h-[64px]" dir="rtl" bind:value={form.emailSettings.signature.ar}></textarea>
+        </label>
+      {/if}
+
+      <div class="grid gap-4 sm:grid-cols-3">
+        <label class="block space-y-1"><span class="text-sm text-slate-600 dark:text-slate-300">Facebook</span><input class="input force-ltr" placeholder="https://facebook.com/…" bind:value={form.emailSettings.social.facebook} /></label>
+        <label class="block space-y-1"><span class="text-sm text-slate-600 dark:text-slate-300">Instagram</span><input class="input force-ltr" placeholder="https://instagram.com/…" bind:value={form.emailSettings.social.instagram} /></label>
+        <label class="block space-y-1"><span class="text-sm text-slate-600 dark:text-slate-300">YouTube</span><input class="input force-ltr" placeholder="https://youtube.com/@…" bind:value={form.emailSettings.social.youtube} /></label>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-4">
+        <div class="space-y-1">
+          <span class="block text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Button colour', ar: 'لون الزر' }, $locale)}</span>
+          <div class="flex items-center gap-2">
+            <input type="color" class="h-9 w-12 cursor-pointer rounded border border-slate-300 bg-white dark:border-slate-700" value={form.emailSettings.buttonColor || form.brandColor || '#3b3f8c'} oninput={(e) => (form.emailSettings.buttonColor = (e.currentTarget as HTMLInputElement).value)} />
+            <input class="input force-ltr w-28" placeholder={form.brandColor || '#3b3f8c'} bind:value={form.emailSettings.buttonColor} />
+            {#if form.emailSettings.buttonColor}<button type="button" class="text-xs text-rose-600 hover:underline" onclick={() => (form.emailSettings.buttonColor = '')}>{tr({ en: 'Reset', ar: 'إعادة' }, $locale)}</button>{/if}
+          </div>
+        </div>
+        <label class="flex items-center gap-2 self-end pb-1 text-sm">
+          <input type="checkbox" checked={form.emailSettings.showContactFooter !== false} onchange={(e) => (form.emailSettings.showContactFooter = (e.currentTarget as HTMLInputElement).checked)} />
+          {tr({ en: 'Show address + contact footer', ar: 'إظهار تذييل العنوان والتواصل' }, $locale)}
+        </label>
+      </div>
+
+      <!-- Live preview: the real branded email rendered from these settings -->
+      <div class="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+        <div class="mb-2 flex items-center gap-2">
+          <button type="button" class="btn-ghost border border-slate-300 dark:border-slate-700" onclick={refreshEmailPreview} disabled={previewing}>{previewing ? $t('common.loading') : tr({ en: 'Preview email', ar: 'معاينة البريد' }, $locale)}</button>
+          <span class="text-xs text-slate-400">{tr({ en: 'See exactly what members receive.', ar: 'شاهد بالضبط ما يستلمه الأعضاء.' }, $locale)}</span>
+        </div>
+        {#if previewHtml}
+          <iframe title="Email preview" srcdoc={previewHtml} sandbox="" class="h-[520px] w-full rounded-md border border-slate-200 bg-white dark:border-slate-700"></iframe>
+        {/if}
+      </div>
     </div>
 
     <div class="flex items-center gap-3">

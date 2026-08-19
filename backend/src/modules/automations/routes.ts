@@ -64,7 +64,7 @@ automationsRouter.post('/:id/run', asyncHandler(async (req, res) => {
   const [a] = await db.select().from(automations).where(eq(automations.id, Number(req.params.id))).limit(1);
   if (!a) throw notFound();
   const org = await currentOrg();
-  const messaging = resolveMessaging(org.messaging);
+  const messaging = resolveMessaging(org.messaging, { replyTo: org.emailSettings?.replyTo || org.email });
   const result = await runAutomation({ type: a.type, channel: a.channel as Channel, templateId: a.templateId, config: a.config }, org, messaging);
   await db.update(automations).set({ lastRunOn: new Date().toISOString().slice(0, 10), updatedAt: new Date() }).where(eq(automations.id, a.id));
   await logActivity(req, 'updated', 'automation', a.id, `run: ${result.sent}/${result.total}`);

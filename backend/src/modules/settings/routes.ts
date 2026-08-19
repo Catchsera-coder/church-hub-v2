@@ -7,8 +7,24 @@ import { asyncHandler } from '../../http/asyncHandler.js';
 import { authenticate, requireRole } from '../../middleware/auth.js';
 import { config } from '../../config.js';
 import { resolveMessaging, verifyEmail } from '../messages/delivery.js';
+import { brandedEmailHtml, renderText, localeName } from '../messages/render.js';
 
 export const settingsRouter = Router();
+
+// Professional email presentation (non-secret). Empty strings are allowed and
+// treated as "unset" downstream; the whole object replaces the stored value.
+const emailSettingsSchema = z.object({
+  replyTo: z.string().email().or(z.literal('')).optional(),
+  website: z.string().max(300).optional(),
+  signature: z.record(z.string()).optional(),
+  social: z.object({
+    facebook: z.string().optional(),
+    instagram: z.string().optional(),
+    youtube: z.string().optional(),
+  }).optional(),
+  showContactFooter: z.boolean().optional(),
+  buttonColor: z.string().regex(/^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/).or(z.literal('')).optional(),
+});
 
 /** The single organisation row (white-label). Public read so the SPA can brand
  *  the login screen; only Admins can write. */
@@ -49,6 +65,7 @@ const updateSchema = z.object({
   email: z.string().email().nullable().optional(),
   phone: z.string().nullable().optional(),
   arabicEnabled: z.boolean().optional(),
+  emailSettings: emailSettingsSchema.optional(),
   // #17: which dashboard widgets are enabled, in display order. Accept any widget
   // key (the frontend filters to its known catalog) so new cards don't need a
   // schema change each release.
@@ -179,7 +196,56 @@ settingsRouter.post(
   requireRole('Admin'),
   asyncHandler(async (req, res) => {
     const to = z.object({ to: z.string().email() }).parse(req.body).to;
-    const messaging = resolveMessaging((await currentOrg()).messaging);
+    const org = await currentOrg();
+    const messaging = resolveMessaging(org.messaging, { replyTo: org.emailSettings?.replyTo || org.email });
     res.json({ data: await verifyEmail(messaging, to) });
+  }),
+);
+
+// Live email preview: render the real branded shell with sample content, using
+// the saved org merged with any draft email settings from the editor. Returns
+// HTML the Settings page shows in an iframe so admins see exactly what members
+// will get. Admin-only; renders only sample text (no recipient data).
+settingsRouter.post(
+  '/email-preview',
+  authenticate,
+  requireRole('Admin'),
+  asyncHandler(async (req, res) => {
+    // Accept the editor's unsaved draft (brand + contact + email settings) so the
+    // preview reflects changes before Save. All lenient — the renderer tolerates
+    // bad values (invalid hex/logo fall back safely).
+    const draft = z.object({
+      name: z.record(z.string()).optional(),
+      brandColor: z.string().optional(),
+      logoPath: z.string().nullable().optional(),
+      addressLine1: z.string().nullable().optional(),
+      addressLine2: z.string().nullable().optional(),
+      city: z.string().nullable().optional(),
+      region: z.string().nullable().optional(),
+      postalCode: z.string().nullable().optional(),
+      country: z.string().nullable().optional(),
+      email: z.string().nullable().optional(),
+      phone: z.string().nullable().optional(),
+      emailSettings: emailSettingsSchema.optional(),
+    }).parse(req.body);
+    const org = await currentOrg();
+    const { emailSettings: draftEs, ...draftOrg } = draft;
+    const merged = { ...org, ...draftOrg, emailSettings: { ...(org.emailSettings ?? {}), ...(draftEs ?? {}) } };
+    const lang = org.locale || 'en';
+    const churchName = localeName(org.name, lang) || 'Our Church';
+    const sampleCtx = { firstName: 'Sarah', fullName: 'Sarah Hana', churchName, date: new Date().toISOString().slice(0, 10) };
+    const body =
+      `Dear ${sampleCtx.firstName},\n\n` +
+      `This is a preview of how your church emails will look. Update the logo, colours, sign-off, and footer here and everything — reminders, welcomes, birthday wishes, and announcements — will match.\n\n` +
+      `We're so glad you're part of ${churchName}.`;
+    const signature = renderText(localeName(merged.emailSettings?.signature, lang), sampleCtx) || undefined;
+    const html = brandedEmailHtml(body, merged, {
+      lang,
+      signature,
+      cta: { label: 'View this Sunday', url: '#' },
+      unsubscribeUrl: '#',
+      preheader: 'A preview of your branded church email',
+    });
+    res.json({ data: { html } });
   }),
 );

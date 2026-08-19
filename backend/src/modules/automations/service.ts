@@ -2,7 +2,7 @@ import { and, eq, isNull, sql } from 'drizzle-orm';
 import { db } from '../../db/index.js';
 import { people, attendanceRecords, messageTemplates } from '../../db/schema.js';
 import { resolveMessaging, sendMessage, type ResolvedMessaging } from '../messages/delivery.js';
-import { buildContext, renderText, brandedEmailHtml } from '../messages/render.js';
+import { buildContext, renderText, brandedEmailHtml, localeName, type OrgBrand } from '../messages/render.js';
 
 export type Channel = 'email' | 'sms' | 'whatsapp';
 export interface RecipientRow {
@@ -59,7 +59,7 @@ function pickContact(p: RecipientRow, channel: Channel): { to: string; optedIn: 
 /** Render a template for one person and send it on the channel (respects opt-out). */
 export async function sendTemplateToPerson(
   p: RecipientRow, channel: Channel, tpl: { subject?: Record<string, string>; header?: Record<string, string>; body?: Record<string, string>; footer?: Record<string, string> },
-  org: { name?: Record<string, string> | null; logoPath?: string | null; brandColor?: string | null }, messaging: ResolvedMessaging,
+  org: OrgBrand, messaging: ResolvedMessaging,
 ): Promise<boolean> {
   const c = pickContact(p, channel);
   if (!c || !c.optedIn) return false;
@@ -69,9 +69,10 @@ export async function sendTemplateToPerson(
   const subject = pick(tpl.subject);
   const bodyText = [pick(tpl.header), pick(tpl.body)].filter(Boolean).join('\n\n');
   const footer = pick(tpl.footer);
+  const signature = renderText(localeName(org.emailSettings?.signature, lang), ctx) || undefined;
   if (channel === 'email') {
-    const html = brandedEmailHtml(bodyText, org, { footer, lang });
-    const plain = footer ? `${bodyText}\n\n—\n${footer}` : bodyText;
+    const html = brandedEmailHtml(bodyText, org, { lang, signature, bodyFooterNote: footer || undefined });
+    const plain = [bodyText, signature, footer].filter(Boolean).join('\n\n');
     return sendMessage(messaging, channel, c.to, subject, plain, html);
   }
   const plain = [bodyText, footer].filter(Boolean).join('\n\n');
@@ -81,7 +82,7 @@ export async function sendTemplateToPerson(
 /** Run one automation now: send its template to everyone it currently matches. */
 export async function runAutomation(
   a: { type: string; channel: Channel; templateId: number | null; config: Record<string, number | string> },
-  org: { messaging?: unknown; name?: Record<string, string> | null; logoPath?: string | null; brandColor?: string | null },
+  org: OrgBrand & { messaging?: unknown },
   messaging: ResolvedMessaging,
 ): Promise<{ sent: number; total: number }> {
   if (!a.templateId) return { sent: 0, total: 0 };

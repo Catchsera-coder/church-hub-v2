@@ -4,7 +4,7 @@ import { messageCampaigns, messageRecipients, people } from '../../db/schema.js'
 import { config } from '../../config.js';
 import { currentOrg } from '../settings/routes.js';
 import { resolveMessaging, sendMessage } from './delivery.js';
-import { buildContext, renderText, brandedEmailHtml } from './render.js';
+import { buildContext, renderText, brandedEmailHtml, localeName } from './render.js';
 
 /**
  * Send a campaign to its whole eligible audience now. Shared by the manual send
@@ -30,7 +30,7 @@ export async function sendCampaignNow(campaignId: number): Promise<{ sent: numbe
   await db.update(messageCampaigns).set({ status: 'sending', updatedAt: new Date() }).where(eq(messageCampaigns.id, campaignId));
 
   const org = await currentOrg();
-  const messaging = resolveMessaging(org.messaging);
+  const messaging = resolveMessaging(org.messaging, { replyTo: org.emailSettings?.replyTo || org.email });
   const appUrl = config.PUBLIC_APP_URL?.replace(/\/+$/, '');
   const now = new Date();
 
@@ -42,9 +42,18 @@ export async function sendCampaignNow(campaignId: number): Promise<{ sent: numbe
     const ctx = buildContext(p, org, now, lang);
     const subject = renderText(c.subject[lang] ?? c.subject.en ?? '', ctx);
     const body = renderText(c.body[lang] ?? c.body.en ?? '', ctx);
-    const footer = c.channel === 'email' && appUrl ? `To stop receiving these emails, unsubscribe: ${appUrl}/unsubscribe/${p.unsubToken}` : '';
-    const html = c.channel === 'email' ? brandedEmailHtml(body, org, { footer, lang }) : undefined;
-    const plain = footer ? `${body}\n\n—\n${footer}` : body;
+    const signature = renderText(localeName(org.emailSettings?.signature, lang), ctx) || undefined;
+    const unsubscribeUrl = c.channel === 'email' && appUrl ? `${appUrl}/unsubscribe/${p.unsubToken}` : undefined;
+    const cta = c.ctaLabel && c.ctaUrl ? { label: renderText(localeName(c.ctaLabel, lang), ctx), url: c.ctaUrl } : null;
+    const html = c.channel === 'email'
+      ? brandedEmailHtml(body, org, { lang, signature, unsubscribeUrl, cta })
+      : undefined;
+    const plain = [
+      body,
+      cta ? `${cta.label}: ${cta.url}` : '',
+      signature,
+      unsubscribeUrl ? `—\nTo stop receiving these emails, unsubscribe: ${unsubscribeUrl}` : '',
+    ].filter(Boolean).join('\n\n');
     const ok = await sendMessage(messaging, c.channel, p.contact as string, subject, plain, html, c.mediaUrl ?? undefined);
     await db.update(messageRecipients).set({ status: ok ? 'sent' : 'failed' }).where(eq(messageRecipients.id, rec.id));
     if (ok) sent++;

@@ -119,7 +119,7 @@ peopleRouter.post(
       const [wa] = await db.select().from(automations).where(eq(automations.type, 'welcome')).limit(1);
       if (wa?.templateId) {
         const org = await currentOrg();
-        const messaging = resolveMessaging(org.messaging);
+        const messaging = resolveMessaging(org.messaging, { replyTo: org.emailSettings?.replyTo || org.email });
         welcomeSent = await sendTemplateToPerson(row as never, wa.channel as 'email' | 'sms' | 'whatsapp',
           (await db.select().from(messageTemplates).where(eq(messageTemplates.id, wa.templateId)).limit(1))[0] ?? {}, org, messaging);
       }

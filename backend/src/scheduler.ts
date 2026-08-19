@@ -56,7 +56,7 @@ async function runAutoAutomations(): Promise<void> {
   if (!daily.length) return;
 
   const org = await currentOrg();
-  const messaging = resolveMessaging(org.messaging);
+  const messaging = resolveMessaging(org.messaging, { replyTo: org.emailSettings?.replyTo || org.email });
   for (const a of daily) {
     if (a.lastRunOn === today) continue; // once per day
     if (a.type === 'absence_followup' && a.lastRunOn) {

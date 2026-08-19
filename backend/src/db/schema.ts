@@ -47,6 +47,21 @@ export type MessagingSettings = {
   azureOpenaiApiVersion?: string; // defaults to a recent stable version
 };
 
+/**
+ * Per-church email presentation (NON-secret). Drives the professional branded
+ * email layout — reply-to, website, social links, sign-off, and the contact
+ * footer. Returned by the public GET /settings so the SPA can preview emails
+ * and brand consistently. No secrets here (those live in `messaging`).
+ */
+export type EmailSettings = {
+  replyTo?: string;            // reply-to address; falls back to org.email
+  website?: string;            // church website URL, shown in the footer
+  signature?: I18n;            // sign-off line(s), e.g. "Blessings, Pastor …"
+  social?: { facebook?: string; instagram?: string; youtube?: string };
+  showContactFooter?: boolean; // include address/phone/website footer (default true)
+  buttonColor?: string;        // CTA button colour; falls back to brandColor
+};
+
 // ---------------------------------------------------------------------------
 // Enums
 // ---------------------------------------------------------------------------
@@ -96,6 +111,9 @@ export const organisations = pgTable('organisations', {
   // Dashboard customization (#17): which stat widgets show, in order. Empty =
   // show the default set. Per-church (white-label), set by an Admin in Settings.
   dashboard: jsonb('dashboard').$type<{ widgets?: string[] }>().notNull().default({}),
+  // Professional email presentation (non-secret): reply-to, website, social,
+  // sign-off, footer toggle. Drives the branded email layout + Settings preview.
+  emailSettings: jsonb('email_settings').$type<EmailSettings>().notNull().default({}),
   ...timestamps,
 });
 
@@ -457,6 +475,9 @@ export const messageCampaigns = pgTable('message_campaigns', {
   sentAt: timestamp('sent_at', { withTimezone: true }),
   // Optional image sent as MMS (SMS) / media (WhatsApp) — a public media URL.
   mediaUrl: text('media_url'),
+  // Optional call-to-action button (email): localized label + a link URL.
+  ctaLabel: jsonb('cta_label').$type<I18n>(),
+  ctaUrl: text('cta_url'),
   createdByUserId: integer('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
   ...timestamps,
 }, (t) => ({ statusIdx: index('message_campaigns_status_idx').on(t.status) }));

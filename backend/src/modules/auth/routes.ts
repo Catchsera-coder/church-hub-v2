@@ -12,6 +12,7 @@ import { authenticate } from '../../middleware/auth.js';
 import { badRequest, unauthorized } from '../../http/errors.js';
 import { config } from '../../config.js';
 import { resolveMessaging, sendMessage } from '../messages/delivery.js';
+import { brandedEmailHtml, renderText, localeName } from '../messages/render.js';
 import { currentOrg } from '../settings/routes.js';
 
 export const authRouter = Router();
@@ -108,13 +109,18 @@ authRouter.post(
       const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
       await db.insert(passwordResetTokens).values({ userId: user.id, tokenHash, expiresAt });
 
-      const messaging = resolveMessaging((await currentOrg()).messaging);
-      const subject = 'Your password reset code';
+      const org = await currentOrg();
+      const messaging = resolveMessaging(org.messaging, { replyTo: org.emailSettings?.replyTo || org.email });
+      const lang = org.locale || 'en';
+      const churchName = localeName(org.name, lang) || 'your church';
+      const subject = `Your ${churchName} password reset code`;
       const body =
         `Your password reset code is: ${code}\n\n` +
         `Enter it on the sign-in screen to choose a new password. It expires in 15 minutes.\n\n` +
-        `If you didn't request this, you can ignore this email.`;
-      await sendMessage(messaging, 'email', user.email, subject, body);
+        `If you didn't request this, you can safely ignore this email.`;
+      const signature = renderText(localeName(org.emailSettings?.signature, lang), { churchName }) || undefined;
+      const html = brandedEmailHtml(body, org, { lang, signature, preheader: `Your password reset code for ${churchName}` });
+      await sendMessage(messaging, 'email', user.email, subject, body, html);
     }
 
     res.json({ ok: true });

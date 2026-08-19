@@ -24,6 +24,7 @@ export interface ResolvedMessaging {
   sendgridApiKey?: string;
   mailFrom?: string;
   acsMailFrom?: string;
+  mailReplyTo?: string; // optional Reply-To for outgoing email (from org.emailSettings)
   smsProvider: 'twilio' | 'azure' | null;
   smsFrom?: string;
   twilioAccountSid?: string;
@@ -34,11 +35,16 @@ export interface ResolvedMessaging {
   whatsappFrom?: string;
 }
 
-/** Merge the church's saved settings over the env defaults and pick providers. */
-export function resolveMessaging(dbMsg?: MessagingSettings | null): ResolvedMessaging {
+/**
+ * Merge the church's saved settings over the env defaults and pick providers.
+ * `opts.replyTo` (from org.emailSettings, non-secret) sets the email Reply-To so
+ * a member's reply reaches a real church inbox instead of the no-reply sender.
+ */
+export function resolveMessaging(dbMsg?: MessagingSettings | null, opts?: { replyTo?: string | null }): ResolvedMessaging {
   const m = dbMsg ?? {};
   const sendgridApiKey = m.sendgridApiKey || config.SENDGRID_API_KEY;
   const mailFrom = m.mailFrom || config.MAIL_FROM;
+  const mailReplyTo = opts?.replyTo || undefined;
   const acsConnectionString = m.acsConnectionString || config.ACS_CONNECTION_STRING;
   const acsMailFrom = m.acsMailFrom || config.ACS_MAIL_FROM;
 
@@ -70,7 +76,7 @@ export function resolveMessaging(dbMsg?: MessagingSettings | null): ResolvedMess
   const whatsappProvider: 'twilio' | null = whatsappReady ? 'twilio' : null;
 
   return {
-    emailProvider, sendgridApiKey, mailFrom, acsMailFrom,
+    emailProvider, sendgridApiKey, mailFrom, acsMailFrom, mailReplyTo,
     smsProvider, smsFrom, twilioAccountSid, twilioAuthToken, acsConnectionString, acsSmsFrom,
     whatsappProvider, whatsappFrom,
   };
@@ -152,6 +158,7 @@ async function sendEmailSendgrid(m: ResolvedMessaging, to: string, subject: stri
     body: JSON.stringify({
       personalizations: [{ to: [{ email: to }] }],
       from: { email: m.mailFrom },
+      ...(m.mailReplyTo ? { reply_to: { email: m.mailReplyTo } } : {}),
       subject: subject || '(no subject)',
       content,
     }),
@@ -170,6 +177,7 @@ async function sendEmailAcs(m: ResolvedMessaging, to: string, subject: string, b
       senderAddress: m.acsMailFrom,
       content: { subject: subject || '(no subject)', plainText: body, ...(html ? { html } : {}) },
       recipients: { to: [{ address: to }] },
+      ...(m.mailReplyTo ? { replyTo: [{ address: m.mailReplyTo }] } : {}),
     },
   );
   if (res.ok) return true; // 202 Accepted (async send queued)
