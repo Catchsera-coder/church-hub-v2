@@ -4,6 +4,7 @@ import { messageCampaigns, automations } from './db/schema.js';
 import { sendCampaignNow } from './modules/messages/send.js';
 import { runAutomation, resolveMessaging, type Channel } from './modules/automations/service.js';
 import { currentOrg } from './modules/settings/routes.js';
+import { isDue, defaultAutomationSchedule, partsInTz } from './modules/scheduling/schedule.js';
 
 /**
  * Background worker: sends scheduled campaigns and runs enabled auto-automations.
@@ -49,22 +50,24 @@ async function runScheduledCampaigns(): Promise<void> {
 }
 
 async function runAutoAutomations(): Promise<void> {
-  const today = new Date().toISOString().slice(0, 10);
   const list = await db.select().from(automations).where(and(eq(automations.enabled, true), eq(automations.mode, 'auto')));
-  // 'welcome' is triggered when a member is approved, not on a daily schedule.
-  const daily = list.filter((a) => a.type !== 'welcome');
-  if (!daily.length) return;
+  // 'welcome' is triggered when a member is approved, not on a schedule.
+  const candidates = list.filter((a) => a.type !== 'welcome');
+  if (!candidates.length) return;
 
   const org = await currentOrg();
+  const tz = org.timezone || 'UTC';
+  const now = new Date();
+  const localDate = partsInTz(now, tz).date; // "today" in the church's timezone
+  // Each automation now carries its own schedule (time-of-day, frequency, days,
+  // start/end). Null falls back to the legacy per-type cadence.
+  const due = candidates.filter((a) => isDue(a.schedule ?? defaultAutomationSchedule(a.type), a.lastRunOn ?? null, now, tz));
+  if (!due.length) return;
+
   const messaging = resolveMessaging(org.messaging, { replyTo: org.emailSettings?.replyTo || org.email });
-  for (const a of daily) {
-    if (a.lastRunOn === today) continue; // once per day
-    if (a.type === 'absence_followup' && a.lastRunOn) {
-      const days = (Date.now() - new Date(a.lastRunOn).getTime()) / 86_400_000;
-      if (days < 7) continue; // absence nudge at most weekly
-    }
+  for (const a of due) {
     await runAutomation({ type: a.type, channel: a.channel as Channel, templateId: a.templateId, config: a.config }, org, messaging)
       .catch((e) => console.error('[scheduler] automation', a.type, e instanceof Error ? e.message : e));
-    await db.update(automations).set({ lastRunOn: today, updatedAt: new Date() }).where(eq(automations.id, a.id));
+    await db.update(automations).set({ lastRunOn: localDate, updatedAt: new Date() }).where(eq(automations.id, a.id));
   }
 }

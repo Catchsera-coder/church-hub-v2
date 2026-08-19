@@ -14,6 +14,7 @@ import {
   pgTable, pgEnum, serial, integer, bigint, varchar, text, boolean,
   timestamp, date, jsonb, uuid, uniqueIndex, index, type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
+import type { Schedule } from '../modules/scheduling/schedule.js';
 
 export type I18n = Record<string, string>;
 
@@ -357,6 +358,9 @@ export const automations = pgTable('automations', {
   channel: campaignChannel('channel').notNull().default('email'),
   templateId: integer('template_id').references((): AnyPgColumn => messageTemplates.id, { onDelete: 'set null' }),
   config: jsonb('config').$type<Record<string, number | string>>().notNull().default({}),
+  // Reusable schedule (once/recurring, frequency, time-of-day, days, start/end),
+  // evaluated in the church timezone. Null = legacy default (see scheduling module).
+  schedule: jsonb('schedule').$type<Schedule>(),
   lastRunOn: date('last_run_on'),
   ...timestamps,
 }, (t) => ({ typeIdx: uniqueIndex('automations_type_idx').on(t.type) }));

@@ -9,6 +9,7 @@ import { notFound } from '../../http/errors.js';
 import { logActivity } from '../activity/service.js';
 import { recipientsFor, runAutomation, resolveMessaging, type Channel } from './service.js';
 import { currentOrg } from '../settings/routes.js';
+import { scheduleZod } from '../scheduling/schedule.js';
 
 const TYPES = ['birthday', 'join_anniversary', 'first_visit_anniversary', 'welcome', 'absence_followup'] as const;
 
@@ -40,6 +41,7 @@ const updateSchema = z.object({
   channel: z.enum(['email', 'sms', 'whatsapp']).optional(),
   templateId: z.number().int().positive().nullable().optional(),
   config: z.record(z.union([z.number(), z.string()])).optional(),
+  schedule: scheduleZod.nullable().optional(),
 });
 
 automationsRouter.put('/:id', asyncHandler(async (req, res) => {
