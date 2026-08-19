@@ -482,6 +482,13 @@ export const messageCampaigns = pgTable('message_campaigns', {
   // Optional call-to-action button (email): localized label + a link URL.
   ctaLabel: jsonb('cta_label').$type<I18n>(),
   ctaUrl: text('cta_url'),
+  // Who receives it: 'all' opted-in on the channel, or an explicit person list
+  // (select-all / groups / unchecked in the composer). Null = all (legacy).
+  audience: jsonb('audience').$type<{ mode: 'all' | 'people'; personIds?: number[] }>(),
+  // Recurring schedule (reuses the shared Schedule model). When set, the worker
+  // re-sends each due occurrence instead of marking the campaign done.
+  schedule: jsonb('schedule').$type<Schedule>(),
+  lastRunOn: date('last_run_on'),
   createdByUserId: integer('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
   ...timestamps,
 }, (t) => ({ statusIdx: index('message_campaigns_status_idx').on(t.status) }));

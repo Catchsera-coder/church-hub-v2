@@ -5,6 +5,8 @@
   import { get } from 'svelte/store';
   import { t, locale, tr, enabledLocales } from '$lib/i18n.js';
   import PageHeader from '$lib/components/PageHeader.svelte';
+  import ScheduleEditor from '$lib/components/ScheduleEditor.svelte';
+  import { type Schedule, defaultSchedule, describeSchedule } from '$lib/schedule.js';
 
   let form = $state({
     name: '',
@@ -40,7 +42,71 @@
     for (const [k, v] of Object.entries(form.ctaLabel)) if (v?.trim()) ctaLabel[k] = fillCustom(v);
     // Only send a CTA on email when both a label and a link are present.
     const hasCta = form.channel === 'email' && Object.keys(ctaLabel).length > 0 && form.ctaUrl.trim();
-    return { ...form, subject, body, ctaLabel: hasCta ? ctaLabel : null, ctaUrl: hasCta ? form.ctaUrl.trim() : null };
+    const audience = recipMode === 'people' ? { mode: 'people' as const, personIds: [...selectedIds] } : null;
+    return { ...form, subject, body, ctaLabel: hasCta ? ctaLabel : null, ctaUrl: hasCta ? form.ctaUrl.trim() : null, audience };
+  }
+
+  // --- Recipients: everyone opted-in, a chosen subset, or a single person/number
+  type RecipMode = 'all' | 'people' | 'one';
+  let recipMode = $state<RecipMode>('all');
+  let peopleList = $state<any[]>([]);
+  let peopleSearch = $state('');
+  let selectedIds = $state<Set<number>>(new Set());
+  let onePersonId = $state<number | null>(null);
+  let oneContact = $state('');
+  async function searchPeople() {
+    const q = peopleSearch.trim();
+    try {
+      const r = await api<{ data: any[] }>(`/people?optedIn=${form.channel}&limit=50${q ? `&search=${encodeURIComponent(q)}` : ''}`);
+      peopleList = r.data;
+    } catch { peopleList = []; }
+  }
+  function toggleId(id: number) { const s = new Set(selectedIds); if (s.has(id)) s.delete(id); else s.add(id); selectedIds = s; }
+  function selectAllShown() { const s = new Set(selectedIds); for (const p of peopleList) s.add(p.id); selectedIds = s; }
+  const personName = (p: any) => tr(p.givenName ?? {}, $locale) + ' ' + tr(p.familyName ?? {}, $locale);
+
+  // --- Preview (all channels)
+  let previewOpen = $state(false);
+  let previewData = $state<any>(null);
+  let previewing = $state(false);
+  async function preview() {
+    previewOpen = true; previewData = null; previewing = true;
+    try {
+      const f = filledForm();
+      const { data } = await api<{ data: any }>('/messages/preview', { method: 'POST', body: JSON.stringify({
+        channel: form.channel, subject: form.subject, body: f.body, ctaLabel: f.ctaLabel, ctaUrl: f.ctaUrl,
+      }) });
+      previewData = data;
+    } catch (err) { previewData = { error: (err as Error).message }; } finally { previewing = false; }
+  }
+
+  // --- Quick send to a single member or an ad-hoc phone/email
+  async function quickSend() {
+    if (!valid()) return;
+    if (!onePersonId && !oneContact.trim()) { error = tr({ en: 'Pick a person or type a number/email.', ar: 'اختر شخصاً أو اكتب رقماً/بريداً.' }, $locale); return; }
+    saving = true; error = '';
+    try {
+      const f = filledForm();
+      const { data } = await api<{ data: { ok: boolean; to: string } }>('/messages/quick-send', { method: 'POST', body: JSON.stringify({
+        channel: form.channel, toPersonId: onePersonId, toContact: onePersonId ? null : oneContact.trim(),
+        subject: f.subject, body: f.body, ctaLabel: f.ctaLabel, ctaUrl: f.ctaUrl, mediaUrl: form.mediaUrl,
+      }) });
+      alert(data.ok ? tr({ en: `Sent to ${data.to}.`, ar: `أُرسلت إلى ${data.to}.` }, $locale) : tr({ en: 'Send failed — check messaging settings.', ar: 'فشل الإرسال — تحقق من الإعدادات.' }, $locale));
+      if (data.ok) await goto('/messages');
+    } catch (err) { error = (err as Error).message; } finally { saving = false; }
+  }
+
+  // --- Recurring schedule (reuses the shared engine)
+  let showRecurring = $state(false);
+  let sched = $state<Schedule>(defaultSchedule());
+  async function scheduleRecurring() {
+    if (!valid()) return;
+    saving = true; error = '';
+    try {
+      const id = await create();
+      await api(`/messages/${id}/schedule`, { method: 'POST', body: JSON.stringify({ schedule: sched }) });
+      await goto('/messages');
+    } catch (err) { error = (err as Error).message; saving = false; }
   }
 
   // Image upload (MMS/WhatsApp)
@@ -142,7 +208,9 @@
   }
   async function sendNow() {
     if (!valid()) return;
-    if (!confirm(tr({ en: `Send now to ${audience ?? 'all matching'} people?`, ar: `إرسال الآن إلى ${audience ?? 'كل المطابقين'} شخص؟` }, $locale))) return;
+    if (recipMode === 'people' && selectedIds.size === 0) { error = tr({ en: 'Select at least one person.', ar: 'اختر شخصاً واحداً على الأقل.' }, $locale); return; }
+    const count = recipMode === 'people' ? selectedIds.size : (audience ?? 'all matching');
+    if (!confirm(tr({ en: `Send now to ${count} people?`, ar: `إرسال الآن إلى ${count} شخص؟` }, $locale))) return;
     saving = true; error = '';
     try {
       const id = await create();
@@ -279,22 +347,102 @@
 
   <!-- Audience + actions -->
   <div class="card space-y-4 p-6">
-    <p class="text-sm text-slate-600 dark:text-slate-300">
-      {tr({ en: 'Will reach', ar: 'ستصل إلى' }, $locale)}
-      <b style="color: var(--brand)">{audience === null ? '…' : audience}</b>
-      {tr({ en: 'people opted-in on this channel.', ar: 'شخص موافق على هذه القناة.' }, $locale)}
-    </p>
+    <!-- Recipients -->
+    <div class="space-y-2">
+      <p class="text-sm font-medium">{tr({ en: 'Who receives it', ar: 'من يستلمها' }, $locale)}</p>
+      <div class="flex flex-wrap gap-2">
+        {#each [{ v: 'all', l: { en: 'Everyone opted-in', ar: 'كل الموافقين' } }, { v: 'people', l: { en: 'Choose people', ar: 'اختر أشخاصاً' } }, { v: 'one', l: { en: 'One person / number', ar: 'شخص / رقم واحد' } }] as opt}
+          <button type="button" class="rounded-md border px-3 py-1.5 text-sm {recipMode === opt.v ? 'border-transparent text-white' : 'border-slate-300 dark:border-slate-700'}" style={recipMode === opt.v ? 'background: var(--brand)' : ''} onclick={() => { recipMode = opt.v as RecipMode; if (opt.v !== 'all' && !peopleList.length) searchPeople(); }}>{tr(opt.l, $locale)}</button>
+        {/each}
+      </div>
 
-    <div class="flex flex-wrap items-end gap-3">
-      <button class="btn-ghost border border-slate-300 dark:border-slate-700" onclick={saveDraft} disabled={saving}>{saving ? $t('common.loading') : tr({ en: 'Save draft', ar: 'حفظ مسودة' }, $locale)}</button>
-      <button class="btn-primary" onclick={sendNow} disabled={saving}>{tr({ en: 'Send now', ar: 'إرسال الآن' }, $locale)}</button>
-      <span class="text-slate-300 dark:text-slate-600">|</span>
-      <label class="space-y-1 text-sm">
-        <span class="block text-slate-500">{tr({ en: 'Schedule for later', ar: 'جدولة لاحقاً' }, $locale)}</span>
-        <input class="input force-ltr" type="datetime-local" bind:value={scheduleAt} />
-      </label>
-      <button class="btn-ghost border border-slate-300 dark:border-slate-700" onclick={schedule} disabled={saving || !scheduleAt}>🕐 {tr({ en: 'Schedule', ar: 'جدولة' }, $locale)}</button>
+      {#if recipMode === 'all'}
+        <p class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Will reach', ar: 'ستصل إلى' }, $locale)} <b style="color: var(--brand)">{audience === null ? '…' : audience}</b> {tr({ en: 'people opted-in on this channel.', ar: 'شخص موافق على هذه القناة.' }, $locale)}</p>
+      {:else if recipMode === 'people'}
+        <div class="flex flex-wrap items-center gap-2">
+          <input class="input max-w-xs" placeholder={tr({ en: 'Search members…', ar: 'ابحث عن أعضاء…' }, $locale)} bind:value={peopleSearch} oninput={searchPeople} />
+          <button type="button" class="text-xs text-slate-500 hover:underline" onclick={selectAllShown}>{tr({ en: 'Select all shown', ar: 'تحديد الكل' }, $locale)}</button>
+          <button type="button" class="text-xs text-slate-500 hover:underline" onclick={() => (selectedIds = new Set())}>{tr({ en: 'Clear', ar: 'مسح' }, $locale)}</button>
+          <span class="text-xs font-medium" style="color: var(--brand)">{selectedIds.size} {tr({ en: 'selected', ar: 'محدد' }, $locale)}</span>
+        </div>
+        <div class="max-h-56 space-y-1 overflow-y-auto rounded-lg border border-slate-200 p-2 dark:border-slate-700">
+          {#each peopleList as p (p.id)}
+            <label class="flex items-center gap-2 rounded px-2 py-1 text-sm hover:bg-slate-50 dark:hover:bg-slate-800">
+              <input type="checkbox" checked={selectedIds.has(p.id)} onchange={() => toggleId(p.id)} />
+              <span>{personName(p)}</span>
+              <span class="ms-auto force-ltr text-xs text-slate-400">{form.channel === 'email' ? (p.email ?? '') : (p.mobile ?? '')}</span>
+            </label>
+          {:else}
+            <p class="px-2 py-1 text-xs text-slate-400">{tr({ en: 'No matching opted-in members.', ar: 'لا يوجد أعضاء موافقون مطابقون.' }, $locale)}</p>
+          {/each}
+        </div>
+      {:else}
+        <div class="space-y-2">
+          <input class="input max-w-sm" placeholder={tr({ en: 'Search a member…', ar: 'ابحث عن عضو…' }, $locale)} bind:value={peopleSearch} oninput={searchPeople} />
+          {#if peopleList.length && !onePersonId}
+            <div class="max-h-40 space-y-1 overflow-y-auto rounded-lg border border-slate-200 p-2 dark:border-slate-700">
+              {#each peopleList as p (p.id)}
+                <button type="button" class="block w-full rounded px-2 py-1 text-start text-sm hover:bg-slate-50 dark:hover:bg-slate-800" onclick={() => { onePersonId = p.id; oneContact = ''; peopleSearch = personName(p); }}>{personName(p)} <span class="force-ltr text-xs text-slate-400">{form.channel === 'email' ? (p.email ?? '') : (p.mobile ?? '')}</span></button>
+              {/each}
+            </div>
+          {/if}
+          {#if onePersonId}<p class="text-xs text-emerald-600 dark:text-emerald-400">✓ {peopleSearch} <button type="button" class="ms-1 text-rose-600 hover:underline" onclick={() => { onePersonId = null; peopleSearch = ''; }}>{tr({ en: 'change', ar: 'تغيير' }, $locale)}</button></p>{/if}
+          <p class="text-xs text-slate-400">{tr({ en: 'or type a number / email directly:', ar: 'أو اكتب رقماً / بريداً مباشرة:' }, $locale)}</p>
+          <input class="input force-ltr max-w-sm" placeholder={form.channel === 'email' ? 'name@example.com' : '+1 555 0100'} bind:value={oneContact} oninput={() => { if (oneContact) onePersonId = null; }} />
+        </div>
+      {/if}
     </div>
+
+    <!-- Preview + actions -->
+    <div class="flex flex-wrap items-center gap-3 border-t border-slate-100 pt-4 dark:border-slate-800">
+      <button type="button" class="btn-ghost border border-slate-300 dark:border-slate-700" onclick={preview}>👁 {tr({ en: 'Preview', ar: 'معاينة' }, $locale)}</button>
+
+      {#if recipMode === 'one'}
+        <button class="btn-primary" onclick={quickSend} disabled={saving}>{saving ? $t('common.loading') : tr({ en: 'Send now', ar: 'إرسال الآن' }, $locale)}</button>
+      {:else}
+        <button class="btn-ghost border border-slate-300 dark:border-slate-700" onclick={saveDraft} disabled={saving}>{tr({ en: 'Save draft', ar: 'حفظ مسودة' }, $locale)}</button>
+        <button class="btn-primary" onclick={sendNow} disabled={saving}>{tr({ en: 'Send now', ar: 'إرسال الآن' }, $locale)}</button>
+        <span class="text-slate-300 dark:text-slate-600">|</span>
+        <label class="space-y-1 text-sm">
+          <span class="block text-slate-500">{tr({ en: 'Schedule once', ar: 'جدولة مرة' }, $locale)}</span>
+          <input class="input force-ltr" type="datetime-local" bind:value={scheduleAt} />
+        </label>
+        <button class="btn-ghost border border-slate-300 dark:border-slate-700" onclick={schedule} disabled={saving || !scheduleAt}>🕐 {tr({ en: 'Schedule', ar: 'جدولة' }, $locale)}</button>
+        <button type="button" class="btn-ghost border border-slate-300 dark:border-slate-700" onclick={() => (showRecurring = !showRecurring)}>🔁 {tr({ en: 'Recurring', ar: 'متكرر' }, $locale)}</button>
+      {/if}
+    </div>
+
+    {#if showRecurring && recipMode !== 'one'}
+      <div class="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+        <p class="mb-2 text-sm font-medium">🔁 {tr({ en: 'Send on a repeating schedule', ar: 'إرسال بجدول متكرر' }, $locale)}</p>
+        <ScheduleEditor bind:schedule={sched} showOnce={false} />
+        <button class="btn-primary mt-2" onclick={scheduleRecurring} disabled={saving}>{tr({ en: 'Save recurring send', ar: 'حفظ الإرسال المتكرر' }, $locale)}</button>
+      </div>
+    {/if}
+
     <a class="text-sm text-slate-500 hover:underline" href="/messages">← {tr({ en: 'Cancel', ar: 'إلغاء' }, $locale)}</a>
   </div>
 </div>
+
+<!-- Preview modal: the message exactly as a recipient sees it -->
+{#if previewOpen}
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onclick={() => (previewOpen = false)} role="presentation">
+    <div class="w-full max-w-lg rounded-xl bg-white p-4 shadow-xl dark:bg-slate-900" onclick={(e) => e.stopPropagation()} role="presentation">
+      <div class="mb-3 flex items-center justify-between">
+        <h3 class="font-semibold">{tr({ en: 'Preview', ar: 'معاينة' }, $locale)}</h3>
+        <button type="button" class="text-slate-400 hover:text-slate-600" onclick={() => (previewOpen = false)} aria-label="Close">✕</button>
+      </div>
+      {#if previewing}
+        <p class="text-sm text-slate-400">{$t('common.loading')}</p>
+      {:else if previewData?.error}
+        <p class="text-sm text-rose-600">{previewData.error}</p>
+      {:else if previewData?.channel === 'email'}
+        {#if previewData.subject}<p class="mb-2 text-sm"><span class="text-slate-400">{tr({ en: 'Subject:', ar: 'الموضوع:' }, $locale)}</span> <b>{previewData.subject}</b></p>{/if}
+        <iframe title="preview" srcdoc={previewData.html} sandbox="" class="h-[460px] w-full rounded-md border border-slate-200 bg-white dark:border-slate-700"></iframe>
+      {:else if previewData}
+        <div class="rounded-2xl bg-emerald-100 p-3 text-sm text-slate-800 dark:bg-emerald-900/40 dark:text-slate-100" style="white-space:pre-wrap">{previewData.text}</div>
+        <p class="mt-2 text-xs text-slate-400">{form.channel === 'whatsapp' ? 'WhatsApp' : 'SMS'} {tr({ en: 'message preview', ar: 'معاينة الرسالة' }, $locale)}</p>
+      {/if}
+    </div>
+  </div>
+{/if}

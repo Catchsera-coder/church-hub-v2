@@ -1,15 +1,18 @@
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
-import { desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { db } from '../../db/index.js';
-import { messageCampaigns, messageRecipients } from '../../db/schema.js';
+import { messageCampaigns, messageRecipients, people } from '../../db/schema.js';
 import { asyncHandler } from '../../http/asyncHandler.js';
 import { authenticate, requirePermission } from '../../middleware/auth.js';
 import { badRequest, notFound } from '../../http/errors.js';
 import { logActivity } from '../activity/service.js';
 import { sendCampaignNow } from './send.js';
 import { resolveAi, draftMessages, type AiChannel } from './ai.js';
+import { resolveMessaging, sendMessage } from './delivery.js';
+import { buildContext, renderText, brandedEmailHtml, localeName } from './render.js';
+import { scheduleZod } from '../scheduling/schedule.js';
 import { currentOrg } from '../settings/routes.js';
 
 export const messagesRouter = Router();
@@ -30,6 +33,12 @@ const schema = z.object({
   // Optional email call-to-action button: localized label + a link.
   ctaLabel: z.record(z.string()).nullable().optional(),
   ctaUrl: z.string().max(2000).nullable().optional(),
+  // Recipient targeting: 'all' opted-in, or an explicit person list.
+  audience: z.object({
+    mode: z.enum(['all', 'people']),
+    personIds: z.array(z.number().int().positive()).max(10000).optional(),
+  }).nullable().optional(),
+  schedule: scheduleZod.nullable().optional(),
 });
 
 messagesRouter.get('/', requirePermission('view message'), asyncHandler(async (_req, res) => {
@@ -87,6 +96,8 @@ messagesRouter.post('/', requirePermission('create message'), asyncHandler(async
     mediaUrl: b.mediaUrl ?? null,
     ctaLabel: b.ctaLabel ?? null,
     ctaUrl: b.ctaUrl ?? null,
+    audience: b.audience ?? null,
+    schedule: b.schedule ?? null,
     createdByUserId: req.auth!.sub,
   }).returning();
   await logActivity(req, 'created', 'message', row!.id);
@@ -117,16 +128,97 @@ messagesRouter.post('/:id/send', sendLimiter, requirePermission('update message'
   res.json({ data: result });
 }));
 
-// Schedule (or reschedule) a campaign to send later — the worker picks it up.
+// Schedule a campaign to send later — either one-time (`scheduledFor`) or
+// recurring (`schedule`). The worker picks it up. Recurring campaigns re-send on
+// each due occurrence; one-time send once.
 messagesRouter.post('/:id/schedule', requirePermission('update message'), asyncHandler(async (req, res) => {
   const id = Number(req.params.id);
-  const { scheduledFor } = z.object({ scheduledFor: z.string() }).parse(req.body);
-  const when = new Date(scheduledFor);
-  if (Number.isNaN(when.getTime()) || when.getTime() < Date.now()) throw badRequest('Pick a future date and time.');
+  const b = z.object({ scheduledFor: z.string().optional(), schedule: scheduleZod.optional() }).parse(req.body);
   const [existing] = await db.select({ status: messageCampaigns.status }).from(messageCampaigns).where(eq(messageCampaigns.id, id)).limit(1);
   if (!existing) throw notFound();
-  if (existing.status === 'sent' || existing.status === 'sending') throw badRequest('This campaign has already been sent.');
-  const [row] = await db.update(messageCampaigns).set({ status: 'scheduled', scheduledFor: when, updatedAt: new Date() }).where(eq(messageCampaigns.id, id)).returning();
+  if (existing.status === 'sending') throw badRequest('This campaign is currently sending.');
+
+  if (b.schedule && b.schedule.mode === 'recurring') {
+    const [row] = await db.update(messageCampaigns)
+      .set({ status: 'scheduled', schedule: b.schedule, scheduledFor: null, lastRunOn: null, updatedAt: new Date() })
+      .where(eq(messageCampaigns.id, id)).returning();
+    await logActivity(req, 'updated', 'message', id, 'scheduled (recurring)');
+    return res.json({ data: row });
+  }
+
+  if (!b.scheduledFor) throw badRequest('Pick a date and time, or a recurring schedule.');
+  const when = new Date(b.scheduledFor);
+  if (Number.isNaN(when.getTime()) || when.getTime() < Date.now()) throw badRequest('Pick a future date and time.');
+  const [row] = await db.update(messageCampaigns)
+    .set({ status: 'scheduled', scheduledFor: when, schedule: null, updatedAt: new Date() })
+    .where(eq(messageCampaigns.id, id)).returning();
   await logActivity(req, 'updated', 'message', id, 'scheduled');
   res.json({ data: row });
+}));
+
+// --- Preview: render a message exactly as a recipient will see it ------------
+// Email → branded HTML; SMS/WhatsApp → the plain text. Uses a sample person so
+// merge fields ({{firstName}} etc.) show real-looking values. No send, no save.
+const previewSchema = z.object({
+  channel: z.enum(['email', 'sms', 'whatsapp']),
+  subject: z.record(z.string()).default({}),
+  body: z.record(z.string()).default({}),
+  ctaLabel: z.record(z.string()).nullable().optional(),
+  ctaUrl: z.string().nullable().optional(),
+  lang: z.string().max(8).optional(),
+});
+messagesRouter.post('/preview', requirePermission('view message'), asyncHandler(async (req, res) => {
+  const b = previewSchema.parse(req.body);
+  const org = await currentOrg();
+  const lang = b.lang || org.locale || 'en';
+  const sample = { givenName: { [lang]: 'Sarah' }, familyName: { [lang]: 'Hana' }, email: 'sarah@example.com', mobile: '+1 555 0100', preferredLanguage: lang };
+  const ctx = buildContext(sample, org, new Date(), lang);
+  const subject = renderText(b.subject[lang] ?? b.subject.en ?? '', ctx);
+  const bodyText = renderText(b.body[lang] ?? b.body.en ?? '', ctx);
+  const cta = b.ctaLabel && b.ctaUrl ? { label: renderText(localeName(b.ctaLabel, lang), ctx), url: b.ctaUrl } : null;
+  if (b.channel === 'email') {
+    const signature = renderText(localeName(org.emailSettings?.signature, lang), ctx) || undefined;
+    const html = brandedEmailHtml(bodyText, org, { lang, signature, cta, unsubscribeUrl: '#', preheader: subject });
+    res.json({ data: { channel: 'email', subject, html, text: bodyText } });
+  } else {
+    const text = [bodyText, cta ? `${cta.label}: ${cta.url}` : ''].filter(Boolean).join('\n\n');
+    res.json({ data: { channel: b.channel, text } });
+  }
+}));
+
+// --- Quick send: one message to a single member or an ad-hoc phone/email ------
+// Sends immediately (no campaign row). For scheduled/recurring or many
+// recipients, use a campaign with an audience + schedule.
+const quickSendSchema = z.object({
+  channel: z.enum(['email', 'sms', 'whatsapp']),
+  toPersonId: z.number().int().positive().nullable().optional(),
+  toContact: z.string().max(190).nullable().optional(),
+  subject: z.record(z.string()).default({}),
+  body: z.record(z.string()).default({}),
+  ctaLabel: z.record(z.string()).nullable().optional(),
+  ctaUrl: z.string().nullable().optional(),
+  mediaUrl: z.string().nullable().optional(),
+});
+messagesRouter.post('/quick-send', sendLimiter, requirePermission('create message'), asyncHandler(async (req, res) => {
+  const b = quickSendSchema.parse(req.body);
+  const org = await currentOrg();
+  const messaging = resolveMessaging(org.messaging, { replyTo: org.emailSettings?.replyTo || org.email });
+  let person: typeof people.$inferSelect | null = null;
+  let contact = (b.toContact ?? '').trim();
+  if (b.toPersonId) {
+    [person] = await db.select().from(people).where(and(eq(people.id, b.toPersonId), isNull(people.deletedAt))).limit(1);
+    if (!person) throw notFound();
+    contact = (b.channel === 'email' ? person.email : person.mobile) ?? '';
+  }
+  if (!contact) throw badRequest('No recipient for this channel — pick a person with the right contact, or type a number/email.');
+  const lang = person?.preferredLanguage || org.locale || 'en';
+  const ctx = buildContext(person ?? { givenName: {}, familyName: {} }, org, new Date(), lang);
+  const subject = renderText(b.subject[lang] ?? b.subject.en ?? '', ctx);
+  const bodyText = renderText(b.body[lang] ?? b.body.en ?? '', ctx);
+  const cta = b.ctaLabel && b.ctaUrl ? { label: renderText(localeName(b.ctaLabel, lang), ctx), url: b.ctaUrl } : null;
+  const signature = renderText(localeName(org.emailSettings?.signature, lang), ctx) || undefined;
+  const html = b.channel === 'email' ? brandedEmailHtml(bodyText, org, { lang, signature, cta }) : undefined;
+  const plain = [bodyText, cta ? `${cta.label}: ${cta.url}` : '', signature].filter(Boolean).join('\n\n');
+  const ok = await sendMessage(messaging, b.channel, contact, subject, plain, html, b.mediaUrl ?? undefined);
+  res.json({ data: { ok, to: contact } });
 }));

@@ -1,6 +1,6 @@
-import { and, eq, lte } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { pool, db } from './db/index.js';
-import { messageCampaigns, automations } from './db/schema.js';
+import { messageCampaigns, messageRecipients, automations } from './db/schema.js';
 import { sendCampaignNow } from './modules/messages/send.js';
 import { runAutomation, resolveMessaging, type Channel } from './modules/automations/service.js';
 import { currentOrg } from './modules/settings/routes.js';
@@ -40,12 +40,28 @@ async function tick(): Promise<void> {
 }
 
 async function runScheduledCampaigns(): Promise<void> {
-  const due = await db
-    .select({ id: messageCampaigns.id })
-    .from(messageCampaigns)
-    .where(and(eq(messageCampaigns.status, 'scheduled'), lte(messageCampaigns.scheduledFor, new Date())));
-  for (const c of due) {
-    await sendCampaignNow(c.id).catch((e) => console.error('[scheduler] campaign', c.id, e instanceof Error ? e.message : e));
+  const scheduled = await db.select().from(messageCampaigns).where(eq(messageCampaigns.status, 'scheduled'));
+  if (!scheduled.length) return;
+  const org = await currentOrg();
+  const tz = org.timezone || 'UTC';
+  const now = new Date();
+  const localDate = partsInTz(now, tz).date;
+
+  for (const c of scheduled) {
+    const recurring = c.schedule && c.schedule.mode === 'recurring';
+    if (recurring) {
+      // Recurring send (e.g. a weekly reminder or a stream link). Fire on each
+      // due occurrence; clear prior recipients so everyone gets this occurrence,
+      // then keep the campaign 'scheduled' for the next one.
+      if (!isDue(c.schedule, c.lastRunOn ?? null, now, tz)) continue;
+      await db.delete(messageRecipients).where(eq(messageRecipients.messageCampaignId, c.id));
+      await sendCampaignNow(c.id).catch((e) => console.error('[scheduler] campaign', c.id, e instanceof Error ? e.message : e));
+      await db.update(messageCampaigns).set({ status: 'scheduled', lastRunOn: localDate, updatedAt: new Date() }).where(eq(messageCampaigns.id, c.id));
+    } else {
+      // One-time: send once when its scheduled time has arrived (marks it sent).
+      if (!c.scheduledFor || c.scheduledFor > now) continue;
+      await sendCampaignNow(c.id).catch((e) => console.error('[scheduler] campaign', c.id, e instanceof Error ? e.message : e));
+    }
   }
 }
 

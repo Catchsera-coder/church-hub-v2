@@ -1,4 +1,4 @@
-import { and, eq, isNull, isNotNull, ne } from 'drizzle-orm';
+import { and, eq, isNull, isNotNull, ne, inArray } from 'drizzle-orm';
 import { db } from '../../db/index.js';
 import { messageCampaigns, messageRecipients, people } from '../../db/schema.js';
 import { config } from '../../config.js';
@@ -19,13 +19,19 @@ export async function sendCampaignNow(campaignId: number): Promise<{ sent: numbe
 
   const contactCol = c.channel === 'email' ? people.email : people.mobile;
   const optOutCol = c.channel === 'email' ? people.emailOptOut : c.channel === 'whatsapp' ? people.whatsappOptOut : people.smsOptOut;
-  const audience = await db
+  // Audience: 'all' opted-in on the channel, or an explicit person list chosen
+  // in the composer (select-all / groups / unchecked). Null = all (legacy).
+  const targetIds = c.audience?.mode === 'people' ? (c.audience.personIds ?? []) : null;
+  const audience = targetIds && targetIds.length === 0 ? [] : await db
     .select({
       id: people.id, contact: contactCol, lang: people.preferredLanguage, unsubToken: people.unsubToken,
       givenName: people.givenName, familyName: people.familyName, email: people.email, mobile: people.mobile,
     })
     .from(people)
-    .where(and(eq(people.isActive, true), isNull(people.deletedAt), isNotNull(contactCol), ne(contactCol, ''), eq(optOutCol, false)));
+    .where(and(
+      eq(people.isActive, true), isNull(people.deletedAt), isNotNull(contactCol), ne(contactCol, ''), eq(optOutCol, false),
+      ...(targetIds ? [inArray(people.id, targetIds)] : []),
+    ));
 
   await db.update(messageCampaigns).set({ status: 'sending', updatedAt: new Date() }).where(eq(messageCampaigns.id, campaignId));
 
