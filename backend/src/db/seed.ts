@@ -118,6 +118,37 @@ async function seed() {
     ]);
   }
 
+  // Broadcast starter templates for the whole group — reminders, announcements,
+  // congratulations. Added idempotently BY NAME so existing deploys (whose
+  // template table is non-empty) pick them up too, not just fresh installs.
+  const starters = [
+    {
+      name: 'Service reminder', channel: 'email' as const,
+      subject: { en: 'Reminder: {{churchName}} this Sunday', ar: 'تذكير: {{churchName}} هذا الأحد' },
+      header: { en: 'See you this Sunday', ar: 'نراكم هذا الأحد' },
+      body: { en: 'Dear {{firstName}},\n\nThis is a friendly reminder about our gathering this Sunday. We would love to see you and your family there!', ar: 'عزيزي {{firstName}}،\n\nهذا تذكير ودّي باجتماعنا هذا الأحد. يسعدنا رؤيتك أنت وعائلتك هناك!' },
+      footer: { en: 'Times and location are on our website.', ar: 'المواعيد والموقع على موقعنا الإلكتروني.' },
+    },
+    {
+      name: 'Announcement', channel: 'email' as const,
+      subject: { en: 'A note from {{churchName}}', ar: 'رسالة من {{churchName}}' },
+      header: { en: 'Announcement', ar: 'إعلان' },
+      body: { en: 'Dear {{firstName}},\n\nWe wanted to share some news with you.\n\n[Write your announcement here.]', ar: 'عزيزي {{firstName}}،\n\nأردنا مشاركة بعض الأخبار معك.\n\n[اكتب إعلانك هنا.]' },
+      footer: { en: '', ar: '' },
+    },
+    {
+      name: 'Congratulations', channel: 'email' as const,
+      subject: { en: 'Congratulations, {{firstName}}! 🎉', ar: 'مبروك يا {{firstName}}! 🎉' },
+      header: { en: 'Rejoicing with you', ar: 'نفرح معك' },
+      body: { en: 'Dear {{firstName}},\n\nWe rejoice with you and celebrate this special moment with your family. May God continue to bless you abundantly!', ar: 'عزيزي {{firstName}}،\n\nنفرح معك ونحتفل بهذه اللحظة المميزة مع عائلتك. ليبارك الله حياتك بوفرة!' },
+      footer: { en: 'With joy, the {{churchName}} family', ar: 'بفرح، عائلة {{churchName}}' },
+    },
+  ];
+  for (const s of starters) {
+    const [{ count }] = await db.select({ count: sql<number>`count(*)::int` }).from(messageTemplates).where(eq(messageTemplates.name, s.name));
+    if (count === 0) await db.insert(messageTemplates).values(s);
+  }
+
   // eslint-disable-next-line no-console
   console.log(`seed complete. Super Admin: ${email} (change the password!)`);
   await pool.end();

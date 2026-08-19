@@ -27,6 +27,9 @@ const schema = z.object({
   body: z.record(z.string()).default({}),
   scheduledFor: z.string().nullable().optional(),
   mediaUrl: z.string().nullable().optional(),
+  // Optional email call-to-action button: localized label + a link.
+  ctaLabel: z.record(z.string()).nullable().optional(),
+  ctaUrl: z.string().max(2000).nullable().optional(),
 });
 
 messagesRouter.get('/', requirePermission('view message'), asyncHandler(async (_req, res) => {
@@ -82,6 +85,8 @@ messagesRouter.post('/', requirePermission('create message'), asyncHandler(async
     name: b.name, channel: b.channel, subject: b.subject, body: b.body,
     scheduledFor: b.scheduledFor ? new Date(b.scheduledFor) : null,
     mediaUrl: b.mediaUrl ?? null,
+    ctaLabel: b.ctaLabel ?? null,
+    ctaUrl: b.ctaUrl ?? null,
     createdByUserId: req.auth!.sub,
   }).returning();
   await logActivity(req, 'created', 'message', row!.id);

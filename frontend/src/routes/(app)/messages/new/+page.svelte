@@ -12,6 +12,9 @@
     subject: {} as Record<string, string>,
     body: {} as Record<string, string>,
     mediaUrl: null as string | null,
+    // Optional email call-to-action button (label per language + a link).
+    ctaLabel: {} as Record<string, string>,
+    ctaUrl: '' as string,
   });
   let error = $state('');
   let saving = $state(false);
@@ -33,7 +36,11 @@
     const subject: Record<string, string> = {}; const body: Record<string, string> = {};
     for (const [k, v] of Object.entries(form.subject)) subject[k] = fillCustom(v);
     for (const [k, v] of Object.entries(form.body)) body[k] = fillCustom(v);
-    return { ...form, subject, body };
+    const ctaLabel: Record<string, string> = {};
+    for (const [k, v] of Object.entries(form.ctaLabel)) if (v?.trim()) ctaLabel[k] = fillCustom(v);
+    // Only send a CTA on email when both a label and a link are present.
+    const hasCta = form.channel === 'email' && Object.keys(ctaLabel).length > 0 && form.ctaUrl.trim();
+    return { ...form, subject, body, ctaLabel: hasCta ? ctaLabel : null, ctaUrl: hasCta ? form.ctaUrl.trim() : null };
   }
 
   // Image upload (MMS/WhatsApp)
@@ -251,6 +258,20 @@
           <div class="flex items-center gap-3"><img src={form.mediaUrl} alt="" class="h-16 w-16 rounded object-cover" /><button type="button" class="text-xs text-rose-600 hover:underline" onclick={() => (form.mediaUrl = null)}>{tr({ en: 'Remove', ar: 'إزالة' }, $locale)}</button></div>
         {:else}
           <label class="btn-ghost inline-block cursor-pointer border border-slate-300 text-sm dark:border-slate-700">{uploading ? $t('common.loading') : tr({ en: 'Choose image', ar: 'اختر صورة' }, $locale)}<input type="file" accept="image/jpeg,image/png,image/gif" class="hidden" onchange={onImage} /></label>
+        {/if}
+      </div>
+    {/if}
+
+    {#if form.channel === 'email'}
+      <div class="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+        <p class="mb-1 text-sm font-medium">🔘 {tr({ en: 'Call-to-action button (optional)', ar: 'زر إجراء (اختياري)' }, $locale)}</p>
+        <p class="mb-2 text-xs text-slate-500 dark:text-slate-400">{tr({ en: 'A branded button in the email — e.g. “View this Sunday” linking to your website or a form.', ar: 'زر مميز في البريد — مثل «تفاصيل هذا الأحد» يربط بموقعك أو نموذج.' }, $locale)}</p>
+        <div class="grid gap-2 sm:grid-cols-2">
+          <label class="text-sm"><span class="mb-1 block text-xs text-slate-500">{tr({ en: 'Button text (English)', ar: 'نص الزر (إنجليزي)' }, $locale)}</span><input class="input" bind:value={form.ctaLabel.en} placeholder="View this Sunday" /></label>
+          <label class="text-sm"><span class="mb-1 block text-xs text-slate-500">{tr({ en: 'Link URL', ar: 'الرابط' }, $locale)}</span><input class="input force-ltr" bind:value={form.ctaUrl} placeholder="https://…" /></label>
+        </div>
+        {#if $enabledLocales.some((l) => l.code === 'ar')}
+          <label class="mt-2 block text-sm"><span class="mb-1 block text-xs text-slate-500">{tr({ en: 'Button text (Arabic)', ar: 'نص الزر (عربي)' }, $locale)}</span><input class="input" dir="rtl" bind:value={form.ctaLabel.ar} /></label>
         {/if}
       </div>
     {/if}
