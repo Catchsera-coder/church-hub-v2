@@ -41,6 +41,29 @@ const ALIASES: Record<string, string> = {
 };
 const STATUSES = new Set(['visitor', 'regular', 'member', 'inactive']);
 
+// Fuzzy fallback: if a header isn't an exact alias, match on contained tokens so
+// odd spreadsheet headers ("Mobile No.", "Member Since", "E-mail Address") still
+// land on the right field. The confirm screen lets the user fix any mismatch.
+const FIELD_TOKENS: Record<string, string[]> = {
+  givenName: ['firstname', 'first', 'given', 'fname'],
+  familyName: ['lastname', 'last', 'surname', 'family', 'lname'],
+  email: ['email', 'mail'],
+  mobile: ['mobile', 'phone', 'cell', 'whatsapp', 'tel', 'contact', 'number'],
+  dateOfBirth: ['dob', 'birth', 'born'],
+  joinedOn: ['join', 'since', 'registered', 'membershipdate'],
+  household: ['household', 'family', 'home'],
+  membershipStatus: ['status', 'membership', 'type'],
+};
+function detectField(header: string): string | null {
+  const n = norm(header);
+  if (!n) return null;
+  if (ALIASES[n]) return ALIASES[n];
+  for (const [field, tokens] of Object.entries(FIELD_TOKENS)) {
+    if (tokens.some((t) => n.includes(t))) return field;
+  }
+  return null;
+}
+
 function toDate(v: unknown): string | null {
   if (v == null || v === '') return null;
   if (v instanceof Date) return v.toISOString().slice(0, 10);
@@ -65,9 +88,14 @@ importRouter.get('/members/template', requirePermission('create person'), asyncH
 }));
 
 // Parse an uploaded file (base64) and return mapped rows + per-row flags.
-const previewSchema = z.object({ filename: z.string(), base64: z.string().max(8_000_000) });
+const previewSchema = z.object({
+  filename: z.string(),
+  base64: z.string().max(8_000_000),
+  // Optional user corrections from the confirm screen: header → field key ('' = ignore).
+  overrides: z.record(z.string()).optional(),
+});
 importRouter.post('/members/preview', requirePermission('create person'), asyncHandler(async (req, res) => {
-  const { filename, base64 } = previewSchema.parse(req.body);
+  const { filename, base64, overrides } = previewSchema.parse(req.body);
   const buf = Buffer.from(base64.replace(/^data:[^,]+,/, ''), 'base64');
 
   let headers: string[] = [];
@@ -92,8 +120,14 @@ importRouter.post('/members/preview', requirePermission('create person'), asyncH
     }
   }
 
-  const map = headers.map((h) => ALIASES[norm(h)] ?? null);
-  if (!map.includes('givenName')) throw badRequest('Could not find a "First name" column. Use the template headers.');
+  // Smart mapping: a user override wins, else the auto-detector (alias + fuzzy).
+  const map = headers.map((h) => {
+    const o = overrides?.[h];
+    if (o !== undefined) return o === '' ? null : o;
+    return detectField(h);
+  });
+  const mapping = headers.map((h, i) => ({ header: h, field: map[i] }));
+  if (!map.includes('givenName')) throw badRequest('No "First name" column detected. Use the confirm screen to point one at First name.');
 
   const rows = dataRows.map((cells, i) => {
     const values: Record<string, string> = {};
@@ -109,7 +143,12 @@ importRouter.post('/members/preview', requirePermission('create person'), asyncH
     return { index: i + 2, values, errors, warnings };
   });
 
-  res.json({ data: { rows, summary: { total: rows.length, ok: rows.filter((r) => r.errors.length === 0).length, errors: rows.filter((r) => r.errors.length > 0).length } } });
+  res.json({ data: {
+    rows,
+    mapping,                                   // detected/overridden header → field
+    fields: COLUMNS.map((c) => ({ key: c.key, label: c.header })), // choices for the confirm screen
+    summary: { total: rows.length, ok: rows.filter((r) => r.errors.length === 0).length, errors: rows.filter((r) => r.errors.length > 0).length },
+  } });
 }));
 
 // Import validated rows.
