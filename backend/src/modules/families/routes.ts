@@ -7,7 +7,7 @@ import { asyncHandler } from '../../http/asyncHandler.js';
 import { authenticate, requirePermission } from '../../middleware/auth.js';
 import { notFound } from '../../http/errors.js';
 import { logActivity } from '../activity/service.js';
-import { familyListQuery, familyWhere, memberCountExpr, childCountExpr } from './filters.js';
+import { familyListQuery, familyWhere, memberCountExpr, childCountExpr, familyPhoneExpr } from './filters.js';
 
 export const familiesRouter = Router();
 familiesRouter.use(authenticate);
@@ -32,7 +32,8 @@ familiesRouter.get('/', requirePermission('view household'), asyncHandler(async 
   const [{ count }] = await db.select({ count: sql<number>`count(*)::int` }).from(households).where(where);
   const rows = await db
     .select({
-      id: households.id, name: households.name, homePhone: households.homePhone,
+      id: households.id, name: households.name,
+      homePhone: familyPhoneExpr, // household phone, else a member's mobile
       city: households.city, region: households.region,
       memberCount, childCount,
       createdAt: households.createdAt, updatedAt: households.updatedAt,

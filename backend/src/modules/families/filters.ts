@@ -13,8 +13,14 @@ export const familyListQuery = z.object({
 });
 export type FamilyQuery = z.infer<typeof familyListQuery>;
 
-export const memberCountExpr = sql<number>`(SELECT count(*)::int FROM ${people} p WHERE p.household_id = ${households.id} AND p.deleted_at IS NULL AND p.is_active = true)`;
+// Count EVERY non-deleted person in the household — matching the family detail
+// roster and the Members list (neither filters on is_active). Previously this
+// required is_active = true, so self-registered visitors (who can be inactive)
+// showed on the family page but counted as 0 on the list.
+export const memberCountExpr = sql<number>`(SELECT count(*)::int FROM ${people} p WHERE p.household_id = ${households.id} AND p.deleted_at IS NULL)`;
 export const childCountExpr = sql<number>`(SELECT count(*)::int FROM ${people} p WHERE p.household_id = ${households.id} AND p.deleted_at IS NULL AND p.date_of_birth IS NOT NULL AND extract(year from age(p.date_of_birth)) < 13)`;
+// Family phone: the household's own home phone, else fall back to a member's mobile.
+export const familyPhoneExpr = sql<string>`COALESCE(NULLIF(${households.homePhone}, ''), (SELECT p.mobile FROM ${people} p WHERE p.household_id = ${households.id} AND p.mobile IS NOT NULL AND p.mobile <> '' AND p.deleted_at IS NULL ORDER BY p.id LIMIT 1))`;
 
 export function familyFilters(q: FamilyQuery): SQL[] {
   const filters: SQL[] = [isNull(households.deletedAt)];

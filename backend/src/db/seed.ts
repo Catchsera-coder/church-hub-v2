@@ -1,6 +1,6 @@
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import { db, pool } from './index.js';
-import { organisations, users, roles, permissions, userRoles, rolePermissions, funds, serviceTypes, checkinForms, messageTemplates } from './schema.js';
+import { organisations, users, roles, permissions, userRoles, rolePermissions, funds, serviceTypes, checkinForms, messageTemplates, people } from './schema.js';
 import { hashPassword } from '../auth/password.js';
 import { config } from '../config.js';
 import { DEFAULT_FORM_FIELDS } from '../modules/checkin/forms.routes.js';
@@ -148,6 +148,15 @@ async function seed() {
     const [{ count }] = await db.select({ count: sql<number>`count(*)::int` }).from(messageTemplates).where(eq(messageTemplates.name, s.name));
     if (count === 0) await db.insert(messageTemplates).values(s);
   }
+
+  // Data repair (idempotent): a self-registered visitor should be ACTIVE. Some
+  // historical rows were left is_active=false, so they appeared on the family
+  // page but were excluded from member counts, messaging audiences, and
+  // analytics. Reactivate only never-reviewed self-registered people (the clear
+  // anomaly) so a deliberately-deactivated member is never touched.
+  await db.update(people)
+    .set({ isActive: true, updatedAt: new Date() })
+    .where(and(eq(people.selfRegistered, true), eq(people.isActive, false), isNull(people.reviewedAt), isNull(people.deletedAt)));
 
   // eslint-disable-next-line no-console
   console.log(`seed complete. Super Admin: ${email} (change the password!)`);
