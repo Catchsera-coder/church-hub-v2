@@ -14,13 +14,19 @@ export const familyListQuery = z.object({
 export type FamilyQuery = z.infer<typeof familyListQuery>;
 
 // Count EVERY non-deleted person in the household — matching the family detail
-// roster and the Members list (neither filters on is_active). Previously this
-// required is_active = true, so self-registered visitors (who can be inactive)
-// showed on the family page but counted as 0 on the list.
-export const memberCountExpr = sql<number>`(SELECT count(*)::int FROM ${people} p WHERE p.household_id = ${households.id} AND p.deleted_at IS NULL)`;
-export const childCountExpr = sql<number>`(SELECT count(*)::int FROM ${people} p WHERE p.household_id = ${households.id} AND p.deleted_at IS NULL AND p.date_of_birth IS NOT NULL AND extract(year from age(p.date_of_birth)) < 13)`;
+// roster and the Members list (neither filters on is_active).
+//
+// IMPORTANT: the correlation MUST be written as the literal `households.id`, NOT
+// as `${households.id}`. Drizzle renders an interpolated column of the primary
+// FROM table *unqualified* ("id"), and inside these subqueries (aliased `p`)
+// Postgres then resolves bare "id" to the inner people.id — so the predicate
+// silently became `p.household_id = p.id` and every count returned 0. The
+// unaliased outer table is addressable by its real name, so `households.id`
+// binds to the outer row correctly.
+export const memberCountExpr = sql<number>`(SELECT count(*)::int FROM ${people} p WHERE p.household_id = households.id AND p.deleted_at IS NULL)`;
+export const childCountExpr = sql<number>`(SELECT count(*)::int FROM ${people} p WHERE p.household_id = households.id AND p.deleted_at IS NULL AND p.date_of_birth IS NOT NULL AND extract(year from age(p.date_of_birth)) < 13)`;
 // Family phone: the household's own home phone, else fall back to a member's mobile.
-export const familyPhoneExpr = sql<string>`COALESCE(NULLIF(${households.homePhone}, ''), (SELECT p.mobile FROM ${people} p WHERE p.household_id = ${households.id} AND p.mobile IS NOT NULL AND p.mobile <> '' AND p.deleted_at IS NULL ORDER BY p.id LIMIT 1))`;
+export const familyPhoneExpr = sql<string>`COALESCE(NULLIF(${households.homePhone}, ''), (SELECT p.mobile FROM ${people} p WHERE p.household_id = households.id AND p.mobile IS NOT NULL AND p.mobile <> '' AND p.deleted_at IS NULL ORDER BY p.id LIMIT 1))`;
 
 export function familyFilters(q: FamilyQuery): SQL[] {
   const filters: SQL[] = [isNull(households.deletedAt)];
@@ -33,7 +39,7 @@ export function familyFilters(q: FamilyQuery): SQL[] {
   if (q.minSize) filters.push(sql`${memberCountExpr} >= ${q.minSize}`);
   if (q.missingContact === 'true') {
     filters.push(sql`(${households.homePhone} IS NULL OR ${households.homePhone} = '')
-      AND NOT EXISTS (SELECT 1 FROM ${people} p WHERE p.household_id = ${households.id} AND p.deleted_at IS NULL
+      AND NOT EXISTS (SELECT 1 FROM ${people} p WHERE p.household_id = households.id AND p.deleted_at IS NULL
         AND ((p.email IS NOT NULL AND p.email <> '') OR (p.mobile IS NOT NULL AND p.mobile <> '')))`);
   }
   return filters;
