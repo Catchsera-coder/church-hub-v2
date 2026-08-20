@@ -5,4 +5,4 @@
 </script>
 
 <PageHeader title={tr({ en: 'New member', ar: 'عضو جديد' }, $locale)} />
-<MemberForm />
+<div class="max-w-3xl"><MemberForm /></div>

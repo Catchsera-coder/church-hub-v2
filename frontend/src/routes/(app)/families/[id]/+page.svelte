@@ -31,8 +31,8 @@
   {/snippet}
 </PageHeader>
 {#if family}
-  <div class="max-w-2xl space-y-6">
-    <FamilyForm initial={family} {id} />
-    <FamilyMembers householdId={id} />
+  <div class="grid gap-6 lg:grid-cols-5 lg:items-start">
+    <div class="lg:col-span-3"><FamilyForm initial={family} {id} /></div>
+    <div class="lg:col-span-2"><FamilyMembers householdId={id} /></div>
   </div>
 {:else}<p class="text-slate-400">{$t('common.loading')}</p>{/if}

@@ -5,4 +5,4 @@
 </script>
 
 <PageHeader title={tr({ en: 'New family', ar: 'عائلة جديدة' }, $locale)} />
-<FamilyForm />
+<div class="max-w-2xl"><FamilyForm /></div>

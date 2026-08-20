@@ -24,12 +24,14 @@
   {/snippet}
 </PageHeader>
 {#if person}
-  <div class="space-y-6">
-    <MemberForm initial={person} {id} />
-    <div class="max-w-2xl"><RosterEditor personId={id} /></div>
-    {#if person.qrToken}
-      <MemberQrCard qrToken={person.qrToken} name={`${tr(person.givenName, $locale)} ${tr(person.familyName, $locale)}`.trim()} />
-    {/if}
+  <div class="grid gap-6 lg:grid-cols-5 lg:items-start">
+    <div class="lg:col-span-3"><MemberForm initial={person} {id} /></div>
+    <div class="space-y-6 lg:col-span-2">
+      <RosterEditor personId={id} />
+      {#if person.qrToken}
+        <MemberQrCard qrToken={person.qrToken} name={`${tr(person.givenName, $locale)} ${tr(person.familyName, $locale)}`.trim()} />
+      {/if}
+    </div>
   </div>
 {:else}
   <p class="text-slate-400">{$t('common.loading')}</p>
