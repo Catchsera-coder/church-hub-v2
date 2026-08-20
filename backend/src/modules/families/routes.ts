@@ -52,10 +52,18 @@ familiesRouter.get('/:id', requirePermission('view household'), asyncHandler(asy
   res.json({ data: row });
 }));
 
-// People in this family (for the in-page member manager).
+// People in this family (for the in-page member manager). Returns enough to
+// render rich member cards AND inline-edit them without leaving the family page.
 familiesRouter.get('/:id/members', requirePermission('view household'), asyncHandler(async (req, res) => {
   const rows = await db
-    .select({ id: people.id, givenName: people.givenName, familyName: people.familyName, membershipStatus: people.membershipStatus, email: people.email, mobile: people.mobile, householdRole: people.householdRole, dateOfBirth: people.dateOfBirth })
+    .select({
+      id: people.id, givenName: people.givenName, familyName: people.familyName,
+      membershipStatus: people.membershipStatus, email: people.email, mobile: people.mobile,
+      householdRole: people.householdRole, dateOfBirth: people.dateOfBirth, joinedOn: people.joinedOn,
+      preferredLanguage: people.preferredLanguage, isActive: people.isActive,
+      emailOptOut: people.emailOptOut, smsOptOut: people.smsOptOut, whatsappOptOut: people.whatsappOptOut,
+      selfRegistered: people.selfRegistered, reviewedAt: people.reviewedAt,
+    })
     .from(people)
     .where(and(eq(people.householdId, Number(req.params.id)), isNull(people.deletedAt)))
     .orderBy(desc(people.createdAt));

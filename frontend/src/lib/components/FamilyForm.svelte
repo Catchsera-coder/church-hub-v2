@@ -3,7 +3,10 @@
   import { api } from '$lib/api.js';
   import { t, locale, tr, enabledLocales } from '$lib/i18n.js';
 
-  let { initial = null, id = null }: { initial?: any; id?: number | null } = $props();
+  // `redirect` (default) navigates to /families after save. When false (e.g. the
+  // inline editor on the family detail page) we stay put and call `onsaved`.
+  let { initial = null, id = null, redirect = true, onsaved = null }:
+    { initial?: any; id?: number | null; redirect?: boolean; onsaved?: (() => void) | null } = $props();
 
   let form = $state({
     name: initial?.name ?? {},
@@ -27,7 +30,8 @@
       );
       if (id) await api(`/families/${id}`, { method: 'PUT', body: JSON.stringify(body) });
       else await api('/families', { method: 'POST', body: JSON.stringify(body) });
-      await goto('/families');
+      if (redirect) await goto('/families');
+      else onsaved?.();
     } catch (err) { error = (err as Error).message; } finally { saving = false; }
   }
 </script>
@@ -77,6 +81,10 @@
 
   <div class="flex gap-3">
     <button class="btn-primary" type="submit" disabled={saving}>{saving ? $t('common.loading') : $t('common.save')}</button>
-    <a class="btn-ghost" href="/families">✕</a>
+    {#if redirect}
+      <a class="btn-ghost" href="/families">✕</a>
+    {:else}
+      <button type="button" class="btn-ghost" onclick={() => onsaved?.()}>{$t('common.cancel')}</button>
+    {/if}
   </div>
 </form>
