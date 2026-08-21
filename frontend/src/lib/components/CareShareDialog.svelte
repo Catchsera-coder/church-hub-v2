@@ -21,8 +21,31 @@
     { v: 'whatsapp', icon: '🟢', en: 'WhatsApp', ar: 'واتساب' },
   ];
 
-  // The safe, name-free seed text for the body: prefer the anonymous summary.
-  const seed = (item.summary?.trim?.() || item.summary || '').trim() || item.subject || '';
+  // Data pulled straight from the care card (for the detail-level control).
+  const personName = (item.personGiven || item.personFamily)
+    ? displayName({ givenName: item.personGiven, familyName: item.personFamily }, $nameOrder, $locale)
+    : '';
+  const hasName = !!personName;
+
+  // How much of the case to reveal in the OUTBOUND message (separate from the
+  // in-hub disclosure). Default: no names — privacy first.
+  const INCLUDE = [
+    { v: 'none', icon: '🕶️', en: 'No names', ar: 'بدون أسماء' },
+    { v: 'name', icon: '🪪', en: 'Name only', ar: 'الاسم فقط' },
+    { v: 'full', icon: '📋', en: 'Full details', ar: 'كل التفاصيل' },
+  ];
+  let include = $state<'none' | 'name' | 'full'>('none');
+
+  // The "case text" woven into the template, per the chosen detail level.
+  function caseText(): string {
+    const subj = item.subject || '';
+    const summary = (item.summary || '').trim();
+    const details = (item.details || '').trim();
+    if (include === 'none') return summary || subj;               // just the request
+    const named = personName ? `${personName} — ${subj}` : subj;  // name + request
+    if (include === 'name') return named;
+    return details ? `${named}\n${details}` : named;              // name + full details
+  }
 
   // Default the purpose from the care type (prayer→prayer, task/care→help, else update).
   const initialPurpose = item.type === 'prayer' ? 'prayer' : (item.type === 'task' || item.type === 'care') ? 'help' : 'update';
@@ -35,9 +58,9 @@
   let ctaUrl = $state('');
   let bodyTouched = $state(false); // once the sender edits, stop auto-overwriting
 
-  // Auto-write the template from the purpose (until the sender edits it).
+  // Auto-write the template from the purpose + detail level (until the sender edits).
   function template(p: string) {
-    const s = seed;
+    const s = caseText();
     switch (p) {
       case 'prayer': return {
         subject: { en: '🙏 Prayer request', ar: '🙏 طلب صلاة' },
@@ -55,6 +78,7 @@
   }
   function applyTemplate(p: string) { const t = template(p); subject = { ...t.subject }; body = { ...t.body }; bodyTouched = false; }
   function setPurpose(p: string) { purpose = p; applyTemplate(p); previewSoon(); }
+  function setInclude(v: 'none' | 'name' | 'full') { include = v; applyTemplate(purpose); previewSoon(); }
   applyTemplate(initialPurpose); // seed once on open
 
   // Group + people pickers.
@@ -80,7 +104,13 @@
     selPeople = s; refreshReach();
   }
 
-  onMount(async () => { try { ministries = (await api<{ data: any[] }>('/ministries')).data; } catch { /* optional */ } refreshReach(); });
+  let churchName = $state('');
+  onMount(async () => {
+    try { churchName = tr((await api<{ data: { name: any } }>('/settings')).data.name, $locale); } catch { /* optional */ }
+    try { ministries = (await api<{ data: any[] }>('/ministries')).data; } catch { /* optional */ }
+    refreshReach();
+    doPreview(); // preview is open by default
+  });
 
   function currentAudience(): any {
     if (audienceMode === 'ministries') return { mode: 'ministries', ministryIds: [...selMinistries] };
@@ -105,7 +135,7 @@
   // Live preview: render exactly how a recipient receives it — merge fields filled
   // with a sample person — via the shared /messages/preview endpoint (branded email
   // HTML, or the SMS/WhatsApp text with any CTA appended).
-  let previewOpen = $state(false);
+  let previewOpen = $state(true);
   let previewData = $state<any>(null);
   let previewing = $state(false);
   let previewErr = $state('');
@@ -244,17 +274,31 @@
           </p>
         </div>
 
-        <!-- 4. Message (auto-written, editable) -->
+        <!-- 4. Message (auto-written from the card, editable) -->
         <div>
-          <div class="mb-1.5 flex items-center justify-between gap-2">
+          <div class="mb-2 flex items-center justify-between gap-2">
             <p class="text-sm font-medium text-slate-700 dark:text-slate-200">4 · {tr({ en: 'Message', ar: 'الرسالة' }, $locale)} <span class="font-normal text-slate-400">{tr({ en: '· auto-written, edit freely', ar: '· مكتوبة تلقائياً، عدّلها بحرية' }, $locale)}</span></p>
-            <button type="button" class="shrink-0 text-xs font-medium text-primary-600 hover:underline dark:text-primary-300" onclick={togglePreview}>{previewOpen ? tr({ en: '✕ Hide preview', ar: '✕ إخفاء المعاينة' }, $locale) : tr({ en: '👁 Preview', ar: '👁 معاينة' }, $locale)}</button>
+            <button type="button" class="inline-flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors {previewOpen ? 'border-transparent bg-slate-800 text-white dark:bg-slate-200 dark:text-slate-900' : 'border-slate-300 text-slate-600 hover:border-primary-400 hover:text-primary-600 dark:border-slate-600 dark:text-slate-300'}" onclick={togglePreview}>👁 {previewOpen ? tr({ en: 'Preview on', ar: 'المعاينة مفعّلة' }, $locale) : tr({ en: 'Preview', ar: 'معاينة' }, $locale)}</button>
           </div>
+
+          <!-- Detail level — how much of the case to include, pulled from the card -->
+          <div class="mb-2 flex flex-wrap items-center gap-1.5">
+            <span class="text-xs text-slate-500">{tr({ en: 'Include:', ar: 'التضمين:' }, $locale)}</span>
+            {#each INCLUDE as d}
+              <button type="button" class="rounded-full border px-2.5 py-1 text-xs {include === d.v ? 'border-transparent text-white' : 'border-slate-300 text-slate-600 dark:border-slate-700 dark:text-slate-300'}" style={include === d.v ? 'background: var(--brand)' : ''} onclick={() => setInclude(d.v as any)}>{d.icon} {tr({ en: d.en, ar: d.ar }, $locale)}</button>
+            {/each}
+          </div>
+
           {#if channel === 'email'}
             <input class="input mb-2" bind:value={subject.en} oninput={previewSoon} placeholder={tr({ en: 'Email subject', ar: 'عنوان البريد' }, $locale)} />
           {/if}
           <textarea class="input min-h-[7rem] w-full" bind:value={body.en} oninput={() => { bodyTouched = true; previewSoon(); }}></textarea>
-          <p class="mt-1 text-[11px] text-slate-400">{tr({ en: 'Tip: {{firstName}} and {{churchName}} fill in automatically per person. No names or private details are included unless you add them.', ar: 'تلميح: {{firstName}} و {{churchName}} تُملأ تلقائياً لكل شخص. لا تُدرَج أسماء أو تفاصيل خاصة إلا إذا أضفتها.' }, $locale)}</p>
+          <p class="mt-1 text-[11px] text-slate-400">
+            {#if include === 'none'}{tr({ en: 'No names or private details — just the request.', ar: 'بدون أسماء أو تفاصيل خاصة — الطلب فقط.' }, $locale)}
+            {:else if include === 'name'}{hasName ? tr({ en: `Includes the name (${personName}), not the private details.`, ar: `يتضمّن الاسم (${personName}) دون التفاصيل.` }, $locale) : tr({ en: 'Includes the name, not the private details.', ar: 'يتضمّن الاسم دون التفاصيل.' }, $locale)}
+            {:else}{tr({ en: 'Includes the name and the full request details.', ar: 'يتضمّن الاسم وكامل تفاصيل الطلب.' }, $locale)}{/if}
+            {tr({ en: ' {{firstName}} & {{churchName}} fill in per person.', ar: ' {{firstName}} و {{churchName}} تُملأ لكل شخص.' }, $locale)}
+          </p>
           {#if purpose === 'donation' && channel === 'email'}
             <input class="input mt-2 force-ltr" bind:value={ctaUrl} oninput={previewSoon} placeholder={tr({ en: 'Giving link (adds a “Give now” button)', ar: 'رابط التبرع (يضيف زر «تبرّع الآن»)' }, $locale)} />
           {/if}
@@ -262,25 +306,35 @@
           {#if previewOpen}
             <div class="mt-3 overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700">
               <div class="flex items-center justify-between bg-slate-50 px-3 py-1.5 text-[11px] font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400">
-                <span>{tr({ en: 'Preview — how they receive it', ar: 'معاينة — كيف يستلمها العضو' }, $locale)}</span>
-                {#if previewing}<span>…</span>{/if}
+                <span>👁 {tr({ en: 'Preview — how they receive it', ar: 'معاينة — كيف يستلمها العضو' }, $locale)}</span>
+                {#if previewing}<span class="animate-pulse">•••</span>{/if}
               </div>
               {#if previewErr}
                 <p class="p-3 text-xs text-rose-600 dark:text-rose-400">{previewErr}</p>
               {:else if !previewData}
                 <p class="p-3 text-xs text-slate-400">…</p>
               {:else if channel === 'email'}
-                <div class="border-b border-slate-100 px-3 py-2 text-xs text-slate-600 dark:border-slate-800 dark:text-slate-300"><span class="text-slate-400">{tr({ en: 'Subject', ar: 'الموضوع' }, $locale)}:</span> {previewData.subject}</div>
+                <div class="space-y-0.5 border-b border-slate-100 bg-white px-3 py-2 text-xs dark:border-slate-800 dark:bg-slate-900">
+                  <div class="text-slate-500 dark:text-slate-400"><span class="text-slate-400">{tr({ en: 'From', ar: 'من' }, $locale)}:</span> {churchName || tr({ en: 'Your church', ar: 'كنيستك' }, $locale)}</div>
+                  <div class="font-medium text-slate-800 dark:text-slate-100"><span class="font-normal text-slate-400">{tr({ en: 'Subject', ar: 'الموضوع' }, $locale)}:</span> {previewData.subject}</div>
+                </div>
                 <iframe title="email preview" srcdoc={previewData.html} sandbox="" class="h-64 w-full bg-white"></iframe>
               {:else}
+                <!-- Phone-style chat bubble with the church as sender -->
                 <div class="bg-slate-100 p-4 dark:bg-slate-800/40">
-                  <div class="mx-auto max-w-[16rem]">
-                    <div class="mb-1 text-center text-[10px] text-slate-400">{channel === 'whatsapp' ? tr({ en: 'WhatsApp', ar: 'واتساب' }, $locale) : tr({ en: 'Text message (SMS)', ar: 'رسالة نصية' }, $locale)}</div>
-                    <div class="whitespace-pre-wrap rounded-2xl rounded-tl-sm px-3 py-2 text-sm shadow-sm {channel === 'whatsapp' ? 'bg-[#d9fdd3] text-slate-800' : 'bg-white text-slate-800 dark:bg-slate-700 dark:text-slate-100'}">{previewData.text}</div>
+                  <div class="mx-auto max-w-[17rem] overflow-hidden rounded-2xl border border-slate-300 bg-white shadow-sm dark:border-slate-600 dark:bg-slate-900">
+                    <div class="flex items-center gap-2 px-3 py-2 {channel === 'whatsapp' ? 'bg-[#075e54] text-white' : 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-100'}">
+                      <span class="grid h-6 w-6 place-items-center rounded-full bg-white/25 text-xs">⛪</span>
+                      <span class="truncate text-xs font-medium">{churchName || (channel === 'whatsapp' ? 'WhatsApp' : tr({ en: 'Your church', ar: 'كنيستك' }, $locale))}</span>
+                    </div>
+                    <div class="p-3">
+                      <div class="whitespace-pre-wrap rounded-2xl rounded-tl-sm px-3 py-2 text-sm {channel === 'whatsapp' ? 'bg-[#d9fdd3] text-slate-800' : 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-100'}">{previewData.text}</div>
+                      <div class="mt-1 text-end text-[10px] text-slate-400">{tr({ en: 'now', ar: 'الآن' }, $locale)}</div>
+                    </div>
                   </div>
                 </div>
               {/if}
-              <p class="px-3 py-1.5 text-[10px] text-slate-400">{tr({ en: 'Sample data shown (name “Sarah”, your church name). Each person sees their own.', ar: 'بيانات تجريبية (الاسم «سارة»، اسم كنيستك). كل شخص يرى بياناته.' }, $locale)}</p>
+              <p class="bg-slate-50 px-3 py-1.5 text-[10px] text-slate-400 dark:bg-slate-800/60">{tr({ en: 'Sample data shown (name “Sarah”, your church). Each person sees their own.', ar: 'بيانات تجريبية (الاسم «سارة»، كنيستك). كل شخص يرى بياناته.' }, $locale)}</p>
             </div>
           {/if}
         </div>
