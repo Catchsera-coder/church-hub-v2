@@ -221,6 +221,7 @@
       <thead class="border-b border-slate-200 text-start text-slate-500 dark:border-slate-800">
         <tr>
           <th class="p-3 text-start font-medium">{tr({ en: 'Name', ar: 'الاسم' }, $locale)}</th>
+          <th class="p-3 text-start font-medium">{tr({ en: 'Household', ar: 'الأسرة' }, $locale)}</th>
           <th class="p-3 text-start font-medium">{tr({ en: 'Status', ar: 'الحالة' }, $locale)}</th>
           <th class="p-3 text-start font-medium">{tr({ en: 'Email', ar: 'البريد' }, $locale)}</th>
           <th class="p-3 text-start font-medium">{tr({ en: 'Mobile', ar: 'الجوال' }, $locale)}</th>
@@ -237,12 +238,14 @@
               {#if p.selfRegistered && !p.reviewedAt}
                 <span class="ms-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">{tr({ en: 'new', ar: 'جديد' }, $locale)}</span>
               {/if}
+            </td>
+            <td class="p-3">
               {#if p.householdRole}
-                {#if isHead(p.householdRole)}
-                  <span class="ms-1.5 align-middle" title={tr({ en: 'Head of household', ar: 'رب الأسرة' }, $locale)}>⭐</span>
-                {:else}
-                  <span class="ms-1.5 rounded-full bg-slate-100 px-2 py-0.5 text-xs capitalize text-slate-600 dark:bg-slate-800 dark:text-slate-300">{p.householdRole}</span>
-                {/if}
+                <span class="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs capitalize text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                  {#if isHead(p.householdRole)}👑 {tr({ en: 'Head', ar: 'رب الأسرة' }, $locale)}{:else}{p.householdRole}{/if}
+                </span>
+              {:else}
+                <span class="text-slate-300 dark:text-slate-600">—</span>
               {/if}
             </td>
             <td class="p-3 capitalize text-slate-600 dark:text-slate-300">{p.membershipStatus}</td>
