@@ -187,7 +187,7 @@
 
       <p class="flex items-start gap-1.5 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500 dark:bg-slate-800/60 dark:text-slate-400">
         <span>💡</span>
-        <span>{tr({ en: scopeMeta(editing.shareScope).dEn, ar: scopeMeta(editing.shareScope).dAr }, $locale)}{#if editing.shareScope === 'church'} {tr({ en: discMeta(editing.shareDisclosure).dEn, ar: discMeta(editing.shareDisclosure).dAr }, $locale)}{/if} {tr({ en: 'Admins always see the full item.', ar: 'يرى المدراء العنصر كاملاً دائماً.' }, $locale)}</span>
+        <span>{tr({ en: scopeMeta(editing.shareScope).dEn, ar: scopeMeta(editing.shareScope).dAr }, $locale)}{#if editing.shareScope === 'church'}{' '}{tr({ en: discMeta(editing.shareDisclosure).dEn, ar: discMeta(editing.shareDisclosure).dAr }, $locale)}{/if}{' '}{tr({ en: 'Admins always see the full item.', ar: 'يرى المدراء العنصر كاملاً دائماً.' }, $locale)}</span>
       </p>
     </div>
 
