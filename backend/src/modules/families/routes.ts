@@ -7,7 +7,7 @@ import { asyncHandler } from '../../http/asyncHandler.js';
 import { authenticate, requirePermission } from '../../middleware/auth.js';
 import { notFound } from '../../http/errors.js';
 import { logActivity } from '../activity/service.js';
-import { familyListQuery, familyWhere, memberCountExpr, childCountExpr, familyPhoneExpr } from './filters.js';
+import { familyListQuery, familyWhere, memberCountExpr, childCountExpr, familyPhoneExpr, membersPreviewExpr } from './filters.js';
 
 export const familiesRouter = Router();
 familiesRouter.use(authenticate);
@@ -35,7 +35,7 @@ familiesRouter.get('/', requirePermission('view household'), asyncHandler(async 
       id: households.id, name: households.name,
       homePhone: familyPhoneExpr, // household phone, else a member's mobile
       city: households.city, region: households.region,
-      memberCount, childCount,
+      memberCount, childCount, membersPreview: membersPreviewExpr,
       createdAt: households.createdAt, updatedAt: households.updatedAt,
     })
     .from(households)
@@ -47,7 +47,13 @@ familiesRouter.get('/', requirePermission('view household'), asyncHandler(async 
 }));
 
 familiesRouter.get('/:id', requirePermission('view household'), asyncHandler(async (req, res) => {
-  const [row] = await db.select().from(households).where(and(eq(households.id, Number(req.params.id)), isNull(households.deletedAt))).limit(1);
+  const [row] = await db.select({
+    id: households.id, name: households.name, homePhone: households.homePhone,
+    addressLine1: households.addressLine1, addressLine2: households.addressLine2,
+    city: households.city, region: households.region, postalCode: households.postalCode, country: households.country,
+    memberCount: memberCountExpr, membersPreview: membersPreviewExpr,
+    createdAt: households.createdAt, updatedAt: households.updatedAt,
+  }).from(households).where(and(eq(households.id, Number(req.params.id)), isNull(households.deletedAt))).limit(1);
   if (!row) throw notFound();
   res.json({ data: row });
 }));

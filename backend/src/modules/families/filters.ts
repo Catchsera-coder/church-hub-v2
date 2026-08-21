@@ -27,6 +27,14 @@ export const memberCountExpr = sql<number>`(SELECT count(*)::int FROM ${people} 
 export const childCountExpr = sql<number>`(SELECT count(*)::int FROM ${people} p WHERE p.household_id = households.id AND p.deleted_at IS NULL AND p.date_of_birth IS NOT NULL AND extract(year from age(p.date_of_birth)) < 13)`;
 // Family phone: the household's own home phone, else fall back to a member's mobile.
 export const familyPhoneExpr = sql<string>`COALESCE(NULLIF(${households.homePhone}, ''), (SELECT p.mobile FROM ${people} p WHERE p.household_id = households.id AND p.mobile IS NOT NULL AND p.mobile <> '' AND p.deleted_at IS NULL ORDER BY p.id LIMIT 1))`;
+// A short preview of member full names ("Samy Ibrahim, Hana Ibrahim") shown under
+// the family name so two families with the same surname are tellable apart.
+// Correlate via the literal households.id (Drizzle renders an interpolated column
+// of the primary FROM table unqualified — see memberCountExpr note above).
+export const membersPreviewExpr = sql<string>`(SELECT string_agg(nm, ', ') FROM (
+  SELECT trim(coalesce(p.given_name->>'en','') || ' ' || coalesce(p.family_name->>'en','')) AS nm
+  FROM ${people} p WHERE p.household_id = households.id AND p.deleted_at IS NULL ORDER BY p.id LIMIT 4
+) t)`;
 
 export function familyFilters(q: FamilyQuery): SQL[] {
   const filters: SQL[] = [isNull(households.deletedAt)];

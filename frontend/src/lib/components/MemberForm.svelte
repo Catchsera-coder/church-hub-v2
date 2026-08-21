@@ -83,6 +83,12 @@
   let showNewFamily = $state(false);
   let newFamilyName = $state('');
   let creatingFamily = $state(false);
+  // Family assignment saves instantly when editing an existing member (no need to
+  // hit the form's Save). `changingFamily` shows the search while keeping the
+  // current family until a new one is picked; `familySaved` flashes a ✓.
+  let changingFamily = $state(false);
+  let familySaved = $state(false);
+  function flashSaved() { familySaved = true; setTimeout(() => (familySaved = false), 1600); }
 
   const statuses = ['visitor', 'regular', 'member', 'inactive'];
   const ROLE_OPTIONS = [
@@ -115,8 +121,17 @@
       try { familyResults = (await api<{ data: any[] }>(`/families?search=${encodeURIComponent(q)}&limit=15`)).data; } catch { familyResults = []; }
     }, 200);
   }
-  function pickFamily(f: any) { selectedFamily = f; form.householdId = String(f.id); familyResults = []; familyQuery = ''; }
-  function clearFamily() { selectedFamily = null; form.householdId = ''; familyQuery = ''; familyResults = []; }
+  // Persist a household/role change immediately for an existing member; for a NEW
+  // member it just stays in form state and is saved when the member is created.
+  async function persistPatch(patch: Record<string, unknown>) {
+    if (!id) return;
+    try { await api(`/people/${id}`, { method: 'PUT', body: JSON.stringify(patch) }); flashSaved(); }
+    catch (err) { error = (err as Error).message; }
+  }
+  async function pickFamily(f: any) { selectedFamily = f; form.householdId = String(f.id); familyResults = []; familyQuery = ''; changingFamily = false; await persistPatch({ householdId: f.id }); }
+  async function removeFamily() { selectedFamily = null; form.householdId = ''; form.householdRole = ''; familyQuery = ''; familyResults = []; changingFamily = false; await persistPatch({ householdId: null, householdRole: null }); }
+  function startChangeFamily() { changingFamily = true; familyQuery = ''; familyResults = []; }
+  async function setFamilyRole(v: string) { form.householdRole = v; await persistPatch({ householdRole: v || null }); }
 
   async function createFamily() {
     if (!newFamilyName.trim()) return;
@@ -126,7 +141,7 @@
         method: 'POST',
         body: JSON.stringify({ name: { en: newFamilyName.trim() } }),
       });
-      pickFamily(data);
+      await pickFamily(data);
       showNewFamily = false;
       newFamilyName = '';
     } catch (err) {
@@ -235,8 +250,11 @@
       <input class="input force-ltr" type="date" bind:value={form.joinedOn} />
     </label>
     <div class="space-y-2 sm:col-span-2">
-      <span class="text-sm font-medium text-slate-700 dark:text-slate-200">👪 {tr({ en: 'Family / Household', ar: 'العائلة / الأسرة' }, $locale)}</span>
-      <p class="text-xs text-slate-400">{tr({ en: 'Group this person into a household — they share an address and appear together on the family page.', ar: 'اجمع هذا الشخص في أسرة — يتشاركون العنوان ويظهرون معاً في صفحة العائلة.' }, $locale)}</p>
+      <div class="flex items-center gap-2">
+        <span class="text-sm font-medium text-slate-700 dark:text-slate-200">👪 {tr({ en: 'Family / Household', ar: 'العائلة / الأسرة' }, $locale)}</span>
+        {#if familySaved}<span class="text-xs font-medium text-emerald-600 dark:text-emerald-400">✓ {tr({ en: 'Saved', ar: 'تم الحفظ' }, $locale)}</span>{/if}
+      </div>
+      <p class="text-xs text-slate-400">{id ? tr({ en: 'Changes here save instantly.', ar: 'التغييرات هنا تُحفظ فوراً.' }, $locale) : tr({ en: 'Group this person into a household — they share an address and appear together on the family page.', ar: 'اجمع هذا الشخص في أسرة — يتشاركون العنوان ويظهرون معاً في صفحة العائلة.' }, $locale)}</p>
 
       {#if showNewFamily}
         <div class="rounded-xl border border-slate-200 p-3 dark:border-slate-700">
@@ -247,40 +265,45 @@
             <button type="button" class="btn-ghost shrink-0" onclick={() => { showNewFamily = false; }}>{tr({ en: 'Cancel', ar: 'إلغاء' }, $locale)}</button>
           </div>
         </div>
-      {:else if selectedFamily}
+      {:else if selectedFamily && !changingFamily}
         <div class="rounded-xl border border-slate-200 p-3 dark:border-slate-700">
-          <div class="flex items-center gap-3">
+          <div class="flex items-start gap-3">
             <span class="grid h-11 w-11 shrink-0 place-items-center rounded-full text-xl" style="background: color-mix(in srgb, var(--brand) 15%, transparent)">👪</span>
             <div class="min-w-0 flex-1">
               <div class="font-medium">{tr(selectedFamily.name ?? {}, $locale)}</div>
-              <div class="text-xs text-slate-400">
-                {#if selectedFamily.city}{selectedFamily.city}{/if}{#if selectedFamily.memberCount != null}{selectedFamily.city ? ' · ' : ''}{selectedFamily.memberCount} {tr({ en: 'members', ar: 'أفراد' }, $locale)}{/if}
-              </div>
+              {#if selectedFamily.membersPreview}<div class="truncate text-xs text-slate-500 dark:text-slate-400">{selectedFamily.membersPreview}</div>{/if}
+              <div class="text-xs text-slate-400">{#if selectedFamily.city}{selectedFamily.city}{/if}{#if selectedFamily.memberCount != null}{selectedFamily.city ? ' · ' : ''}{selectedFamily.memberCount} {tr({ en: 'members', ar: 'أفراد' }, $locale)}{/if}</div>
             </div>
             {#if form.householdId}<a class="shrink-0 text-xs text-primary-700 hover:underline dark:text-primary-300" href="/families/{form.householdId}" target="_blank" rel="noopener">{tr({ en: 'Open →', ar: 'فتح ←' }, $locale)}</a>{/if}
           </div>
           <div class="mt-3 flex flex-wrap items-center gap-3 border-t border-slate-100 pt-3 dark:border-slate-800">
             <label class="flex items-center gap-2 text-sm">
               <span class="text-slate-500">{tr({ en: 'Role', ar: 'الدور' }, $locale)}</span>
-              <select class="input h-8 w-36 py-0 text-sm" value={roleValue(form.householdRole)} onchange={(e) => (form.householdRole = (e.currentTarget as HTMLSelectElement).value)}>
+              <select class="input h-8 w-36 py-0 text-sm" value={roleValue(form.householdRole)} onchange={(e) => setFamilyRole((e.currentTarget as HTMLSelectElement).value)}>
                 <option value="">{tr({ en: '— none —', ar: '— بدون —' }, $locale)}</option>
                 {#each ROLE_OPTIONS as o}<option value={o.v}>{tr({ en: o.en, ar: o.ar }, $locale)}</option>{/each}
                 {#if roleValue(form.householdRole) && !ROLE_OPTIONS.some((o) => o.v === roleValue(form.householdRole))}<option value={roleValue(form.householdRole)}>{form.householdRole}</option>{/if}
               </select>
             </label>
-            <button type="button" class="ms-auto text-xs text-slate-500 hover:underline" onclick={() => { familyQuery = ''; clearFamily(); }}>{tr({ en: 'Change family', ar: 'تغيير العائلة' }, $locale)}</button>
-            <button type="button" class="text-xs text-rose-600 hover:underline" onclick={clearFamily}>{tr({ en: 'Remove', ar: 'إزالة' }, $locale)}</button>
+            <button type="button" class="ms-auto text-xs text-slate-500 hover:underline" onclick={startChangeFamily}>{tr({ en: 'Change family', ar: 'تغيير العائلة' }, $locale)}</button>
+            <button type="button" class="text-xs text-rose-600 hover:underline" onclick={removeFamily}>{tr({ en: 'Remove', ar: 'إزالة' }, $locale)}</button>
           </div>
         </div>
       {:else}
+        {#if changingFamily && selectedFamily}
+          <p class="text-xs text-slate-400">{tr({ en: 'Pick a different family below, or', ar: 'اختر عائلة أخرى بالأسفل، أو' }, $locale)} <button type="button" class="text-slate-500 hover:underline" onclick={() => { changingFamily = false; familyQuery = ''; familyResults = []; }}>{tr({ en: 'keep', ar: 'أبقِ على' }, $locale)} “{tr(selectedFamily.name ?? {}, $locale)}”</button>.</p>
+        {/if}
         <div class="relative">
           <input class="input" bind:value={familyQuery} oninput={searchFamilies} placeholder={tr({ en: 'Type a family name to search…', ar: 'اكتب اسم عائلة للبحث…' }, $locale)} />
           {#if familyResults.length}
             <div class="absolute z-10 mt-1 w-full overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-900">
               {#each familyResults as f}
-                <button type="button" class="flex w-full items-center gap-2 px-3 py-2 text-start text-sm hover:bg-slate-100 dark:hover:bg-slate-800" onclick={() => pickFamily(f)}>
-                  <span>👪</span><span class="min-w-0 flex-1 truncate">{tr(f.name ?? {}, $locale)}</span>
-                  <span class="shrink-0 text-xs text-slate-400">{#if f.city}{f.city}{/if}{#if f.memberCount != null}{f.city ? ' · ' : ''}{f.memberCount}{/if}</span>
+                <button type="button" class="flex w-full items-start gap-2 px-3 py-2 text-start text-sm hover:bg-slate-100 dark:hover:bg-slate-800" onclick={() => pickFamily(f)}>
+                  <span class="mt-0.5">👪</span>
+                  <span class="min-w-0 flex-1">
+                    <span class="block truncate font-medium">{tr(f.name ?? {}, $locale)}<span class="ms-1 text-xs font-normal text-slate-400">{#if f.city}· {f.city}{/if}{#if f.memberCount != null} · {f.memberCount}{/if}</span></span>
+                    {#if f.membersPreview}<span class="block truncate text-xs text-slate-400">{f.membersPreview}</span>{/if}
+                  </span>
                 </button>
               {/each}
             </div>
