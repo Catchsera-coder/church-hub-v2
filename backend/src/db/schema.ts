@@ -34,9 +34,12 @@ export type MessagingSettings = {
   twilioAuthToken?: string;
   acsConnectionString?: string; // shared by ACS email + SMS
   acsSmsFrom?: string;
-  // WhatsApp via Twilio (reuses the Twilio account; from is a WhatsApp sender).
-  whatsappProvider?: 'twilio';
-  whatsappFrom?: string; // e.g. "whatsapp:+14155238886"
+  // WhatsApp: Twilio (reuses the Twilio account; from is a WhatsApp sender) OR
+  // Azure Communication Services Advanced Messaging (needs a Meta WhatsApp
+  // Business Account connected in ACS + its channel registration id).
+  whatsappProvider?: 'twilio' | 'azure';
+  whatsappFrom?: string; // Twilio: e.g. "whatsapp:+14155238886"
+  acsWhatsappChannelId?: string; // ACS WhatsApp channel registration id (GUID)
   // AI compose assistant. Provider is Anthropic (Claude) or Azure OpenAI.
   aiProvider?: 'anthropic' | 'azure';
   aiApiKey?: string;   // Anthropic key

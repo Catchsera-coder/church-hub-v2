@@ -128,7 +128,7 @@
         smsProvider: msg.smsProvider, smsFrom: msg.smsFrom,
         twilioAccountSid: msg.twilioAccountSid, twilioAuthToken: msg.twilioAuthToken,
         acsSmsFrom: msg.acsSmsFrom, acsConnectionString: msg.acsConnectionString,
-        whatsappFrom: msg.whatsappFrom,
+        whatsappFrom: msg.whatsappFrom, whatsappProvider: msg.whatsappProvider, acsWhatsappChannelId: msg.acsWhatsappChannelId,
         aiProvider: msg.aiProvider, aiModel: msg.aiModel, aiApiKey: msg.aiApiKey,
         azureOpenaiEndpoint: msg.azureOpenaiEndpoint, azureOpenaiDeployment: msg.azureOpenaiDeployment,
         azureOpenaiApiVersion: msg.azureOpenaiApiVersion, azureOpenaiKey: msg.azureOpenaiKey,
@@ -483,11 +483,27 @@
 
       <div class="card space-y-4 p-6">
         <h3 class="font-semibold">{tr({ en: 'WhatsApp', ar: 'واتساب' }, $locale)}</h3>
-        <p class="text-xs text-slate-500 dark:text-slate-400">{tr({ en: 'Uses your Twilio account above. Enter your WhatsApp-enabled sender.', ar: 'يستخدم حساب Twilio أعلاه. أدخل مرسل واتساب المفعّل.' }, $locale)}</p>
         <label class="block space-y-1">
-          <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'WhatsApp sender', ar: 'مرسل واتساب' }, $locale)}</span>
-          <input class="input force-ltr" bind:value={msg.whatsappFrom} placeholder="whatsapp:+14155238886" />
+          <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'WhatsApp provider', ar: 'مزوّد واتساب' }, $locale)}</span>
+          <select class="input" bind:value={msg.whatsappProvider}>
+            <option value="">{tr({ en: 'Off', ar: 'معطّل' }, $locale)}</option>
+            <option value="twilio">Twilio</option>
+            <option value="azure">{tr({ en: 'Azure Communication Services', ar: 'Azure Communication Services' }, $locale)}</option>
+          </select>
         </label>
+        {#if msg.whatsappProvider === 'azure'}
+          <p class="text-xs text-slate-500 dark:text-slate-400">{tr({ en: 'Uses your ACS connection string above. Needs a Meta WhatsApp Business Account connected in ACS + its channel registration ID. Church-initiated messages require Meta-approved templates.', ar: 'يستخدم سلسلة اتصال ACS أعلاه. يتطلب حساب WhatsApp Business من Meta مربوطاً بـ ACS مع معرّف تسجيل القناة. الرسائل المبدوءة من الكنيسة تتطلب قوالب معتمدة من Meta.' }, $locale)}</p>
+          <label class="block space-y-1">
+            <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'ACS WhatsApp channel ID', ar: 'معرّف قناة واتساب في ACS' }, $locale)}</span>
+            <input class="input force-ltr" bind:value={msg.acsWhatsappChannelId} placeholder="00000000-0000-0000-0000-000000000000" />
+          </label>
+        {:else}
+          <p class="text-xs text-slate-500 dark:text-slate-400">{tr({ en: 'Uses your Twilio account above. Enter your WhatsApp-enabled sender.', ar: 'يستخدم حساب Twilio أعلاه. أدخل مرسل واتساب المفعّل.' }, $locale)}</p>
+          <label class="block space-y-1">
+            <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'WhatsApp sender', ar: 'مرسل واتساب' }, $locale)}</span>
+            <input class="input force-ltr" bind:value={msg.whatsappFrom} placeholder="whatsapp:+14155238886" />
+          </label>
+        {/if}
       </div>
 
       <div class="card space-y-4 p-6">

@@ -62,6 +62,8 @@ const schema = z.object({
 
   // WhatsApp (via Twilio) — optional per-deploy sender, e.g. whatsapp:+1415...
   WHATSAPP_FROM: z.string().optional(),
+  // WhatsApp (via Azure ACS Advanced Messaging) — the channel registration id.
+  ACS_WHATSAPP_CHANNEL_ID: z.string().optional(),
 
   // AI compose assistant (Anthropic). Env default; a church can also set its own
   // key in Settings. Off entirely when neither is present — the compose button

@@ -32,7 +32,7 @@ import { geoRouter } from './modules/geo/routes.js';
 import { mediaRouter, publicMediaRouter } from './modules/media/routes.js';
 import { publicConsentRouter } from './modules/consent/public.routes.js';
 import { publicMinistriesRouter } from './modules/ministries/public.routes.js';
-import { publicInboundRouter } from './modules/messages/inbound.routes.js';
+import { publicInboundRouter, publicAcsRouter } from './modules/messages/inbound.routes.js';
 import { careRouter } from './modules/care/routes.js';
 
 export function createApp() {
@@ -64,6 +64,9 @@ export function createApp() {
   // Inbound SMS webhook (Twilio) posts form-encoded, not JSON.
   app.use('/api/public/sms', rateLimit({ windowMs: 60_000, max: 60 }));
   app.use('/api/public/sms', express.urlencoded({ extended: false }), publicInboundRouter);
+  // Azure Communication Services inbound via Event Grid (JSON — parsed globally above).
+  app.use('/api/public/acs', rateLimit({ windowMs: 60_000, max: 120 }));
+  app.use('/api/public/acs', publicAcsRouter);
 
   app.use('/api/auth', authRouter);
   app.use('/api/settings', settingsRouter);

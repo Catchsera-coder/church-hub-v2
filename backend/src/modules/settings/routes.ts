@@ -110,6 +110,8 @@ settingsRouter.get(
         acsSmsFrom: m.acsSmsFrom ?? '',
         acsConnectionStringSet: Boolean(m.acsConnectionString),
         whatsappFrom: m.whatsappFrom ?? '',
+        whatsappProvider: m.whatsappProvider ?? '',
+        acsWhatsappChannelId: m.acsWhatsappChannelId ?? '',
         aiProvider: m.aiProvider ?? '',
         aiModel: m.aiModel ?? '',
         aiApiKeySet: Boolean(m.aiApiKey),
@@ -139,6 +141,8 @@ const messagingSchema = z.object({
   acsSmsFrom: z.string().optional(),
   acsConnectionString: z.string().optional(),
   whatsappFrom: z.string().optional(),
+  whatsappProvider: z.enum(['twilio', 'azure']).or(z.literal('')).optional(),
+  acsWhatsappChannelId: z.string().optional(),
   aiProvider: z.enum(['anthropic', 'azure']).or(z.literal('')).optional(),
   aiModel: z.string().optional(),
   aiApiKey: z.string().optional(),
@@ -165,10 +169,12 @@ settingsRouter.put(
     if (body.twilioAccountSid !== undefined) next.twilioAccountSid = body.twilioAccountSid || undefined;
     if (body.acsSmsFrom !== undefined) next.acsSmsFrom = body.acsSmsFrom || undefined;
     if (body.smsProvider !== undefined) next.smsProvider = body.smsProvider === '' ? undefined : body.smsProvider;
-    if (body.whatsappFrom !== undefined) {
-      next.whatsappFrom = body.whatsappFrom || undefined;
-      next.whatsappProvider = body.whatsappFrom ? 'twilio' : undefined;
-    }
+    if (body.whatsappFrom !== undefined) next.whatsappFrom = body.whatsappFrom || undefined;
+    if (body.acsWhatsappChannelId !== undefined) next.acsWhatsappChannelId = body.acsWhatsappChannelId || undefined;
+    if (body.whatsappProvider !== undefined) next.whatsappProvider = body.whatsappProvider === '' ? undefined : body.whatsappProvider;
+    // Back-compat: if a Twilio WhatsApp sender is set but no provider was chosen,
+    // default to Twilio (preserves the old auto-behaviour).
+    if (!next.whatsappProvider && next.whatsappFrom) next.whatsappProvider = 'twilio';
     if (body.aiProvider !== undefined) next.aiProvider = body.aiProvider === '' ? undefined : body.aiProvider;
     if (body.aiModel !== undefined) next.aiModel = body.aiModel || undefined;
     if (body.azureOpenaiEndpoint !== undefined) next.azureOpenaiEndpoint = body.azureOpenaiEndpoint || undefined;

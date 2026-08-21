@@ -31,8 +31,9 @@ export interface ResolvedMessaging {
   twilioAuthToken?: string;
   acsConnectionString?: string;
   acsSmsFrom?: string;
-  whatsappProvider: 'twilio' | null;
+  whatsappProvider: 'twilio' | 'azure' | null;
   whatsappFrom?: string;
+  acsWhatsappChannelId?: string;
 }
 
 /**
@@ -69,16 +70,22 @@ export function resolveMessaging(dbMsg?: MessagingSettings | null, opts?: { repl
   else if (wantSms === 'azure') smsProvider = azureSmsReady ? 'azure' : null;
   else smsProvider = azureSmsReady ? 'azure' : twilioReady ? 'twilio' : null;
 
-  // WhatsApp via Twilio: reuses the Twilio SID/token; needs its own WhatsApp
-  // sender (e.g. "whatsapp:+1415..."). Ready only when all three are present.
+  // WhatsApp on Twilio (SID/token + a "whatsapp:+…" sender) OR Azure Advanced
+  // Messaging (ACS connection string + a WhatsApp channel registration id).
   const whatsappFrom = m.whatsappFrom || config.WHATSAPP_FROM;
-  const whatsappReady = Boolean(twilioAccountSid && twilioAuthToken && whatsappFrom);
-  const whatsappProvider: 'twilio' | null = whatsappReady ? 'twilio' : null;
+  const acsWhatsappChannelId = m.acsWhatsappChannelId || config.ACS_WHATSAPP_CHANNEL_ID;
+  const twilioWhatsappReady = Boolean(twilioAccountSid && twilioAuthToken && whatsappFrom);
+  const azureWhatsappReady = Boolean(acsConnectionString && acsWhatsappChannelId);
+  const wantWhatsapp = m.whatsappProvider;
+  let whatsappProvider: 'twilio' | 'azure' | null;
+  if (wantWhatsapp === 'twilio') whatsappProvider = twilioWhatsappReady ? 'twilio' : null;
+  else if (wantWhatsapp === 'azure') whatsappProvider = azureWhatsappReady ? 'azure' : null;
+  else whatsappProvider = twilioWhatsappReady ? 'twilio' : azureWhatsappReady ? 'azure' : null;
 
   return {
     emailProvider, sendgridApiKey, mailFrom, acsMailFrom, mailReplyTo,
     smsProvider, smsFrom, twilioAccountSid, twilioAuthToken, acsConnectionString, acsSmsFrom,
-    whatsappProvider, whatsappFrom,
+    whatsappProvider, whatsappFrom, acsWhatsappChannelId,
   };
 }
 
@@ -97,6 +104,7 @@ export async function sendMessage(
       if (m.emailProvider === 'acs') return await sendEmailAcs(m, to, subject, body, html);
     } else if (channel === 'whatsapp') {
       if (m.whatsappProvider === 'twilio') return await sendWhatsappTwilio(m, to, body, mediaUrl);
+      if (m.whatsappProvider === 'azure') return await sendWhatsappAcs(m, to, body);
     } else if (m.smsProvider === 'twilio') {
       return await sendSmsTwilio(m, to, body, mediaUrl);
     } else if (m.smsProvider === 'azure') {
@@ -236,6 +244,22 @@ async function sendSmsAzure(m: ResolvedMessaging, to: string, body: string): Pro
   const data = (await res.json().catch(() => null)) as { value?: Array<{ successful?: boolean }> } | null;
   const first = data?.value?.[0];
   return first ? first.successful !== false : true;
+}
+
+// --- WhatsApp: Azure Communication Services (Advanced Messaging) -------------
+// Sends a plain-text WhatsApp message via the ACS Messages API. Note: WhatsApp
+// only allows free-form text inside the 24h customer-service window; a
+// church-INITIATED message outside that window must use a pre-approved template
+// (that path isn't wired here yet — Meta template approval is a prerequisite).
+async function sendWhatsappAcs(m: ResolvedMessaging, to: string, body: string): Promise<boolean> {
+  const res = await acsSignedFetch(
+    m.acsConnectionString!,
+    '/messages/notifications:send?api-version=2024-02-01',
+    { channelRegistrationId: m.acsWhatsappChannelId, to: [to], kind: 'text', content: body },
+  );
+  if (res.ok) return true; // 202 Accepted
+  console.error(`[whatsapp] Azure ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  return false;
 }
 
 // --- ACS HMAC request signing (shared by email + SMS) ------------------------
