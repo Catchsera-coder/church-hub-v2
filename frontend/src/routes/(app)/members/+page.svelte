@@ -21,6 +21,7 @@
     reviewedAt?: string | null;
     householdRole?: string | null;
     archivedAt?: string | null;
+    householdId?: number | null;
     householdName?: Record<string, string> | null;
     householdCity?: string | null;
     dateOfBirth?: string | null;
@@ -306,19 +307,25 @@
               </div>
               {#if nameExtras(p)}<div class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{nameExtras(p)}</div>{/if}
             </td>
-            <td class="p-3">
-              {#if editableRole}
-                <select class="input h-8 w-32 py-0 text-xs {isHead(p.householdRole) ? 'font-medium' : ''}" value={roleValue(p.householdRole)} disabled={savingRole === p.id} onchange={(e) => setRole(p, (e.currentTarget as HTMLSelectElement).value)}>
-                  <option value="">{tr({ en: '— none —', ar: '— بدون —' }, $locale)}</option>
-                  {#each ROLE_OPTIONS as o}<option value={o.v}>{tr({ en: o.en, ar: o.ar }, $locale)}</option>{/each}
-                  {#if roleValue(p.householdRole) && !ROLE_OPTIONS.some((o) => o.v === roleValue(p.householdRole))}<option value={roleValue(p.householdRole)}>{p.householdRole}</option>{/if}
-                </select>
-              {:else if p.householdRole}
-                <span class="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs capitalize text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                  {#if isHead(p.householdRole)}👑 {tr({ en: 'Head', ar: 'رب الأسرة' }, $locale)}{:else}{p.householdRole}{/if}
-                </span>
+            <td class="p-3 align-top">
+              {#if p.householdName}
+                <!-- Household name links to the family; the role describes this
+                     person's place within it. -->
+                <a class="inline-flex items-center gap-1 font-medium text-primary-700 hover:underline dark:text-primary-300" href="/families/{p.householdId}">👪 {tr(p.householdName, $locale)}</a>
+                <div class="mt-1">
+                  {#if editableRole}
+                    <select class="input h-7 w-28 py-0 text-xs {isHead(p.householdRole) ? 'font-medium' : ''}" value={roleValue(p.householdRole)} disabled={savingRole === p.id} onchange={(e) => setRole(p, (e.currentTarget as HTMLSelectElement).value)}>
+                      <option value="">{tr({ en: '— role —', ar: '— الدور —' }, $locale)}</option>
+                      {#each ROLE_OPTIONS as o}<option value={o.v}>{tr({ en: o.en, ar: o.ar }, $locale)}</option>{/each}
+                      {#if roleValue(p.householdRole) && !ROLE_OPTIONS.some((o) => o.v === roleValue(p.householdRole))}<option value={roleValue(p.householdRole)}>{p.householdRole}</option>{/if}
+                    </select>
+                  {:else if p.householdRole}
+                    <span class="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs capitalize text-slate-600 dark:bg-slate-800 dark:text-slate-300">{#if isHead(p.householdRole)}👑 {tr({ en: 'Head', ar: 'رب الأسرة' }, $locale)}{:else}{p.householdRole}{/if}</span>
+                  {/if}
+                </div>
               {:else}
-                <span class="text-slate-300 dark:text-slate-600">—</span>
+                <!-- Unassigned: a gentle nudge that opens the profile's family card. -->
+                <a class="inline-flex items-center gap-1 text-xs text-amber-600 hover:underline dark:text-amber-400" href="/members/{p.id}">＋ {tr({ en: 'Assign family', ar: 'تعيين عائلة' }, $locale)}</a>
               {/if}
             </td>
             <td class="p-3 capitalize text-slate-600 dark:text-slate-300">{p.membershipStatus}</td>
