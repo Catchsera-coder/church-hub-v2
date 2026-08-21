@@ -1,12 +1,12 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { goto } from '$app/navigation';
   import { api, ApiError } from '$lib/api.js';
   import { t, locale, tr, displayName } from '$lib/i18n.js';
   import { nameOrder } from '$lib/stores/prefs.js';
   import { can } from '$lib/stores/auth.js';
   import PageHeader from '$lib/components/PageHeader.svelte';
   import PageHint from '$lib/components/PageHint.svelte';
+  import CareShareDialog from '$lib/components/CareShareDialog.svelte';
 
   const editable = can('create care');
   const TYPES = [
@@ -110,18 +110,12 @@
   }
   const assigneeName = (id: number | null) => assignees.find((a) => a.id === id)?.name ?? null;
 
-  // Broadcast a case to the WHOLE congregation — a prayer request, a call for
-  // help/volunteers, a donation appeal, etc. This is a separate thing from the
-  // servant visibility above (who on the team sees it in the hub): it composes an
-  // outbound SMS/email/WhatsApp to all members. Privacy-safe by default — it seeds
-  // the message from the anonymous summary when one is set, and never auto-fills
-  // the person's name or the private details; the admin edits and sends in the
-  // composer (which shows exactly how many members it will reach).
-  function broadcast(r: any) {
-    const text = (r.summary || '').trim() || r.subject || '';
-    const params = new URLSearchParams({ audience: 'all', channel: 'sms', subject: r.subject || text, body: text });
-    goto(`/messages/new?${params.toString()}`);
-  }
+  // Share a case with the wider church — opens a self-contained panel to pick a
+  // purpose (prayer / help / donation / update, which auto-writes the message), a
+  // channel, and an audience (all members / a group / specific people), then send.
+  // Separate from the servant visibility above (who on the team sees it in the hub).
+  let sharing = $state<any>(null);
+  function openShare(r: any) { sharing = r; }
 </script>
 
 <PageHeader title={tr({ en: 'Pastoral Care', ar: 'الرعاية الرعوية' }, $locale)}>
@@ -206,7 +200,7 @@
       </p>
       <p class="flex items-start gap-1.5 text-[11px] text-slate-400">
         <span>📣</span>
-        <span>{tr({ en: 'This is who on your team sees the case in the hub. To ask the whole congregation — a prayer, a call for help, or a donation — use the 📣 button on the item after saving; it composes an SMS/email/WhatsApp to all members.', ar: 'هذا يحدد من في فريقك يرى الحالة داخل النظام. لتطلب من كل المصلين — صلاة أو مساعدة أو تبرع — استخدم زر 📣 على العنصر بعد الحفظ؛ يُنشئ رسالة SMS/بريد/واتساب لكل الأعضاء.' }, $locale)}</span>
+        <span>{tr({ en: 'This is who on your team sees the case in the hub. To reach out beyond the team — a prayer, a call for help, or a donation — use the 📣 Share button on the item after saving; it opens a panel to send an SMS/email/WhatsApp to all members, a group, or specific people.', ar: 'هذا يحدد من في فريقك يرى الحالة داخل النظام. للتواصل خارج الفريق — صلاة أو مساعدة أو تبرع — استخدم زر 📣 مشاركة على العنصر بعد الحفظ؛ يفتح لوحة لإرسال SMS/بريد/واتساب لكل الأعضاء أو مجموعة أو أشخاص محددين.' }, $locale)}</span>
       </p>
     </div>
 
@@ -259,7 +253,7 @@
               {:else}
                 <button class="btn-ghost text-xs" onclick={() => setStatus(r, 'open')}>{tr({ en: 'Reopen', ar: 'إعادة فتح' }, $locale)}</button>
               {/if}
-              {#if can('create message')}<button class="rounded p-1 text-xs text-slate-400 hover:bg-slate-100 hover:text-primary-600 dark:hover:bg-slate-800 dark:hover:text-primary-300" title={tr({ en: 'Share with the church — prayer, help or donation', ar: 'مشاركة مع الكنيسة — صلاة أو مساعدة أو تبرع' }, $locale)} onclick={() => broadcast(r)}>📣</button>{/if}
+              {#if can('create message')}<button class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-slate-500 hover:bg-slate-100 hover:text-primary-600 dark:hover:bg-slate-800 dark:hover:text-primary-300" title={tr({ en: 'Share with others — prayer, help or donation', ar: 'مشاركة مع الآخرين — صلاة أو مساعدة أو تبرع' }, $locale)} onclick={() => openShare(r)}>📣 {tr({ en: 'Share', ar: 'مشاركة' }, $locale)}</button>{/if}
               <button class="rounded p-1 text-xs text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" onclick={() => startEdit(r)}>✏️</button>
               {#if can('delete care')}<button class="rounded p-1 text-xs text-slate-400 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-900/30" onclick={() => remove(r)}>🗑️</button>{/if}
             </div>
@@ -268,4 +262,8 @@
       </div>
     {/each}
   </div>
+{/if}
+
+{#if sharing}
+  <CareShareDialog item={sharing} onclose={() => (sharing = null)} />
 {/if}
