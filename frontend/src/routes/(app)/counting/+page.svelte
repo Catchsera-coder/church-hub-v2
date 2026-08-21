@@ -6,6 +6,7 @@
   import { can } from '$lib/stores/auth.js';
   import DataTable from '$lib/components/DataTable.svelte';
   import PageHeader from '$lib/components/PageHeader.svelte';
+  import PageHint from '$lib/components/PageHint.svelte';
 
   let rows = $state<any[]>([]);
   let loading = $state(true);
@@ -38,6 +39,7 @@
     {#if can('create batch')}<a href="/counting/new" class="btn-primary">{$t('common.new')}</a>{/if}
   {/snippet}
 </PageHeader>
+<PageHint id="counting" text={{ en: 'A counting session groups the contributions counted together (e.g. one Sunday offering) so two people can reconcile the total before it is posted. Open one to add entries and close it when it balances.', ar: 'جلسة العدّ تجمع التبرعات المعدودة معاً (مثل عطاء أحد واحد) ليطابق شخصان الإجمالي قبل ترحيله. افتح واحدة لإضافة الإدخالات وأغلقها عند توازنها.' }} />
 
 <DataTable {loading} {rows}
   headers={[tr({ en: 'Session', ar: 'الجلسة' }, $locale), tr({ en: 'Date', ar: 'التاريخ' }, $locale), tr({ en: 'Counted', ar: 'المعدود' }, $locale), tr({ en: 'Entered', ar: 'المُدخل' }, $locale), tr({ en: 'Variance', ar: 'الفرق' }, $locale), tr({ en: 'Status', ar: 'الحالة' }, $locale), '']}>

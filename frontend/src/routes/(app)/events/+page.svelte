@@ -6,6 +6,7 @@
   import { can } from '$lib/stores/auth.js';
   import DataTable from '$lib/components/DataTable.svelte';
   import PageHeader from '$lib/components/PageHeader.svelte';
+  import PageHint from '$lib/components/PageHint.svelte';
 
   let rows = $state<any[]>([]);
   let loading = $state(true);
@@ -17,6 +18,7 @@
     {#if can('create event')}<a href="/events/new" class="btn-primary">{$t('common.new')}</a>{/if}
   {/snippet}
 </PageHeader>
+<PageHint id="events" text={{ en: 'The church calendar. Add upcoming events with date, time and details to keep everyone informed — and message attendees from the Messages tab.', ar: 'تقويم الكنيسة. أضِف الأحداث القادمة بالتاريخ والوقت والتفاصيل لإبقاء الجميع على اطلاع.' }} />
 
 <DataTable {loading} {rows} headers={[tr({ en: 'Event', ar: 'الفعالية' }, $locale), tr({ en: 'Starts', ar: 'يبدأ' }, $locale), tr({ en: 'Venue', ar: 'المكان' }, $locale), tr({ en: 'Fee', ar: 'الرسوم' }, $locale), tr({ en: 'Registered', ar: 'المسجّلون' }, $locale)]}>
   {#snippet row(e)}

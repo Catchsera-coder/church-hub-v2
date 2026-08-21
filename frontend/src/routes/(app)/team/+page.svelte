@@ -6,6 +6,7 @@
   import { can } from '$lib/stores/auth.js';
   import DataTable from '$lib/components/DataTable.svelte';
   import PageHeader from '$lib/components/PageHeader.svelte';
+  import PageHint from '$lib/components/PageHint.svelte';
 
   let rows = $state<any[]>([]);
   let loading = $state(true);
@@ -18,6 +19,7 @@
     {#if can('create user')}<a href="/team/new" class="btn-primary">{$t('common.new')}</a>{/if}
   {/snippet}
 </PageHeader>
+<PageHint id="team" text={{ en: 'Staff & volunteer logins. Invite users and give each a role — the role decides what they can see and do (permissions). This is separate from ministry rosters.', ar: 'حسابات الموظفين والمتطوعين. ادعُ المستخدمين وامنح كلاً دوراً — الدور يحدد ما يمكنه رؤيته وفعله. هذا منفصل عن فرق الخدمات.' }} />
 
 <DataTable {loading} {rows} headers={[tr({ en: 'Name', ar: 'الاسم' }, $locale), tr({ en: 'Email', ar: 'البريد' }, $locale), tr({ en: 'Roles', ar: 'الأدوار' }, $locale), tr({ en: 'Status', ar: 'الحالة' }, $locale), tr({ en: 'Last sign-in', ar: 'آخر دخول' }, $locale)]}>
   {#snippet row(u)}

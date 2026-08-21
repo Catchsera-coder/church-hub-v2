@@ -5,6 +5,7 @@
   import { can } from '$lib/stores/auth.js';
   import DataTable from '$lib/components/DataTable.svelte';
   import PageHeader from '$lib/components/PageHeader.svelte';
+  import PageHint from '$lib/components/PageHint.svelte';
 
   let rows = $state<any[]>([]);
   let loading = $state(true);
@@ -17,6 +18,7 @@
     {#if can('create fund')}<a href="/funds/new" class="btn-primary">{$t('common.new')}</a>{/if}
   {/snippet}
 </PageHeader>
+<PageHint id="funds" text={{ en: 'Funds are the buckets giving is split into (General, Missions, Building…). Create the ones your church tracks — every contribution is assigned to one.', ar: 'الصناديق هي الأوجه التي يُقسَّم إليها العطاء (عام، إرساليات، مبنى…). أنشئ ما تتبعه كنيستك — كل تبرع يُنسب لأحدها.' }} />
 
 <DataTable {loading} {rows} headers={['Code', tr({ en: 'Name', ar: 'الاسم' }, $locale), tr({ en: 'Tax-deductible', ar: 'معفى ضريبياً' }, $locale), tr({ en: 'Active', ar: 'مُفعّل' }, $locale)]}>
   {#snippet row(f)}

@@ -52,6 +52,7 @@
 
 <PageHeader title={$t('nav.attendance')}>
   {#snippet actions()}
+    <a href="/analytics" class="btn-ghost border border-slate-300 text-sm dark:border-slate-700">📊 {tr({ en: 'Insights', ar: 'التحليلات' }, $locale)}</a>
     {#if can('create attendance')}<a href="/attendance/new" class="btn-primary">{$t('common.new')}</a>{/if}
   {/snippet}
 </PageHeader>

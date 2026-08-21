@@ -7,6 +7,7 @@
   import { pageTips, resetHints } from '$lib/stores/prefs.js';
   import { applyBrandColor } from '$lib/stores/brand.js';
   import PageHeader from '$lib/components/PageHeader.svelte';
+  import PageHint from '$lib/components/PageHint.svelte';
 
   const SIZES = [
     { v: 0.9, label: { en: 'Small', ar: 'صغير' } },
@@ -186,6 +187,7 @@
 </script>
 
 <PageHeader title={$t('nav.settings')} />
+<PageHint id="settings" text={{ en: 'Configure your church: name & branding, languages, messaging providers, dashboard cards, and page tips. Most changes apply across the app immediately.', ar: 'اضبط كنيستك: الاسم والهوية، اللغات، مزوّدو المراسلة، بطاقات لوحة المعلومات، وتلميحات الصفحات. تُطبَّق معظم التغييرات فوراً.' }} />
 
 {#if !form}
   <p class="text-slate-400">{$t('common.loading')}</p>

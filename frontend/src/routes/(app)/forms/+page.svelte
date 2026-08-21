@@ -4,6 +4,7 @@
   import { api } from '$lib/api.js';
   import { t, locale, tr } from '$lib/i18n.js';
   import PageHeader from '$lib/components/PageHeader.svelte';
+  import PageHint from '$lib/components/PageHint.svelte';
 
   let forms = $state<any[]>([]);
   let loading = $state(true);
@@ -39,6 +40,7 @@
     <button class="btn-primary" onclick={create} disabled={creating}>{creating ? $t('common.loading') : $t('common.new')}</button>
   {/snippet}
 </PageHeader>
+<PageHint id="forms" text={{ en: 'Build shareable connect / registration forms. Choose fields, mark which are required, then share the link or QR — submissions arrive as people flagged for review.', ar: 'أنشئ نماذج تعارف / تسجيل قابلة للمشاركة. اختر الحقول، وحدّد المطلوب منها، ثم شارك الرابط أو رمز QR — تصل الردود كأشخاص بانتظار المراجعة.' }} />
 
 <p class="mb-4 text-sm text-slate-500 dark:text-slate-400">{tr({ en: 'Build shareable connect / registration forms. Share the link or QR anywhere; submissions are added to Members, flagged for review.', ar: 'أنشئ نماذج تعارف/تسجيل قابلة للمشاركة. شارك الرابط أو رمز QR في أي مكان؛ تُضاف الردود إلى الأعضاء مع وضع علامة للمراجعة.' }, $locale)}</p>
 

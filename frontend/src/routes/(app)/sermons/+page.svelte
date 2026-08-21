@@ -6,6 +6,7 @@
   import { can } from '$lib/stores/auth.js';
   import DataTable from '$lib/components/DataTable.svelte';
   import PageHeader from '$lib/components/PageHeader.svelte';
+  import PageHint from '$lib/components/PageHint.svelte';
 
   let rows = $state<any[]>([]);
   let loading = $state(true);
@@ -18,6 +19,7 @@
     {#if can('create sermon')}<a href="/sermons/new" class="btn-primary">{$t('common.new')}</a>{/if}
   {/snippet}
 </PageHeader>
+<PageHint id="sermons" text={{ en: 'Your sermon library — title, speaker, date, series and media links. Add messages so members can revisit past teaching.', ar: 'مكتبة العظات — العنوان والمتحدث والتاريخ والسلسلة وروابط الوسائط. أضِف الرسائل ليعود إليها الأعضاء.' }} />
 
 <DataTable {loading} {rows} headers={[tr({ en: 'Title', ar: 'العنوان' }, $locale), tr({ en: 'Speaker', ar: 'المتحدث' }, $locale), tr({ en: 'Date', ar: 'التاريخ' }, $locale), tr({ en: 'Published', ar: 'منشور' }, $locale)]}>
   {#snippet row(s)}

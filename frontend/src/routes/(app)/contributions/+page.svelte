@@ -6,6 +6,7 @@
   import { can } from '$lib/stores/auth.js';
   import DataTable from '$lib/components/DataTable.svelte';
   import PageHeader from '$lib/components/PageHeader.svelte';
+  import PageHint from '$lib/components/PageHint.svelte';
   import ExportMenu from '$lib/components/ExportMenu.svelte';
 
   let rows = $state<any[]>([]);
@@ -38,6 +39,7 @@
     {#if can('create contribution')}<a href="/contributions/new" class="btn-primary">{tr({ en: 'Record a gift', ar: 'تسجيل عطية' }, $locale)}</a>{/if}
   {/snippet}
 </PageHeader>
+<PageHint id="contributions" text={{ en: 'Record giving — cash, cheque, card or bank. Each entry posts to a fund and (optionally) a member. Use Counting sessions to reconcile a Sunday offering, and Insights/Analytics for giving trends.', ar: 'سجّل العطاء — نقداً أو شيكاً أو بطاقة أو تحويلاً. كل إدخال يُنسب لصندوق و(اختياراً) لعضو. استخدم جلسات العدّ لتسوية عطاء الأحد.' }} />
 
 <div class="mb-4 card inline-block px-4 py-3">
   <span class="text-sm text-slate-500">{tr({ en: 'Net total (shown)', ar: 'الإجمالي الصافي' }, $locale)}: </span>
