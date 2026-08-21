@@ -16,6 +16,12 @@
     { v: 'task', en: 'Task', ar: 'مهمة', icon: '✅' },
   ];
   const typeMeta = (v: string) => TYPES.find((x) => x.v === v) ?? TYPES[0];
+  // Care status — settable inline on each card (any → any) and synced on save.
+  const STATUSES = [
+    { v: 'open', en: 'Open', ar: 'مفتوح' },
+    { v: 'in_progress', en: 'In progress', ar: 'قيد التنفيذ' },
+    { v: 'done', en: 'Done', ar: 'منجز' },
+  ];
 
   // WHO can see a care item.
   const SCOPES = [
@@ -99,9 +105,11 @@
       editing = null; await load();
     } catch (err) { error = err instanceof ApiError ? err.message : (err as Error).message; } finally { saving = false; }
   }
+  let savingStatus = $state<number | null>(null);
   async function setStatus(r: any, status: string) {
+    savingStatus = r.id;
     try { await api(`/care/${r.id}`, { method: 'PUT', body: JSON.stringify({ status }) }); await load(); }
-    catch (err) { alert((err as Error).message); }
+    catch (err) { alert((err as Error).message); } finally { savingStatus = null; }
   }
   async function remove(r: any) {
     if (!confirm(tr({ en: 'Delete this care item?', ar: 'حذف عنصر الرعاية؟' }, $locale))) return;
@@ -247,12 +255,10 @@
           </div>
           {#if can('update care')}
             <div class="flex shrink-0 flex-wrap items-center gap-1">
-              {#if r.status !== 'done'}
-                {#if r.status === 'open'}<button class="btn-ghost text-xs" onclick={() => setStatus(r, 'in_progress')}>{tr({ en: 'Start', ar: 'بدء' }, $locale)}</button>{/if}
-                <button class="btn-ghost text-xs text-emerald-700 dark:text-emerald-300" onclick={() => setStatus(r, 'done')}>✓ {tr({ en: 'Done', ar: 'إنجاز' }, $locale)}</button>
-              {:else}
-                <button class="btn-ghost text-xs" onclick={() => setStatus(r, 'open')}>{tr({ en: 'Reopen', ar: 'إعادة فتح' }, $locale)}</button>
-              {/if}
+              <!-- Inline status: switch any → any; saving reloads so tabs stay in sync. -->
+              <select class="input h-8 w-[8.5rem] py-0 text-xs {r.status === 'done' ? 'text-emerald-700 dark:text-emerald-300' : r.status === 'in_progress' ? 'text-amber-700 dark:text-amber-300' : ''}" value={r.status} disabled={savingStatus === r.id} onchange={(e) => setStatus(r, (e.currentTarget as HTMLSelectElement).value)}>
+                {#each STATUSES as st}<option value={st.v}>{tr({ en: st.en, ar: st.ar }, $locale)}</option>{/each}
+              </select>
               {#if can('create message')}<button class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-slate-500 hover:bg-slate-100 hover:text-primary-600 dark:hover:bg-slate-800 dark:hover:text-primary-300" title={tr({ en: 'Share with others — prayer, help or donation', ar: 'مشاركة مع الآخرين — صلاة أو مساعدة أو تبرع' }, $locale)} onclick={() => openShare(r)}>📣 {tr({ en: 'Share', ar: 'مشاركة' }, $locale)}</button>{/if}
               <button class="rounded p-1 text-xs text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" onclick={() => startEdit(r)}>✏️</button>
               {#if can('delete care')}<button class="rounded p-1 text-xs text-slate-400 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-900/30" onclick={() => remove(r)}>🗑️</button>{/if}
