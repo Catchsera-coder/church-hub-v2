@@ -234,45 +234,65 @@
       <span class="text-sm text-slate-600 dark:text-slate-300">🎉 {tr({ en: 'Joined the church', ar: 'تاريخ الانضمام' }, $locale)}</span>
       <input class="input force-ltr" type="date" bind:value={form.joinedOn} />
     </label>
-    <div class="block space-y-1 sm:col-span-2">
-      <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Family', ar: 'العائلة' }, $locale)}</span>
+    <div class="space-y-2 sm:col-span-2">
+      <span class="text-sm font-medium text-slate-700 dark:text-slate-200">👪 {tr({ en: 'Family / Household', ar: 'العائلة / الأسرة' }, $locale)}</span>
+      <p class="text-xs text-slate-400">{tr({ en: 'Group this person into a household — they share an address and appear together on the family page.', ar: 'اجمع هذا الشخص في أسرة — يتشاركون العنوان ويظهرون معاً في صفحة العائلة.' }, $locale)}</p>
+
       {#if showNewFamily}
-        <div class="flex gap-2">
-          <input class="input" bind:value={newFamilyName} placeholder={tr({ en: 'New family name', ar: 'اسم عائلة جديد' }, $locale)} />
-          <button type="button" class="btn-primary shrink-0" onclick={createFamily} disabled={creatingFamily}>{creatingFamily ? '…' : tr({ en: 'Add', ar: 'إضافة' }, $locale)}</button>
-          <button type="button" class="btn-ghost shrink-0" onclick={() => { showNewFamily = false; }}>✕</button>
+        <div class="rounded-xl border border-slate-200 p-3 dark:border-slate-700">
+          <p class="mb-2 text-xs font-medium text-slate-500">{tr({ en: 'Create a new family', ar: 'إنشاء عائلة جديدة' }, $locale)}</p>
+          <div class="flex flex-wrap gap-2">
+            <input class="input min-w-[10rem] flex-1" bind:value={newFamilyName} placeholder={tr({ en: 'Family name (e.g. Ibrahim)', ar: 'اسم العائلة (مثال: إبراهيم)' }, $locale)} onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); createFamily(); } }} />
+            <button type="button" class="btn-primary shrink-0" onclick={createFamily} disabled={creatingFamily || !newFamilyName.trim()}>{creatingFamily ? '…' : tr({ en: 'Create & assign', ar: 'إنشاء وتعيين' }, $locale)}</button>
+            <button type="button" class="btn-ghost shrink-0" onclick={() => { showNewFamily = false; }}>{tr({ en: 'Cancel', ar: 'إلغاء' }, $locale)}</button>
+          </div>
         </div>
       {:else if selectedFamily}
-        <div class="flex items-center gap-2 rounded-md bg-slate-50 px-3 py-2 text-sm dark:bg-slate-800">
-          <span>👪 {tr(selectedFamily.name ?? {}, $locale)}</span>
-          <button type="button" class="ms-auto text-xs text-rose-600 hover:underline" onclick={clearFamily}>{tr({ en: 'Change', ar: 'تغيير' }, $locale)}</button>
+        <div class="rounded-xl border border-slate-200 p-3 dark:border-slate-700">
+          <div class="flex items-center gap-3">
+            <span class="grid h-11 w-11 shrink-0 place-items-center rounded-full text-xl" style="background: color-mix(in srgb, var(--brand) 15%, transparent)">👪</span>
+            <div class="min-w-0 flex-1">
+              <div class="font-medium">{tr(selectedFamily.name ?? {}, $locale)}</div>
+              <div class="text-xs text-slate-400">
+                {#if selectedFamily.city}{selectedFamily.city}{/if}{#if selectedFamily.memberCount != null}{selectedFamily.city ? ' · ' : ''}{selectedFamily.memberCount} {tr({ en: 'members', ar: 'أفراد' }, $locale)}{/if}
+              </div>
+            </div>
+            {#if form.householdId}<a class="shrink-0 text-xs text-primary-700 hover:underline dark:text-primary-300" href="/families/{form.householdId}" target="_blank" rel="noopener">{tr({ en: 'Open →', ar: 'فتح ←' }, $locale)}</a>{/if}
+          </div>
+          <div class="mt-3 flex flex-wrap items-center gap-3 border-t border-slate-100 pt-3 dark:border-slate-800">
+            <label class="flex items-center gap-2 text-sm">
+              <span class="text-slate-500">{tr({ en: 'Role', ar: 'الدور' }, $locale)}</span>
+              <select class="input h-8 w-36 py-0 text-sm" value={roleValue(form.householdRole)} onchange={(e) => (form.householdRole = (e.currentTarget as HTMLSelectElement).value)}>
+                <option value="">{tr({ en: '— none —', ar: '— بدون —' }, $locale)}</option>
+                {#each ROLE_OPTIONS as o}<option value={o.v}>{tr({ en: o.en, ar: o.ar }, $locale)}</option>{/each}
+                {#if roleValue(form.householdRole) && !ROLE_OPTIONS.some((o) => o.v === roleValue(form.householdRole))}<option value={roleValue(form.householdRole)}>{form.householdRole}</option>{/if}
+              </select>
+            </label>
+            <button type="button" class="ms-auto text-xs text-slate-500 hover:underline" onclick={() => { familyQuery = ''; clearFamily(); }}>{tr({ en: 'Change family', ar: 'تغيير العائلة' }, $locale)}</button>
+            <button type="button" class="text-xs text-rose-600 hover:underline" onclick={clearFamily}>{tr({ en: 'Remove', ar: 'إزالة' }, $locale)}</button>
+          </div>
         </div>
       {:else}
         <div class="relative">
-          <div class="flex gap-2">
-            <input class="input" bind:value={familyQuery} oninput={searchFamilies} placeholder={tr({ en: 'Search a family…', ar: 'ابحث عن عائلة…' }, $locale)} />
-            {#if can('create household')}<button type="button" class="btn-ghost shrink-0 whitespace-nowrap" onclick={() => { showNewFamily = true; }}>+ {tr({ en: 'New', ar: 'جديد' }, $locale)}</button>{/if}
-          </div>
+          <input class="input" bind:value={familyQuery} oninput={searchFamilies} placeholder={tr({ en: 'Type a family name to search…', ar: 'اكتب اسم عائلة للبحث…' }, $locale)} />
           {#if familyResults.length}
-            <div class="absolute z-10 mt-1 w-full rounded-lg border border-slate-200 bg-white shadow dark:border-slate-700 dark:bg-slate-900">
+            <div class="absolute z-10 mt-1 w-full overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-900">
               {#each familyResults as f}
-                <button type="button" class="block w-full px-3 py-2 text-start text-sm hover:bg-slate-100 dark:hover:bg-slate-800" onclick={() => pickFamily(f)}>{tr(f.name ?? {}, $locale)}{#if f.city}<span class="text-slate-400"> · {f.city}</span>{/if}</button>
+                <button type="button" class="flex w-full items-center gap-2 px-3 py-2 text-start text-sm hover:bg-slate-100 dark:hover:bg-slate-800" onclick={() => pickFamily(f)}>
+                  <span>👪</span><span class="min-w-0 flex-1 truncate">{tr(f.name ?? {}, $locale)}</span>
+                  <span class="shrink-0 text-xs text-slate-400">{#if f.city}{f.city}{/if}{#if f.memberCount != null}{f.city ? ' · ' : ''}{f.memberCount}{/if}</span>
+                </button>
               {/each}
             </div>
           {/if}
         </div>
+        <div class="flex flex-wrap items-center gap-2 text-xs text-slate-400">
+          <span>{tr({ en: "Can't find them?", ar: 'لا تجدها؟' }, $locale)}</span>
+          {#if can('create household')}<button type="button" class="font-medium hover:underline" style="color: var(--brand)" onclick={() => { newFamilyName = familyQuery.trim(); showNewFamily = true; }}>＋ {tr({ en: 'Create a new family', ar: 'إنشاء عائلة جديدة' }, $locale)}</button><span>·</span>{/if}
+          <span>{tr({ en: 'or leave unassigned', ar: 'أو بدون عائلة' }, $locale)}</span>
+        </div>
       {/if}
     </div>
-    {#if form.householdId}
-      <label class="block space-y-1">
-        <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Role in family', ar: 'الدور في العائلة' }, $locale)}</span>
-        <select class="input" value={roleValue(form.householdRole)} onchange={(e) => (form.householdRole = (e.currentTarget as HTMLSelectElement).value)}>
-          <option value="">{tr({ en: '— none —', ar: '— بدون —' }, $locale)}</option>
-          {#each ROLE_OPTIONS as o}<option value={o.v}>{tr({ en: o.en, ar: o.ar }, $locale)}</option>{/each}
-          {#if roleValue(form.householdRole) && !ROLE_OPTIONS.some((o) => o.v === roleValue(form.householdRole))}<option value={roleValue(form.householdRole)}>{form.householdRole}</option>{/if}
-        </select>
-      </label>
-    {/if}
   </div>
 
   <!-- Optional per-person address (blank → the family's address is used) -->
