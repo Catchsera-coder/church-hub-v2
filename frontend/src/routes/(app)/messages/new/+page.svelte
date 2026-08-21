@@ -44,18 +44,48 @@
     for (const [k, v] of Object.entries(form.ctaLabel)) if (v?.trim()) ctaLabel[k] = fillCustom(v);
     // Only send a CTA on email when both a label and a link are present.
     const hasCta = form.channel === 'email' && Object.keys(ctaLabel).length > 0 && form.ctaUrl.trim();
-    const audience = recipMode === 'people' ? { mode: 'people' as const, personIds: [...selectedIds] } : null;
-    return { ...form, subject, body, ctaLabel: hasCta ? ctaLabel : null, ctaUrl: hasCta ? form.ctaUrl.trim() : null, audience };
+    return { ...form, subject, body, ctaLabel: hasCta ? ctaLabel : null, ctaUrl: hasCta ? form.ctaUrl.trim() : null, audience: currentAudience() };
   }
 
-  // --- Recipients: everyone opted-in, a chosen subset, or a single person/number
-  type RecipMode = 'all' | 'people' | 'one';
+  // --- Recipients: everyone opted-in, ministries/groups, a dynamic segment, a
+  // chosen subset, or a single person/number.
+  type RecipMode = 'all' | 'ministries' | 'segment' | 'people' | 'one';
   let recipMode = $state<RecipMode>('all');
   let peopleList = $state<any[]>([]);
   let peopleSearch = $state('');
   let selectedIds = $state<Set<number>>(new Set());
   let onePersonId = $state<number | null>(null);
   let oneContact = $state('');
+
+  // Ministries & groups targeting (dynamic — resolves to the current roster at send).
+  let allMinistries = $state<any[]>([]);
+  let selectedMinistryIds = $state<Set<number>>(new Set());
+  function toggleMinistry(id: number) { const s = new Set(selectedMinistryIds); if (s.has(id)) s.delete(id); else s.add(id); selectedMinistryIds = s; }
+  onMount(async () => {
+    try { allMinistries = (await api<{ data: any[] }>('/ministries')).data; } catch { /* optional */ }
+  });
+
+  // Segment targeting (dynamic — reuses the Members filters).
+  const MONTHS = [
+    { v: 1, en: 'January', ar: 'يناير' }, { v: 2, en: 'February', ar: 'فبراير' }, { v: 3, en: 'March', ar: 'مارس' },
+    { v: 4, en: 'April', ar: 'أبريل' }, { v: 5, en: 'May', ar: 'مايو' }, { v: 6, en: 'June', ar: 'يونيو' },
+    { v: 7, en: 'July', ar: 'يوليو' }, { v: 8, en: 'August', ar: 'أغسطس' }, { v: 9, en: 'September', ar: 'سبتمبر' },
+    { v: 10, en: 'October', ar: 'أكتوبر' }, { v: 11, en: 'November', ar: 'نوفمبر' }, { v: 12, en: 'December', ar: 'ديسمبر' },
+  ];
+  let seg = $state<Record<string, string>>({ status: '', ageGroup: '', birthdayMonth: '', ministryId: '', inactiveWeeks: '' });
+  const segmentObj = $derived.by(() => {
+    const o: Record<string, string> = {};
+    for (const [k, v] of Object.entries(seg)) if (v !== '') o[k] = v;
+    return o;
+  });
+
+  // The audience spec for the current mode (null = everyone opted-in).
+  function currentAudience(): any {
+    if (recipMode === 'people') return { mode: 'people', personIds: [...selectedIds] };
+    if (recipMode === 'ministries') return { mode: 'ministries', ministryIds: [...selectedMinistryIds] };
+    if (recipMode === 'segment') return { mode: 'segment', segment: segmentObj };
+    return null; // 'all'
+  }
   async function searchPeople() {
     const q = peopleSearch.trim();
     try {
@@ -131,13 +161,22 @@
   let scheduleAt = $state('');
   const MERGE = '{{firstName}} · {{lastName}} · {{fullName}} · {{churchName}} · {{date}}';
 
-  // Live audience count for the chosen channel = active people opted-in with a
-  // matching contact (exactly who a send would reach).
-  let audience = $state<number | null>(null);
+  // Live "will reach N" for the chosen channel + audience: exactly who a send
+  // would reach (active, opted-in, contactable). Recomputes as the audience or
+  // channel changes; debounced so typing filters doesn't spam the server.
+  let reachCount = $state<number | null>(null);
+  let reachTimer: ReturnType<typeof setTimeout>;
   $effect(() => {
     const ch = form.channel;
-    audience = null;
-    api<{ meta: { total: number } }>(`/people?optedIn=${ch}&limit=1`).then((r) => { audience = r.meta.total; }).catch(() => { audience = null; });
+    const mode = recipMode;
+    const aud = currentAudience(); // reads selectedIds / selectedMinistryIds / segmentObj → tracked
+    if (mode === 'one') { reachCount = null; return; }
+    reachCount = null;
+    clearTimeout(reachTimer);
+    reachTimer = setTimeout(() => {
+      api<{ data: { count: number } }>('/messages/audience-count', { method: 'POST', body: JSON.stringify({ channel: ch, audience: aud }) })
+        .then((r) => { reachCount = r.data.count; }).catch(() => { reachCount = null; });
+    }, 250);
   });
 
   // Branded templates (#20b): pick one to prefill subject + body. Header/footer
@@ -238,7 +277,9 @@
   async function sendNow() {
     if (!valid()) return;
     if (recipMode === 'people' && selectedIds.size === 0) { error = tr({ en: 'Select at least one person.', ar: 'اختر شخصاً واحداً على الأقل.' }, $locale); return; }
-    const count = recipMode === 'people' ? selectedIds.size : (audience ?? 'all matching');
+    if (recipMode === 'ministries' && selectedMinistryIds.size === 0) { error = tr({ en: 'Choose at least one ministry or group.', ar: 'اختر خدمة أو مجموعة واحدة على الأقل.' }, $locale); return; }
+    if (reachCount === 0) { error = tr({ en: 'This audience reaches no one on this channel (no opted-in contacts).', ar: 'هذا الجمهور لا يصل لأحد على هذه القناة (لا توجد جهات موافِقة).' }, $locale); return; }
+    const count = reachCount ?? tr({ en: 'all matching', ar: 'كل المطابقين' }, $locale);
     if (!confirm(tr({ en: `Send now to ${count} people?`, ar: `إرسال الآن إلى ${count} شخص؟` }, $locale))) return;
     saving = true; error = '';
     try {
@@ -394,13 +435,51 @@
     <div class="space-y-2">
       <p class="text-sm font-medium">{tr({ en: 'Who receives it', ar: 'من يستلمها' }, $locale)}</p>
       <div class="flex flex-wrap gap-2">
-        {#each [{ v: 'all', l: { en: 'Everyone opted-in', ar: 'كل الموافقين' } }, { v: 'people', l: { en: 'Choose people', ar: 'اختر أشخاصاً' } }, { v: 'one', l: { en: 'One person / number', ar: 'شخص / رقم واحد' } }] as opt}
-          <button type="button" class="rounded-md border px-3 py-1.5 text-sm {recipMode === opt.v ? 'border-transparent text-white' : 'border-slate-300 dark:border-slate-700'}" style={recipMode === opt.v ? 'background: var(--brand)' : ''} onclick={() => { recipMode = opt.v as RecipMode; if (opt.v !== 'all' && !peopleList.length) searchPeople(); }}>{tr(opt.l, $locale)}</button>
+        {#each [{ v: 'all', l: { en: 'Everyone opted-in', ar: 'كل الموافقين' } }, { v: 'ministries', l: { en: 'Ministries & groups', ar: 'الخدمات والمجموعات' } }, { v: 'segment', l: { en: 'Segment (filters)', ar: 'شريحة (تصفية)' } }, { v: 'people', l: { en: 'Choose people', ar: 'اختر أشخاصاً' } }, { v: 'one', l: { en: 'One person / number', ar: 'شخص / رقم واحد' } }] as opt}
+          <button type="button" class="rounded-md border px-3 py-1.5 text-sm {recipMode === opt.v ? 'border-transparent text-white' : 'border-slate-300 dark:border-slate-700'}" style={recipMode === opt.v ? 'background: var(--brand)' : ''} onclick={() => { recipMode = opt.v as RecipMode; if ((opt.v === 'people' || opt.v === 'one') && !peopleList.length) searchPeople(); }}>{tr(opt.l, $locale)}</button>
         {/each}
       </div>
 
+      <!-- Live reach for every audience mode except the ad-hoc single send -->
+      {#if recipMode !== 'one'}
+        <p class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Will reach', ar: 'ستصل إلى' }, $locale)} <b style="color: var(--brand)">{reachCount === null ? '…' : reachCount}</b> {tr({ en: 'people opted-in on this channel.', ar: 'شخص موافق على هذه القناة.' }, $locale)}</p>
+      {/if}
+
       {#if recipMode === 'all'}
-        <p class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Will reach', ar: 'ستصل إلى' }, $locale)} <b style="color: var(--brand)">{audience === null ? '…' : audience}</b> {tr({ en: 'people opted-in on this channel.', ar: 'شخص موافق على هذه القناة.' }, $locale)}</p>
+        <p class="text-xs text-slate-400">{tr({ en: 'Everyone active who opted in to this channel.', ar: 'كل نشط موافق على هذه القناة.' }, $locale)}</p>
+      {:else if recipMode === 'ministries'}
+        <p class="text-xs text-slate-400">{tr({ en: 'Send to the current members of the chosen teams/groups (leaders + volunteers). Great for a recurring send — it always uses the latest roster.', ar: 'أرسل إلى أعضاء الفرق/المجموعات المختارة الحاليين. رائع للإرسال المتكرر — يستخدم دائماً أحدث قائمة.' }, $locale)}</p>
+        <div class="max-h-56 space-y-1 overflow-y-auto rounded-lg border border-slate-200 p-2 dark:border-slate-700">
+          {#each allMinistries as m (m.id)}
+            <label class="flex items-center gap-2 rounded px-2 py-1 text-sm hover:bg-slate-50 dark:hover:bg-slate-800">
+              <input type="checkbox" checked={selectedMinistryIds.has(m.id)} onchange={() => toggleMinistry(m.id)} />
+              <span>{m.kind === 'group' ? '🏡' : '🙌'} {tr(m.name, $locale)}</span>
+              <span class="ms-auto text-xs text-slate-400">{m.memberCount ?? 0} {tr({ en: 'members', ar: 'أعضاء' }, $locale)}</span>
+            </label>
+          {:else}
+            <p class="px-2 py-1 text-xs text-slate-400">{tr({ en: 'No ministries or groups yet.', ar: 'لا توجد خدمات أو مجموعات بعد.' }, $locale)}</p>
+          {/each}
+        </div>
+        {#if selectedMinistryIds.size}<p class="text-xs font-medium" style="color: var(--brand)">{selectedMinistryIds.size} {tr({ en: 'selected', ar: 'محدد' }, $locale)}</p>{/if}
+      {:else if recipMode === 'segment'}
+        <p class="text-xs text-slate-400">{tr({ en: 'Build a live audience from filters — anyone matching is included at send time.', ar: 'ابنِ جمهوراً حياً من عوامل التصفية — يُضمَّن كل مطابق وقت الإرسال.' }, $locale)}</p>
+        <div class="grid gap-2 sm:grid-cols-2">
+          <label class="text-sm"><span class="mb-1 block text-xs text-slate-500">{tr({ en: 'Status', ar: 'الحالة' }, $locale)}</span>
+            <select class="input" bind:value={seg.status}><option value="">{tr({ en: 'Any', ar: 'الكل' }, $locale)}</option><option value="visitor">{tr({ en: 'Visitor', ar: 'زائر' }, $locale)}</option><option value="regular">{tr({ en: 'Regular', ar: 'منتظم' }, $locale)}</option><option value="member">{tr({ en: 'Member', ar: 'عضو' }, $locale)}</option></select>
+          </label>
+          <label class="text-sm"><span class="mb-1 block text-xs text-slate-500">{tr({ en: 'Age group', ar: 'الفئة العمرية' }, $locale)}</span>
+            <select class="input" bind:value={seg.ageGroup}><option value="">{tr({ en: 'Any', ar: 'الكل' }, $locale)}</option><option value="child">{tr({ en: 'Children', ar: 'أطفال' }, $locale)}</option><option value="youth">{tr({ en: 'Youth', ar: 'شباب' }, $locale)}</option><option value="adult">{tr({ en: 'Adults', ar: 'بالغون' }, $locale)}</option></select>
+          </label>
+          <label class="text-sm"><span class="mb-1 block text-xs text-slate-500">🎂 {tr({ en: 'Birthday month', ar: 'شهر الميلاد' }, $locale)}</span>
+            <select class="input" bind:value={seg.birthdayMonth}><option value="">{tr({ en: 'Any', ar: 'الكل' }, $locale)}</option>{#each MONTHS as mo}<option value={mo.v}>{tr({ en: mo.en, ar: mo.ar }, $locale)}</option>{/each}</select>
+          </label>
+          <label class="text-sm"><span class="mb-1 block text-xs text-slate-500">{tr({ en: 'In ministry', ar: 'في خدمة' }, $locale)}</span>
+            <select class="input" bind:value={seg.ministryId}><option value="">{tr({ en: 'Any', ar: 'الكل' }, $locale)}</option>{#each allMinistries as m}<option value={m.id}>{tr(m.name, $locale)}</option>{/each}</select>
+          </label>
+          <label class="text-sm"><span class="mb-1 block text-xs text-slate-500">{tr({ en: 'Not seen in', ar: 'لم يحضر منذ' }, $locale)}</span>
+            <select class="input" bind:value={seg.inactiveWeeks}><option value="">{tr({ en: 'Any', ar: 'الكل' }, $locale)}</option><option value="4">{tr({ en: '4+ weeks', ar: '4+ أسابيع' }, $locale)}</option><option value="8">{tr({ en: '8+ weeks', ar: '8+ أسابيع' }, $locale)}</option><option value="12">{tr({ en: '12+ weeks', ar: '12+ أسبوع' }, $locale)}</option></select>
+          </label>
+        </div>
       {:else if recipMode === 'people'}
         <div class="flex flex-wrap items-center gap-2">
           <input class="input max-w-xs" placeholder={tr({ en: 'Search members…', ar: 'ابحث عن أعضاء…' }, $locale)} bind:value={peopleSearch} oninput={searchPeople} />

@@ -4,6 +4,7 @@ import { messageCampaigns, messageRecipients, people } from '../../db/schema.js'
 import { config } from '../../config.js';
 import { currentOrg } from '../settings/routes.js';
 import { resolveMessaging, sendMessage } from './delivery.js';
+import { resolveAudienceIds } from './audience.js';
 import { buildContext, renderText, brandedEmailHtml, localeName } from './render.js';
 
 /**
@@ -19,9 +20,10 @@ export async function sendCampaignNow(campaignId: number): Promise<{ sent: numbe
 
   const contactCol = c.channel === 'email' ? people.email : people.mobile;
   const optOutCol = c.channel === 'email' ? people.emailOptOut : c.channel === 'whatsapp' ? people.whatsappOptOut : people.smsOptOut;
-  // Audience: 'all' opted-in on the channel, or an explicit person list chosen
-  // in the composer (select-all / groups / unchecked). Null = all (legacy).
-  const targetIds = c.audience?.mode === 'people' ? (c.audience.personIds ?? []) : null;
+  // Audience resolved to concrete ids (null = everyone opted-in). Dynamic modes
+  // (ministries/segment) re-resolve here, so a recurring send always hits the
+  // current roster / segment.
+  const targetIds = await resolveAudienceIds(c.audience);
   const audience = targetIds && targetIds.length === 0 ? [] : await db
     .select({
       id: people.id, contact: contactCol, lang: people.preferredLanguage, unsubToken: people.unsubToken,

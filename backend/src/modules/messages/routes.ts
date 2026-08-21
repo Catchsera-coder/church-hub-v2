@@ -13,6 +13,7 @@ import { resolveAi, draftMessages, type AiChannel } from './ai.js';
 import { resolveMessaging, sendMessage } from './delivery.js';
 import { buildContext, renderText, brandedEmailHtml, localeName } from './render.js';
 import { scheduleZod } from '../scheduling/schedule.js';
+import { audienceZod, countReachable } from './audience.js';
 import { currentOrg } from '../settings/routes.js';
 
 export const messagesRouter = Router();
@@ -33,11 +34,9 @@ const schema = z.object({
   // Optional email call-to-action button: localized label + a link.
   ctaLabel: z.record(z.string()).nullable().optional(),
   ctaUrl: z.string().max(2000).nullable().optional(),
-  // Recipient targeting: 'all' opted-in, or an explicit person list.
-  audience: z.object({
-    mode: z.enum(['all', 'people']),
-    personIds: z.array(z.number().int().positive()).max(10000).optional(),
-  }).nullable().optional(),
+  // Recipient targeting: all opted-in, an explicit person list, ministries/groups
+  // rosters, or a dynamic segment (people filters). See messages/audience.ts.
+  audience: audienceZod.optional(),
   schedule: scheduleZod.nullable().optional(),
 });
 
@@ -86,6 +85,14 @@ messagesRouter.post('/ai-draft', aiLimiter, requirePermission('create message'),
     console.error('[ai-draft] failed:', err instanceof Error ? err.message : err);
     throw badRequest('AI drafting failed. Please try again.');
   }
+}));
+
+// Live "will reach N" for the composer: how many people the chosen audience
+// actually reaches on the channel (active, opted-in, contactable).
+messagesRouter.post('/audience-count', requirePermission('view message'), asyncHandler(async (req, res) => {
+  const b = z.object({ channel: z.enum(['email', 'sms', 'whatsapp']), audience: audienceZod.optional() }).parse(req.body);
+  const count = await countReachable(b.channel, b.audience ?? null);
+  res.json({ data: { count } });
 }));
 
 messagesRouter.post('/', requirePermission('create message'), asyncHandler(async (req, res) => {

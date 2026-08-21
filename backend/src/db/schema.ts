@@ -554,9 +554,19 @@ export const messageCampaigns = pgTable('message_campaigns', {
   // Optional call-to-action button (email): localized label + a link URL.
   ctaLabel: jsonb('cta_label').$type<I18n>(),
   ctaUrl: text('cta_url'),
-  // Who receives it: 'all' opted-in on the channel, or an explicit person list
-  // (select-all / groups / unchecked in the composer). Null = all (legacy).
-  audience: jsonb('audience').$type<{ mode: 'all' | 'people'; personIds?: number[] }>(),
+  // Who receives it, resolved against opted-in people on the channel at SEND time:
+  //  - 'all'        → everyone opted-in (null is the legacy equivalent)
+  //  - 'people'     → an explicit person list (select-all / unchecked in composer)
+  //  - 'ministries' → the current roster of the chosen ministries/groups (dynamic)
+  //  - 'segment'    → people matching saved filters (status/age/birthday/… — dynamic)
+  // Dynamic modes re-resolve each recurring occurrence, so a weekly send to a
+  // ministry always hits its current members.
+  audience: jsonb('audience').$type<{
+    mode: 'all' | 'people' | 'ministries' | 'segment';
+    personIds?: number[];
+    ministryIds?: number[];
+    segment?: Record<string, string | number>;
+  }>(),
   // Recurring schedule (reuses the shared Schedule model). When set, the worker
   // re-sends each due occurrence instead of marking the campaign done.
   schedule: jsonb('schedule').$type<Schedule>(),

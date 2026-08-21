@@ -105,12 +105,17 @@
       </div>
     </div>
 
-    <!-- gentle completeness nudges -->
+    <!-- gentle completeness nudges — click to add the missing field right here -->
     {#if !addr || !familyPhone || stats.total === 0}
-      <div class="mt-4 flex flex-wrap gap-2 text-xs">
+      <div class="mt-4 flex flex-wrap items-center gap-2 text-xs">
         {#if stats.total === 0}<span class="rounded-full bg-amber-50 px-2.5 py-1 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">{tr({ en: 'No members yet', ar: 'لا أفراد بعد' }, $locale)}</span>{/if}
-        {#if !addr}<span class="rounded-full bg-amber-50 px-2.5 py-1 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">{tr({ en: 'Missing address', ar: 'العنوان ناقص' }, $locale)}</span>{/if}
-        {#if !familyPhone}<span class="rounded-full bg-amber-50 px-2.5 py-1 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">{tr({ en: 'No phone on file', ar: 'لا يوجد هاتف' }, $locale)}</span>{/if}
+        {#if can('update household') && (!addr || !familyPhone)}
+          {#if !addr}<button type="button" class="rounded-full bg-amber-50 px-2.5 py-1 text-amber-700 hover:bg-amber-100 dark:bg-amber-900/20 dark:text-amber-300 dark:hover:bg-amber-900/40" onclick={() => (editingFamily = true)}>+ {tr({ en: 'Add address', ar: 'أضف العنوان' }, $locale)}</button>{/if}
+          {#if !familyPhone}<button type="button" class="rounded-full bg-amber-50 px-2.5 py-1 text-amber-700 hover:bg-amber-100 dark:bg-amber-900/20 dark:text-amber-300 dark:hover:bg-amber-900/40" onclick={() => (editingFamily = true)}>+ {tr({ en: 'Add phone', ar: 'أضف الهاتف' }, $locale)}</button>{/if}
+        {:else}
+          {#if !addr}<span class="rounded-full bg-amber-50 px-2.5 py-1 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">{tr({ en: 'Missing address', ar: 'العنوان ناقص' }, $locale)}</span>{/if}
+          {#if !familyPhone}<span class="rounded-full bg-amber-50 px-2.5 py-1 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">{tr({ en: 'No phone on file', ar: 'لا يوجد هاتف' }, $locale)}</span>{/if}
+        {/if}
       </div>
     {/if}
   </div>
