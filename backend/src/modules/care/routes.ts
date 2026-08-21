@@ -139,8 +139,21 @@ careRouter.delete('/:id', requirePermission('delete care'), asyncHandler(async (
   res.status(204).end();
 }));
 
-// Assignable users (staff) for the assignee picker.
+// "Servants" for the assignee + share pickers = active Team members whose role
+// grants Care access ('view care'). Only they can actually open Care, so only
+// they should be assignable/shareable — this keeps the "assign to / share with"
+// lists honest and in sync with who can really see the item. (Admin/Super Admin
+// are included because their '*' grant is expanded to explicit permission rows
+// at seed time, so they carry a real 'view care' row.)
 careRouter.get('/assignees', requirePermission('view care'), asyncHandler(async (_req, res) => {
-  const rows = await db.select({ id: users.id, name: users.name }).from(users).where(eq(users.isActive, true)).orderBy(users.name);
-  res.json({ data: rows });
+  const result = await db.execute(sql`
+    SELECT DISTINCT u.id, u.name
+    FROM ${users} u
+    JOIN user_roles ur ON ur.user_id = u.id
+    JOIN role_permissions rp ON rp.role_id = ur.role_id
+    JOIN permissions p ON p.id = rp.permission_id
+    WHERE u.is_active = true AND p.name = 'view care'
+    ORDER BY u.name
+  `);
+  res.json({ data: result.rows.map((r) => ({ id: Number(r.id), name: r.name })) });
 }));

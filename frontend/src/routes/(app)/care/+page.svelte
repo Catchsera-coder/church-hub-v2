@@ -154,6 +154,7 @@
             <button type="button" class="rounded-md border px-3 py-1.5 text-sm {editing.shareScope === sc.v ? 'border-transparent text-white' : 'border-slate-300 dark:border-slate-700'}" style={editing.shareScope === sc.v ? 'background: var(--brand)' : ''} onclick={() => (editing.shareScope = sc.v)}>{sc.icon} {tr({ en: sc.en, ar: sc.ar }, $locale)}</button>
           {/each}
         </div>
+        <p class="mt-1.5 text-[11px] text-slate-400">{tr({ en: 'Servants are Team members whose role gives Care access — manage them on the', ar: 'الخدام هم أعضاء الفريق الذين يمنحهم دورهم صلاحية الرعاية — تُدار من' }, $locale)} <a href="/team" class="underline hover:text-slate-600 dark:hover:text-slate-300">{tr({ en: 'Team page', ar: 'صفحة الفريق' }, $locale)}</a>.</p>
       </div>
 
       {#if editing.shareScope === 'assignees' && assignees.length}
