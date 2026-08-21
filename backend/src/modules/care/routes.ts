@@ -21,7 +21,12 @@ const schema = z.object({
   subject: z.string().trim().min(1).max(190),
   details: z.string().max(5000).nullable().optional(),
   status: z.enum(['open', 'in_progress', 'done']).default('open'),
-  confidential: z.boolean().default(false),
+  // Smart sharing (see schema.ts). confidential is kept in sync from shareScope.
+  shareScope: z.enum(['private', 'assignees', 'church']).default('assignees'),
+  shareDisclosure: z.enum(['full', 'name', 'anonymous']).default('full'),
+  sharedUserIds: z.array(z.number().int().positive()).max(50).default([]),
+  summary: z.string().trim().max(190).nullable().optional(),
+  confidential: z.boolean().optional(), // legacy; derived from shareScope on write
   assignedToUserId: z.number().int().positive().nullable().optional(),
   dueOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
 });
@@ -33,20 +38,41 @@ const listQuery = z.object({
   personId: z.coerce.number().int().positive().optional(),
 });
 
-// Rows the caller may not fully see (confidential + not admin/assignee/creator)
-// get their details redacted, but still appear so nothing silently disappears.
-function redact<T extends { confidential: boolean; assignedToUserId: number | null; createdByUserId: number | null; details: string | null }>(rows: T[], uid: number, admin: boolean): T[] {
-  return rows.map((r) => {
-    if (r.confidential && !admin && r.assignedToUserId !== uid && r.createdByUserId !== uid) {
-      return { ...r, details: null, _redacted: true } as T;
-    }
-    return r;
-  });
+// Apply the sharing model per viewer. Managers (Admin/Super Admin), the creator,
+// the assignee and explicitly-shared servants always see the full item. Everyone
+// else only sees a 'church'-scoped item, and only at its disclosure level; the
+// real name/details are never sent to them ('anonymous' shows just the summary).
+type VisRow = {
+  confidential: boolean; assignedToUserId: number | null; createdByUserId: number | null;
+  details: string | null; shareScope: string; shareDisclosure: string; sharedUserIds: unknown;
+  summary: string | null; subject: string; personId: number | null;
+  personGiven: unknown; personFamily: unknown;
+};
+function applyVisibility<T extends VisRow>(rows: T[], uid: number, admin: boolean): T[] {
+  const out: T[] = [];
+  for (const r of rows) {
+    const shared = Array.isArray(r.sharedUserIds) ? (r.sharedUserIds as number[]) : [];
+    const privileged = admin || r.createdByUserId === uid || r.assignedToUserId === uid || shared.includes(uid);
+    const scope = r.shareScope || (r.confidential ? 'private' : 'assignees');
+
+    if (!privileged && scope !== 'church') continue; // not shared with this viewer → hide
+    if (privileged) { out.push(r); continue; }        // full view
+
+    // Non-privileged viewer of a church-wide item → honour the disclosure level.
+    const disc = r.shareDisclosure || (r.confidential ? 'name' : 'full');
+    if (disc === 'full') { out.push(r); continue; }
+    if (disc === 'name') { out.push({ ...r, details: null, _disclosure: 'name' } as T); continue; }
+    out.push({ ...r, details: null, personId: null, personGiven: null, personFamily: null,
+      subject: r.summary || r.subject, _disclosure: 'anonymous' } as T);
+  }
+  return out;
 }
 
 const selectCols = {
   id: careItems.id, personId: careItems.personId, type: careItems.type, subject: careItems.subject,
   details: careItems.details, status: careItems.status, confidential: careItems.confidential,
+  shareScope: careItems.shareScope, shareDisclosure: careItems.shareDisclosure,
+  sharedUserIds: careItems.sharedUserIds, summary: careItems.summary,
   assignedToUserId: careItems.assignedToUserId, dueOn: careItems.dueOn, createdByUserId: careItems.createdByUserId,
   closedAt: careItems.closedAt, createdAt: careItems.createdAt,
   personGiven: people.givenName, personFamily: people.familyName,
@@ -66,7 +92,7 @@ careRouter.get('/', requirePermission('view care'), asyncHandler(async (req, res
     .where(filters.length ? and(...filters) : undefined)
     .orderBy(sql`CASE ${careItems.status} WHEN 'done' THEN 1 ELSE 0 END`, desc(careItems.createdAt))
     .limit(500);
-  res.json({ data: redact(rows as never, req.auth!.sub, isAdmin(req)) });
+  res.json({ data: applyVisibility(rows as never, req.auth!.sub, isAdmin(req)) });
 }));
 
 careRouter.get('/counts', requirePermission('view care'), asyncHandler(async (req, res) => {
@@ -83,7 +109,10 @@ careRouter.get('/counts', requirePermission('view care'), asyncHandler(async (re
 careRouter.post('/', requirePermission('create care'), asyncHandler(async (req, res) => {
   const b = schema.parse(req.body);
   const [row] = await db.insert(careItems).values({
-    ...b, dueOn: b.dueOn ?? null, createdByUserId: req.auth!.sub,
+    ...b, dueOn: b.dueOn ?? null,
+    // Keep the legacy confidential flag in sync so older code/badges stay correct.
+    confidential: b.shareScope === 'private',
+    createdByUserId: req.auth!.sub,
   }).returning();
   await logActivity(req, 'created', 'care', row!.id);
   res.status(201).json({ data: row });
@@ -94,6 +123,7 @@ careRouter.put('/:id', requirePermission('update care'), asyncHandler(async (req
   const b = schema.partial().parse(req.body);
   const patch: Record<string, unknown> = { ...b, updatedAt: new Date() };
   if (b.dueOn !== undefined) patch.dueOn = b.dueOn ?? null;
+  if (b.shareScope !== undefined) patch.confidential = b.shareScope === 'private';
   if (b.status !== undefined) patch.closedAt = b.status === 'done' ? new Date() : null;
   const [row] = await db.update(careItems).set(patch).where(eq(careItems.id, id)).returning();
   if (!row) throw notFound();

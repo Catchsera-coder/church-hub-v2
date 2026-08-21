@@ -474,8 +474,23 @@ export const careItems = pgTable('care_items', {
   details: text('details'),
   status: varchar('status', { length: 20 }).notNull().default('open'), // open | in_progress | done
   // Confidential items hide their details from non-admins (only the assignee,
-  // the creator, and Admin/Super Admin see the details).
+  // the creator, and Admin/Super Admin see the details). Legacy quick-flag kept
+  // for older rows; new items use shareScope/shareDisclosure below.
   confidential: boolean('confidential').notNull().default(false),
+  // --- Smart sharing --------------------------------------------------------
+  // WHO can see it: 'private' = creator + Admin/Super Admin only; 'assignees' =
+  // creator + assignee + the named co-servants in sharedUserIds (+ admins);
+  // 'church' = every staff/servant with care access (+ admins).
+  shareScope: varchar('share_scope', { length: 20 }).notNull().default('assignees'),
+  // HOW MUCH the shared audience sees (creator/assignee/admins always see all):
+  // 'full' = name + details; 'name' = name + type only; 'anonymous' = no name and
+  // no details, just the type + the safe `summary` line (the real name is still
+  // kept and visible to the creator, assignee and Admin/Super Admin).
+  shareDisclosure: varchar('share_disclosure', { length: 20 }).notNull().default('full'),
+  // Extra servants this item is shared with (user ids) for the 'assignees' scope.
+  sharedUserIds: jsonb('shared_user_ids').$type<number[]>().notNull().default([]),
+  // A name-free one-line summary shown to the audience when disclosure='anonymous'.
+  summary: varchar('summary', { length: 190 }),
   assignedToUserId: integer('assigned_to_user_id').references(() => users.id, { onDelete: 'set null' }),
   dueOn: date('due_on'),
   createdByUserId: integer('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
