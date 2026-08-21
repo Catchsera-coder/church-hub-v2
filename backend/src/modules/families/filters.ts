@@ -10,6 +10,10 @@ export const familyListQuery = z.object({
   hasChildren: z.enum(['true']).optional(),
   missingContact: z.enum(['true']).optional(),
   minSize: z.coerce.number().int().min(1).optional(),
+  // Empty (0-member) households are hidden by default so a family left behind when
+  // its last member moves out doesn't clutter the list. 'only' = just empty ones,
+  // 'include' = show all.
+  empty: z.enum(['only', 'include']).optional(),
 });
 export type FamilyQuery = z.infer<typeof familyListQuery>;
 
@@ -38,6 +42,9 @@ export const membersPreviewExpr = sql<string>`(SELECT string_agg(nm, ', ') FROM 
 
 export function familyFilters(q: FamilyQuery): SQL[] {
   const filters: SQL[] = [isNull(households.deletedAt)];
+  // Hide empty households by default (see `empty` above).
+  if (q.empty === 'only') filters.push(sql`${memberCountExpr} = 0`);
+  else if (q.empty !== 'include') filters.push(sql`${memberCountExpr} > 0`);
   if (q.search) {
     const like = `%${q.search}%`;
     filters.push(sql`(${households.name}->>'en' ILIKE ${like} OR ${households.name}->>'ar' ILIKE ${like} OR ${households.city} ILIKE ${like})`);

@@ -38,10 +38,15 @@
       const body = Object.fromEntries(
         Object.entries(form).map(([k, v]) => [k, k === 'name' ? v : (v || null)]),
       );
-      if (id) await api(`/families/${id}`, { method: 'PUT', body: JSON.stringify(body) });
-      else await api('/families', { method: 'POST', body: JSON.stringify(body) });
-      if (redirect) await goto('/families');
-      else onsaved?.();
+      if (id) {
+        await api(`/families/${id}`, { method: 'PUT', body: JSON.stringify(body) });
+        if (redirect) await goto('/families'); else onsaved?.();
+      } else {
+        // A brand-new family has no members yet (and is hidden from the list until
+        // it does) — land on its own page so members can be added right away.
+        const { data } = await api<{ data: { id: number } }>('/families', { method: 'POST', body: JSON.stringify(body) });
+        if (redirect) await goto(`/families/${data.id}`); else onsaved?.();
+      }
     } catch (err) { error = (err as Error).message; } finally { saving = false; }
   }
 </script>

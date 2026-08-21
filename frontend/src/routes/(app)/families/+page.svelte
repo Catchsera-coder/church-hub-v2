@@ -12,6 +12,7 @@
   let rows = $state<any[]>([]);
   let loading = $state(true);
   let search = $state('');
+  let showEmpty = $state(false);
   let timer: ReturnType<typeof setTimeout>;
 
   const EMPTY = { city: '', hasChildren: '', minSize: '', missingContact: '' };
@@ -30,6 +31,7 @@
     try {
       const q = new URLSearchParams({ limit: '50' });
       if (search.trim()) q.set('search', search.trim());
+      if (showEmpty) q.set('empty', 'include');
       for (const [k, v] of Object.entries(f)) if (v !== '') q.set(k, String(v));
       rows = (await api<{ data: any[] }>(`/families?${q}`)).data;
     } finally {
@@ -49,7 +51,12 @@
   {/snippet}
 </PageHeader>
 <PageHint id="families-list" text={{ en: 'A family groups people in one household. The Members count and Phone are pulled from the people linked to it. Click a family to see everyone and edit members without leaving the page.', ar: 'العائلة تجمع أشخاصاً في منزل واحد. يُحسب عدد الأفراد والهاتف من الأشخاص المرتبطين بها. اضغط على عائلة لرؤية الجميع وتعديل الأفراد.' }} />
-<div class="mb-3"><input class="input max-w-xs" placeholder={$t('common.search')} bind:value={search} oninput={onSearch} /></div>
+<div class="mb-3 flex flex-wrap items-center gap-3">
+  <input class="input max-w-xs" placeholder={$t('common.search')} bind:value={search} oninput={onSearch} />
+  <label class="flex items-center gap-2 text-sm text-slate-500">
+    <input type="checkbox" bind:checked={showEmpty} onchange={load} /> {tr({ en: 'Show empty families', ar: 'إظهار العائلات الفارغة' }, $locale)}
+  </label>
+</div>
 
 <FilterBar active={activeCount} onclear={clearFilters}>
   <label class="text-sm">

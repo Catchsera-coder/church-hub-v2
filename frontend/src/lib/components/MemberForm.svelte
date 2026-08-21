@@ -249,7 +249,11 @@
       <span class="text-sm text-slate-600 dark:text-slate-300">🎉 {tr({ en: 'Joined the church', ar: 'تاريخ الانضمام' }, $locale)}</span>
       <input class="input force-ltr" type="date" bind:value={form.joinedOn} />
     </label>
-    <div class="space-y-2 sm:col-span-2">
+  </div>
+
+  <!-- Family / Household — its own dedicated card so it's easy to find and change. -->
+  <div class="card p-6">
+    <div class="space-y-2">
       <div class="flex items-center gap-2">
         <span class="text-sm font-medium text-slate-700 dark:text-slate-200">👪 {tr({ en: 'Family / Household', ar: 'العائلة / الأسرة' }, $locale)}</span>
         {#if familySaved}<span class="text-xs font-medium text-emerald-600 dark:text-emerald-400">✓ {tr({ en: 'Saved', ar: 'تم الحفظ' }, $locale)}</span>{/if}
