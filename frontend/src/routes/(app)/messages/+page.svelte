@@ -6,6 +6,7 @@
   import { can } from '$lib/stores/auth.js';
   import DataTable from '$lib/components/DataTable.svelte';
   import PageHeader from '$lib/components/PageHeader.svelte';
+  import PageHint from '$lib/components/PageHint.svelte';
 
   let rows = $state<any[]>([]);
   let loading = $state(true);
@@ -38,6 +39,7 @@
     {#if can('create message')}<a href="/messages/new" class="btn-primary">{$t('common.new')}</a>{/if}
   {/snippet}
 </PageHeader>
+<PageHint id="messages-list" text={{ en: 'Send email, SMS or WhatsApp to the whole church or a chosen audience. Use "New" to compose — preview on every channel, send now or schedule, and send to one person or a whole group.', ar: 'أرسل بريداً أو رسائل نصية أو واتساب للكنيسة كلها أو لجمهور محدّد. استخدم «جديد» للإنشاء — عاين على كل قناة، أرسل الآن أو جدول، لشخص أو لمجموعة.' }} />
 
 <DataTable {loading} {rows} headers={[tr({ en: 'Name', ar: 'الاسم' }, $locale), tr({ en: 'Channel', ar: 'القناة' }, $locale), tr({ en: 'Status', ar: 'الحالة' }, $locale), tr({ en: 'Recipients', ar: 'المستلمون' }, $locale), tr({ en: 'Sent', ar: 'أُرسلت' }, $locale), '']}>
   {#snippet row(m)}

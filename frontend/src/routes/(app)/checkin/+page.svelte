@@ -4,6 +4,7 @@
   import { t, locale, tr } from '$lib/i18n.js';
   import { can } from '$lib/stores/auth.js';
   import PageHeader from '$lib/components/PageHeader.svelte';
+  import PageHint from '$lib/components/PageHint.svelte';
   import GatheringQr from '$lib/components/GatheringQr.svelte';
 
   let events = $state<any[]>([]);
@@ -124,6 +125,7 @@
     {/if}
   {/snippet}
 </PageHeader>
+<PageHint id="checkin" text={{ en: 'Pick a gathering, then project or print its QR. People scan it to find their name and check in their whole family. New people can add themselves — they land in your review queue.', ar: 'اختر اجتماعاً ثم اعرض أو اطبع رمز QR الخاص به. يمسحه الناس ليجدوا أسماءهم ويسجّلوا حضور عائلاتهم. يمكن للجدد إضافة أنفسهم — ويظهرون في قائمة المراجعة.' }} />
 
 <!-- Gathering picker + inline create -->
 <div class="mb-5 max-w-md space-y-3">

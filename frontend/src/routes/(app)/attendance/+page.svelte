@@ -6,6 +6,7 @@
   import { can, hasRole } from '$lib/stores/auth.js';
   import DataTable from '$lib/components/DataTable.svelte';
   import PageHeader from '$lib/components/PageHeader.svelte';
+  import PageHint from '$lib/components/PageHint.svelte';
   import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 
   let rows = $state<any[]>([]);
@@ -54,6 +55,7 @@
     {#if can('create attendance')}<a href="/attendance/new" class="btn-primary">{$t('common.new')}</a>{/if}
   {/snippet}
 </PageHeader>
+<PageHint id="attendance-list" text={{ en: 'Each row is a gathering (a service, meeting or class). Open one to record who attended, or share its QR so people can self check-in. Create a new gathering with the button above.', ar: 'كل صف هو اجتماع (خدمة أو درس). افتح أحدها لتسجيل الحضور، أو شارك رمز QR ليسجّل الناس حضورهم بأنفسهم. أنشئ اجتماعاً جديداً بالزر أعلاه.' }} />
 
 <div class="mb-4 flex flex-wrap items-center gap-3">
   <input class="input max-w-xs" placeholder={tr({ en: 'Search attendance…', ar: 'بحث عن الحضور…' }, $locale)} bind:value={search} />

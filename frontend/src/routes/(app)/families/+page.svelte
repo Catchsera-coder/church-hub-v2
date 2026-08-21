@@ -7,6 +7,7 @@
   import PageHeader from '$lib/components/PageHeader.svelte';
   import FilterBar from '$lib/components/FilterBar.svelte';
   import ExportMenu from '$lib/components/ExportMenu.svelte';
+  import PageHint from '$lib/components/PageHint.svelte';
 
   let rows = $state<any[]>([]);
   let loading = $state(true);
@@ -47,6 +48,7 @@
     {#if can('create household')}<a href="/families/new" class="btn-primary">{$t('common.new')}</a>{/if}
   {/snippet}
 </PageHeader>
+<PageHint id="families-list" text={{ en: 'A family groups people in one household. The Members count and Phone are pulled from the people linked to it. Click a family to see everyone and edit members without leaving the page.', ar: 'العائلة تجمع أشخاصاً في منزل واحد. يُحسب عدد الأفراد والهاتف من الأشخاص المرتبطين بها. اضغط على عائلة لرؤية الجميع وتعديل الأفراد.' }} />
 <div class="mb-3"><input class="input max-w-xs" placeholder={$t('common.search')} bind:value={search} oninput={onSearch} /></div>
 
 <FilterBar active={activeCount} onclear={clearFilters}>

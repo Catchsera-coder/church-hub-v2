@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { api } from '$lib/api.js';
   import { t, locale, tr } from '$lib/i18n.js';
+  import PageHint from '$lib/components/PageHint.svelte';
 
   interface ServiceCount { name: Record<string, string> | null; count: number }
   interface Stats {
@@ -52,7 +53,8 @@
   const money = (cents: number) => new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(cents / 100);
 </script>
 
-<h1 class="mb-6 text-2xl font-semibold">{$t('nav.dashboard')}</h1>
+<h1 class="mb-4 text-2xl font-semibold">{$t('nav.dashboard')}</h1>
+<PageHint id="dashboard" text={{ en: 'A snapshot of your church — members, families, attendance, birthdays and more. Choose which cards appear from Settings → Dashboard. Tips like this can be turned off in Settings.', ar: 'لمحة عن كنيستك — الأعضاء والعائلات والحضور وأعياد الميلاد. اختر البطاقات الظاهرة من الإعدادات ← لوحة المعلومات. يمكن إيقاف هذه التلميحات من الإعدادات.' }} />
 
 {#if stats?.liveGathering}
   {@const g = stats.liveGathering}

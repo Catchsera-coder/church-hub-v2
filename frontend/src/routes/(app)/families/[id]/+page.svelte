@@ -6,6 +6,7 @@
   import { t, tr, locale } from '$lib/i18n.js';
   import { can } from '$lib/stores/auth.js';
   import PageHeader from '$lib/components/PageHeader.svelte';
+  import PageHint from '$lib/components/PageHint.svelte';
   import FamilyForm from '$lib/components/FamilyForm.svelte';
   import FamilyMembers from '$lib/components/FamilyMembers.svelte';
 
@@ -70,6 +71,8 @@
     {/if}
   {/snippet}
 </PageHeader>
+
+<PageHint id="family-detail" text={{ en: 'Edit any family member right here — tap the ✏️ on their card. Add members by searching existing people or quick-adding new ones. "Edit details" (top right) changes the family address & phone.', ar: 'عدّل أي فرد من العائلة هنا — اضغط ✏️ على بطاقته. أضف أفراداً بالبحث عن أشخاص موجودين أو إضافة جدد. «تعديل التفاصيل» يغيّر عنوان وهاتف العائلة.' }} />
 
 {#if loading}
   <p class="text-slate-400">{$t('common.loading')}</p>

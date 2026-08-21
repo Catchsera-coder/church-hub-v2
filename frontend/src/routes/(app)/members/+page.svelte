@@ -6,6 +6,7 @@
   import { can } from '$lib/stores/auth.js';
   import FilterBar from '$lib/components/FilterBar.svelte';
   import ExportMenu from '$lib/components/ExportMenu.svelte';
+  import PageHint from '$lib/components/PageHint.svelte';
 
   interface Person {
     id: number;
@@ -95,6 +96,8 @@
     try { ministries = (await api<{ data: any[] }>('/ministries')).data; } catch { /* optional */ }
   });
 </script>
+
+<PageHint id="members-list" text={{ en: 'Search or use Filters (birthday month, age group, ministry, missing contact…) to narrow the list, then Export the exact view to CSV, Excel or PDF. Click a name to open and edit their full profile.', ar: 'ابحث أو استخدم عوامل التصفية (شهر الميلاد، الفئة العمرية، الخدمة…) لتضييق القائمة، ثم صدّر العرض إلى CSV أو Excel أو PDF. اضغط على اسم لفتح ملفه.' }} />
 
 <div class="mb-6 flex items-center justify-between gap-3">
   <h1 class="text-2xl font-semibold">{$t('nav.members')}</h1>

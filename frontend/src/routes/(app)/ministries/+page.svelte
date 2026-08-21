@@ -4,6 +4,7 @@
   import { t, locale, tr } from '$lib/i18n.js';
   import { can } from '$lib/stores/auth.js';
   import PageHeader from '$lib/components/PageHeader.svelte';
+  import PageHint from '$lib/components/PageHint.svelte';
 
   let all = $state<any[]>([]);
   let loading = $state(true);
@@ -68,6 +69,8 @@
     {#if canCreate}<a href="/ministries/new" class="btn-primary">{$t('common.new')}</a>{/if}
   {/snippet}
 </PageHeader>
+
+<PageHint id="ministries-list" text={{ en: 'Ministries are serving teams (worship, ushers, media…). Small groups are home/cell groups. Open any one to manage its team, roles, serving rota and sign-up link.', ar: 'الخدمات هي فرق للخدمة (تسبيح، استقبال، إعلام…). المجموعات الصغيرة هي مجموعات البيوت. افتح أياً منها لإدارة الفريق والأدوار وجدول الخدمة ورابط التسجيل.' }} />
 
 <!-- Ministry / Group tabs -->
 <div class="mb-4 inline-flex rounded-lg border border-slate-200 p-1 text-sm dark:border-slate-700">

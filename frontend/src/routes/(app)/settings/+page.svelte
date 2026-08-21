@@ -4,6 +4,7 @@
   import { t, locale, tr, LOCALES, arabicEnabled } from '$lib/i18n.js';
   import { hasRole } from '$lib/stores/auth.js';
   import { theme, fontScale, boldText } from '$lib/stores/appearance.js';
+  import { pageTips, resetHints } from '$lib/stores/prefs.js';
   import { applyBrandColor } from '$lib/stores/brand.js';
   import PageHeader from '$lib/components/PageHeader.svelte';
 
@@ -270,6 +271,16 @@
         <input type="checkbox" checked={$boldText} onchange={(e) => boldText.set((e.currentTarget as HTMLInputElement).checked)} />
         {tr({ en: 'Bold text', ar: 'خط عريض' }, $locale)}
       </label>
+
+      <!-- Page tips (the little "how to use this page" hints) -->
+      <div class="border-t border-slate-100 pt-3 dark:border-slate-800">
+        <label class="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={$pageTips === 'on'} onchange={(e) => pageTips.set((e.currentTarget as HTMLInputElement).checked ? 'on' : 'off')} />
+          💡 {tr({ en: 'Show page tips', ar: 'إظهار تلميحات الصفحات' }, $locale)}
+        </label>
+        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">{tr({ en: 'The short "how to use this" banners at the top of each page. Turn off to hide them everywhere.', ar: 'اللافتات القصيرة «كيفية الاستخدام» أعلى كل صفحة. أوقفها لإخفائها في كل مكان.' }, $locale)}</p>
+        <button type="button" class="mt-2 text-xs hover:underline" style="color: var(--brand)" onclick={resetHints}>{tr({ en: 'Reset dismissed tips', ar: 'إعادة إظهار التلميحات المُخفاة' }, $locale)}</button>
+      </div>
     </div>
 
     <div class="card space-y-3 p-6">

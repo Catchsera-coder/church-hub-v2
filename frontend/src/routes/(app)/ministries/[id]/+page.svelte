@@ -8,6 +8,7 @@
   import { can } from '$lib/stores/auth.js';
   import { resolveStreamLink } from '$lib/stream.js';
   import PageHeader from '$lib/components/PageHeader.svelte';
+  import PageHint from '$lib/components/PageHint.svelte';
   import MinistryForm from '$lib/components/MinistryForm.svelte';
   import MinistryRoster from '$lib/components/MinistryRoster.svelte';
   import ServingRota from '$lib/components/ServingRota.svelte';
@@ -54,6 +55,8 @@
     {/if}
   {/snippet}
 </PageHeader>
+
+<PageHint id="ministry-detail" text={{ en: 'Add people to the team and give each a role (leader, coordinator, volunteer). Use the Serving rota to schedule who serves on each date and send reminders. Turn on public sign-up to share a join link.', ar: 'أضف أشخاصاً للفريق وحدّد دور كل منهم. استخدم جدول الخدمة لتحديد من يخدم في كل تاريخ وإرسال التذكيرات. فعّل التسجيل العام لمشاركة رابط الانضمام.' }} />
 
 {#if loading}
   <p class="text-slate-400">{$t('common.loading')}</p>
