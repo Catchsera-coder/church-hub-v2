@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { goto } from '$app/navigation';
   import { api, ApiError } from '$lib/api.js';
   import { t, locale, tr, displayName } from '$lib/i18n.js';
   import { nameOrder } from '$lib/stores/prefs.js';
@@ -108,6 +109,19 @@
     catch (err) { alert((err as Error).message); }
   }
   const assigneeName = (id: number | null) => assignees.find((a) => a.id === id)?.name ?? null;
+
+  // Broadcast a case to the WHOLE congregation — a prayer request, a call for
+  // help/volunteers, a donation appeal, etc. This is a separate thing from the
+  // servant visibility above (who on the team sees it in the hub): it composes an
+  // outbound SMS/email/WhatsApp to all members. Privacy-safe by default — it seeds
+  // the message from the anonymous summary when one is set, and never auto-fills
+  // the person's name or the private details; the admin edits and sends in the
+  // composer (which shows exactly how many members it will reach).
+  function broadcast(r: any) {
+    const text = (r.summary || '').trim() || r.subject || '';
+    const params = new URLSearchParams({ audience: 'all', channel: 'sms', subject: r.subject || text, body: text });
+    goto(`/messages/new?${params.toString()}`);
+  }
 </script>
 
 <PageHeader title={tr({ en: 'Pastoral Care', ar: 'الرعاية الرعوية' }, $locale)}>
@@ -190,6 +204,10 @@
         <span>💡</span>
         <span>{tr({ en: scopeMeta(editing.shareScope).dEn, ar: scopeMeta(editing.shareScope).dAr }, $locale)}{#if editing.shareScope === 'church'}{' '}{tr({ en: discMeta(editing.shareDisclosure).dEn, ar: discMeta(editing.shareDisclosure).dAr }, $locale)}{/if}{' '}{tr({ en: 'Admins always see the full item.', ar: 'يرى المدراء العنصر كاملاً دائماً.' }, $locale)}</span>
       </p>
+      <p class="flex items-start gap-1.5 text-[11px] text-slate-400">
+        <span>📣</span>
+        <span>{tr({ en: 'This is who on your team sees the case in the hub. To ask the whole congregation — a prayer, a call for help, or a donation — use the 📣 button on the item after saving; it composes an SMS/email/WhatsApp to all members.', ar: 'هذا يحدد من في فريقك يرى الحالة داخل النظام. لتطلب من كل المصلين — صلاة أو مساعدة أو تبرع — استخدم زر 📣 على العنصر بعد الحفظ؛ يُنشئ رسالة SMS/بريد/واتساب لكل الأعضاء.' }, $locale)}</span>
+      </p>
     </div>
 
     <div class="flex gap-2"><button class="btn-primary" onclick={save} disabled={saving}>{saving ? $t('common.loading') : $t('common.save')}</button><button class="btn-ghost" onclick={() => (editing = null)}>{tr({ en: 'Cancel', ar: 'إلغاء' }, $locale)}</button></div>
@@ -241,6 +259,7 @@
               {:else}
                 <button class="btn-ghost text-xs" onclick={() => setStatus(r, 'open')}>{tr({ en: 'Reopen', ar: 'إعادة فتح' }, $locale)}</button>
               {/if}
+              {#if can('create message')}<button class="rounded p-1 text-xs text-slate-400 hover:bg-slate-100 hover:text-primary-600 dark:hover:bg-slate-800 dark:hover:text-primary-300" title={tr({ en: 'Share with the church — prayer, help or donation', ar: 'مشاركة مع الكنيسة — صلاة أو مساعدة أو تبرع' }, $locale)} onclick={() => broadcast(r)}>📣</button>{/if}
               <button class="rounded p-1 text-xs text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" onclick={() => startEdit(r)}>✏️</button>
               {#if can('delete care')}<button class="rounded p-1 text-xs text-slate-400 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-900/30" onclick={() => remove(r)}>🗑️</button>{/if}
             </div>

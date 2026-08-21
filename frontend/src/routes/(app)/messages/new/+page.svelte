@@ -195,12 +195,24 @@
   onMount(async () => {
     try { ministries = (await api<{ data: any[] }>('/ministries')).data.filter((m) => resolveStreamLink(m.streaming)); } catch { /* optional */ }
   });
-  // Pre-select recipients from a ?people=1,2,3 deep link (e.g. "Message this family").
+  // Deep-link prefill: ?people=1,2,3 pre-selects recipients ("Message this
+  // family"); ?audience=all + ?channel + ?subject + ?body pre-fills a broadcast
+  // ("Share a care item with the church"). Everything stays editable and nothing
+  // sends until the user clicks send in the composer.
   onMount(() => {
-    const p = get(page).url.searchParams.get('people');
-    if (!p) return;
-    const ids = p.split(',').map(Number).filter((n) => Number.isFinite(n) && n > 0);
-    if (ids.length) { recipMode = 'people'; selectedIds = new Set(ids); searchPeople(); }
+    const sp = get(page).url.searchParams;
+    const p = sp.get('people');
+    if (p) {
+      const ids = p.split(',').map(Number).filter((n) => Number.isFinite(n) && n > 0);
+      if (ids.length) { recipMode = 'people'; selectedIds = new Set(ids); searchPeople(); }
+    }
+    if (sp.get('audience') === 'all') recipMode = 'all';
+    const ch = sp.get('channel');
+    if (ch === 'email' || ch === 'sms' || ch === 'whatsapp') form.channel = ch;
+    const subj = sp.get('subject');
+    if (subj) form.subject = { ...form.subject, en: subj };
+    const bodyText = sp.get('body');
+    if (bodyText) form.body = { ...form.body, en: bodyText };
   });
 
   function insertStreamLink() {

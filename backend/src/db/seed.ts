@@ -14,6 +14,10 @@ const ROLE_MATRIX: Record<string, string[] | '*'> = {
   Finance: ['view contribution', 'create contribution', 'update contribution', 'view fund', 'create fund', 'update fund', 'view batch', 'create batch', 'update batch', 'view person'],
   Staff: ['view person', 'create person', 'update person', 'view household', 'create household', 'update household', 'view attendance', 'create attendance', 'view ministry', 'view care', 'create care', 'update care'],
   Volunteer: ['view person', 'view attendance', 'create attendance'],
+  // Pastoral-care volunteers: they see ONLY the Care module (prayer/care items
+  // assigned or shared to them) and nothing else — no member directory, giving,
+  // etc. Care access is what makes them eligible as care "servants".
+  Servant: ['view care', 'create care', 'update care'],
 };
 
 async function seed() {
