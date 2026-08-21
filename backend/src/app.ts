@@ -32,6 +32,8 @@ import { geoRouter } from './modules/geo/routes.js';
 import { mediaRouter, publicMediaRouter } from './modules/media/routes.js';
 import { publicConsentRouter } from './modules/consent/public.routes.js';
 import { publicMinistriesRouter } from './modules/ministries/public.routes.js';
+import { publicInboundRouter } from './modules/messages/inbound.routes.js';
+import { careRouter } from './modules/care/routes.js';
 
 export function createApp() {
   const app = express();
@@ -59,6 +61,9 @@ export function createApp() {
   app.use('/api/public/unsubscribe', publicConsentRouter);
   app.use('/api/public/ministries', rateLimit({ windowMs: 60_000, max: 30 }));
   app.use('/api/public/ministries', publicMinistriesRouter);
+  // Inbound SMS webhook (Twilio) posts form-encoded, not JSON.
+  app.use('/api/public/sms', rateLimit({ windowMs: 60_000, max: 60 }));
+  app.use('/api/public/sms', express.urlencoded({ extended: false }), publicInboundRouter);
 
   app.use('/api/auth', authRouter);
   app.use('/api/settings', settingsRouter);
@@ -74,6 +79,7 @@ export function createApp() {
   app.use('/api/import', importRouter);
   app.use('/api/analytics', analyticsRouter);
   app.use('/api/geo', geoRouter);
+  app.use('/api/care', careRouter);
   app.use('/api/media', mediaRouter);
   app.use('/api/funds', fundsRouter);
   app.use('/api/contributions', contributionsRouter);

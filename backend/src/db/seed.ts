@@ -5,14 +5,14 @@ import { hashPassword } from '../auth/password.js';
 import { config } from '../config.js';
 import { DEFAULT_FORM_FIELDS } from '../modules/checkin/forms.routes.js';
 
-const RESOURCES = ['person', 'household', 'ministry', 'attendance', 'contribution', 'batch', 'fund', 'sermon', 'event', 'message', 'user'];
+const RESOURCES = ['person', 'household', 'ministry', 'attendance', 'contribution', 'batch', 'fund', 'sermon', 'event', 'message', 'user', 'care'];
 const ACTIONS = ['view', 'create', 'update', 'delete'];
 
 const ROLE_MATRIX: Record<string, string[] | '*'> = {
   'Super Admin': '*', // bypasses checks in code; kept here for completeness
   Admin: '*',
   Finance: ['view contribution', 'create contribution', 'update contribution', 'view fund', 'create fund', 'update fund', 'view batch', 'create batch', 'update batch', 'view person'],
-  Staff: ['view person', 'create person', 'update person', 'view household', 'create household', 'update household', 'view attendance', 'create attendance', 'view ministry'],
+  Staff: ['view person', 'create person', 'update person', 'view household', 'create household', 'update household', 'view attendance', 'create attendance', 'view ministry', 'view care', 'create care', 'update care'],
   Volunteer: ['view person', 'view attendance', 'create attendance'],
 };
 

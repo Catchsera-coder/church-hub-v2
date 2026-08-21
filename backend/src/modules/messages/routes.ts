@@ -3,7 +3,7 @@ import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { db } from '../../db/index.js';
-import { messageCampaigns, messageRecipients, people } from '../../db/schema.js';
+import { messageCampaigns, messageRecipients, people, smsMessages } from '../../db/schema.js';
 import { asyncHandler } from '../../http/asyncHandler.js';
 import { authenticate, requirePermission } from '../../middleware/auth.js';
 import { badRequest, notFound } from '../../http/errors.js';
@@ -85,6 +85,37 @@ messagesRouter.post('/ai-draft', aiLimiter, requirePermission('create message'),
     console.error('[ai-draft] failed:', err instanceof Error ? err.message : err);
     throw badRequest('AI drafting failed. Please try again.');
   }
+}));
+
+// --- Two-way SMS inbox: inbound texts captured by the provider webhook -------
+messagesRouter.get('/inbox', requirePermission('view message'), asyncHandler(async (req, res) => {
+  const onlyOpen = req.query.handled === 'false';
+  const rows = await db
+    .select({
+      id: smsMessages.id, personId: smsMessages.personId, fromNumber: smsMessages.fromNumber,
+      body: smsMessages.body, receivedAt: smsMessages.receivedAt, handled: smsMessages.handled,
+      givenName: people.givenName, familyName: people.familyName,
+    })
+    .from(smsMessages)
+    .leftJoin(people, eq(people.id, smsMessages.personId))
+    .where(and(eq(smsMessages.direction, 'inbound'), onlyOpen ? eq(smsMessages.handled, false) : undefined))
+    .orderBy(desc(smsMessages.receivedAt))
+    .limit(200);
+  res.json({ data: rows });
+}));
+
+messagesRouter.get('/inbox/count', requirePermission('view message'), asyncHandler(async (_req, res) => {
+  const [{ count }] = await db.select({ count: sql<number>`count(*)::int` })
+    .from(smsMessages).where(and(eq(smsMessages.direction, 'inbound'), eq(smsMessages.handled, false)));
+  res.json({ data: { count } });
+}));
+
+messagesRouter.put('/inbox/:id', requirePermission('update message'), asyncHandler(async (req, res) => {
+  const id = Number(req.params.id);
+  const { handled } = z.object({ handled: z.boolean() }).parse(req.body);
+  const [row] = await db.update(smsMessages).set({ handled }).where(eq(smsMessages.id, id)).returning();
+  if (!row) throw notFound();
+  res.json({ data: row });
 }));
 
 // Live "will reach N" for the composer: how many people the chosen audience

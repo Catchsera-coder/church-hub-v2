@@ -1,7 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { api } from '$lib/api.js';
-  import { t, locale, tr } from '$lib/i18n.js';
+  import { t, locale, tr, displayName } from '$lib/i18n.js';
+  import { nameOrder } from '$lib/stores/prefs.js';
+  import { can } from '$lib/stores/auth.js';
   import PageHint from '$lib/components/PageHint.svelte';
 
   interface ServiceCount { name: Record<string, string> | null; count: number }
@@ -51,10 +53,45 @@
   });
 
   const money = (cents: number) => new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(cents / 100);
+
+  // Pastoral care + clearance-expiry cards (independent of the toggleable widgets).
+  let care = $state<{ open: number; mine: number; overdue: number } | null>(null);
+  let expiring = $state<any[]>([]);
+  onMount(async () => {
+    if (can('view care')) { try { care = (await api<{ data: any }>('/care/counts')).data; } catch { /* optional */ } }
+    if (can('view person')) { try { expiring = (await api<{ data: any[] }>('/people/clearances/expiring?days=45')).data; } catch { /* optional */ } }
+  });
+  const today = new Date().toISOString().slice(0, 10);
 </script>
 
 <h1 class="mb-4 text-2xl font-semibold">{$t('nav.dashboard')}</h1>
 <PageHint id="dashboard" text={{ en: 'A snapshot of your church — members, families, attendance, birthdays and more. Choose which cards appear from Settings → Dashboard. Tips like this can be turned off in Settings.', ar: 'لمحة عن كنيستك — الأعضاء والعائلات والحضور وأعياد الميلاد. اختر البطاقات الظاهرة من الإعدادات ← لوحة المعلومات. يمكن إيقاف هذه التلميحات من الإعدادات.' }} />
+
+{#if (care && care.open > 0) || expiring.length}
+  <div class="mb-4 grid gap-4 sm:grid-cols-2">
+    {#if care && care.open > 0}
+      <a href="/care" class="card flex items-center gap-4 p-5 transition hover:shadow-md">
+        <span class="text-3xl">❤️</span>
+        <div class="flex-1">
+          <div class="text-2xl font-semibold leading-none">{care.open}</div>
+          <div class="mt-1 text-sm text-slate-500">{tr({ en: 'Open care items', ar: 'عناصر رعاية مفتوحة' }, $locale)}</div>
+          <div class="mt-1 text-xs text-slate-400">{care.mine} {tr({ en: 'assigned to you', ar: 'مسندة إليك' }, $locale)}{#if care.overdue} · <span class="text-rose-600 dark:text-rose-400">{care.overdue} {tr({ en: 'overdue', ar: 'متأخرة' }, $locale)}</span>{/if}</div>
+        </div>
+      </a>
+    {/if}
+    {#if expiring.length}
+      <div class="card p-5">
+        <div class="mb-2 flex items-center gap-2"><span class="text-xl">🛡️</span><span class="font-semibold">{tr({ en: 'Clearances expiring soon', ar: 'تصاريح تنتهي قريباً' }, $locale)}</span><span class="ms-auto rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">{expiring.length}</span></div>
+        <ul class="space-y-1 text-sm">
+          {#each expiring.slice(0, 4) as e}
+            <li class="flex items-center gap-2"><a class="min-w-0 flex-1 truncate text-primary-700 hover:underline dark:text-primary-300" href="/members/{e.personId}">{displayName({ givenName: e.givenName, familyName: e.familyName }, $nameOrder, $locale)}</a><span class="force-ltr text-xs {e.expiresOn < today ? 'font-medium text-rose-600 dark:text-rose-400' : 'text-slate-400'}">{e.expiresOn}</span></li>
+          {/each}
+        </ul>
+        {#if expiring.length > 4}<p class="mt-1 text-xs text-slate-400">+{expiring.length - 4} {tr({ en: 'more', ar: 'أخرى' }, $locale)}</p>{/if}
+      </div>
+    {/if}
+  </div>
+{/if}
 
 {#if stats?.liveGathering}
   {@const g = stats.liveGathering}

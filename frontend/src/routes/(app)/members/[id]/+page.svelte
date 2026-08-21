@@ -9,8 +9,22 @@
   import MemberForm from '$lib/components/MemberForm.svelte';
   import RosterEditor from '$lib/components/RosterEditor.svelte';
   import MemberClearances from '$lib/components/MemberClearances.svelte';
+  import MemberCare from '$lib/components/MemberCare.svelte';
   import MemberQrCard from '$lib/components/MemberQrCard.svelte';
   import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
+
+  const STAGES = [
+    { v: '', en: '— none —', ar: '— بدون —' },
+    { v: 'new_visitor', en: 'New / first-time', ar: 'جديد / أول مرة' },
+    { v: 'contacted', en: 'Contacted', ar: 'تم التواصل' },
+    { v: 'connected', en: 'Connected', ar: 'مندمج' },
+    { v: 'regular', en: 'Regular', ar: 'منتظم' },
+    { v: 'member', en: 'Member', ar: 'عضو' },
+  ];
+  async function setStage(stage: string) {
+    try { await api(`/people/${id}`, { method: 'PUT', body: JSON.stringify({ followUpStage: stage || null }) }); if (person) person.followUpStage = stage || null; }
+    catch (err) { alert((err as Error).message); }
+  }
 
   let person = $state<any>(null);
   let id = $state<number>(Number($page.params.id));
@@ -66,6 +80,17 @@
   <div class="grid gap-6 lg:grid-cols-5 lg:items-start">
     <div class="lg:col-span-3"><MemberForm initial={person} {id} /></div>
     <div class="space-y-6 lg:col-span-2">
+      {#if can('update person')}
+        <div class="card p-4">
+          <label class="block space-y-1">
+            <span class="text-sm font-semibold text-slate-700 dark:text-slate-200">🧭 {tr({ en: 'Follow-up stage', ar: 'مرحلة المتابعة' }, $locale)}</span>
+            <select class="input" value={person.followUpStage ?? ''} onchange={(e) => setStage((e.currentTarget as HTMLSelectElement).value)}>
+              {#each STAGES as s}<option value={s.v}>{tr({ en: s.en, ar: s.ar }, $locale)}</option>{/each}
+            </select>
+          </label>
+        </div>
+      {/if}
+      <MemberCare personId={id} />
       <RosterEditor personId={id} />
       <MemberClearances personId={id} />
       {#if person.qrToken}

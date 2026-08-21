@@ -252,6 +252,10 @@ export const people = pgTable('people', {
   // lists, pickers, ministry rosters, messaging audiences — until un-archived.
   // Distinct from deletedAt (soft delete) and from isActive (a softer flag).
   archivedAt: timestamp('archived_at', { withTimezone: true }),
+  // Assimilation / follow-up pipeline stage (new_visitor → contacted → connected
+  // → regular → member). Null = not in the pipeline. Free varchar (no enum) so a
+  // church can rename/extend stages without a migration.
+  followUpStage: varchar('follow_up_stage', { length: 30 }),
   // Gifts / skills / interests (Tier D) — free tags used to match & recruit
   // people into ministries ("plays guitar", "good with kids", "speaks Arabic").
   skills: jsonb('skills').$type<string[]>().notNull().default([]),
@@ -457,6 +461,52 @@ export const automations = pgTable('automations', {
   lastRunOn: date('last_run_on'),
   ...timestamps,
 }, (t) => ({ typeIdx: uniqueIndex('automations_type_idx').on(t.type) }));
+
+// ---------------------------------------------------------------------------
+// Pastoral care — prayer requests, care items, visits, follow-up tasks.
+// ---------------------------------------------------------------------------
+export const careItems = pgTable('care_items', {
+  id: serial('id').primaryKey(),
+  // Who it's about (optional — a request can be general/anonymous).
+  personId: integer('person_id').references(() => people.id, { onDelete: 'set null' }),
+  type: varchar('type', { length: 20 }).notNull().default('prayer'), // prayer | care | visit | task
+  subject: varchar('subject', { length: 190 }).notNull(),
+  details: text('details'),
+  status: varchar('status', { length: 20 }).notNull().default('open'), // open | in_progress | done
+  // Confidential items hide their details from non-admins (only the assignee,
+  // the creator, and Admin/Super Admin see the details).
+  confidential: boolean('confidential').notNull().default(false),
+  assignedToUserId: integer('assigned_to_user_id').references(() => users.id, { onDelete: 'set null' }),
+  dueOn: date('due_on'),
+  createdByUserId: integer('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+  closedAt: timestamp('closed_at', { withTimezone: true }),
+  ...timestamps,
+}, (t) => ({
+  personIdx: index('care_items_person_idx').on(t.personId),
+  statusIdx: index('care_items_status_idx').on(t.status),
+  assignedIdx: index('care_items_assigned_idx').on(t.assignedToUserId),
+}));
+
+// Inbound/outbound SMS log for two-way texting + STOP compliance. Inbound texts
+// arrive via the provider webhook (Twilio); a STOP keyword auto-opts the sender
+// out of SMS. Outbound quick-sends can also be logged here for a conversation view.
+export const smsMessages = pgTable('sms_messages', {
+  id: serial('id').primaryKey(),
+  direction: varchar('direction', { length: 10 }).notNull(), // inbound | outbound
+  personId: integer('person_id').references(() => people.id, { onDelete: 'set null' }),
+  fromNumber: varchar('from_number', { length: 40 }),
+  toNumber: varchar('to_number', { length: 40 }),
+  body: text('body'),
+  provider: varchar('provider', { length: 20 }), // twilio | azure
+  providerSid: varchar('provider_sid', { length: 190 }),
+  status: varchar('status', { length: 20 }), // received | sent | delivered | failed
+  handled: boolean('handled').notNull().default(false), // staff marked the reply as dealt-with
+  receivedAt: timestamp('received_at', { withTimezone: true }).defaultNow().notNull(),
+  ...timestamps,
+}, (t) => ({
+  personIdx: index('sms_messages_person_idx').on(t.personId),
+  receivedIdx: index('sms_messages_received_idx').on(t.receivedAt),
+}));
 
 // ---------------------------------------------------------------------------
 // Giving

@@ -21,6 +21,8 @@
       items: [
         { href: '/members', label: 'nav.members', icon: 'members', perm: 'view person' },
         { href: '/families', label: 'nav.families', icon: 'families', perm: 'view household' },
+        { href: '/follow-up', label: 'nav.followUp', icon: 'activity', perm: 'update person' },
+        { href: '/care', label: 'nav.care', icon: 'members', perm: 'view care' },
       ],
     },
     {
@@ -51,6 +53,7 @@
       key: 'group.communication',
       items: [
         { href: '/messages', label: 'nav.messages', icon: 'messages', perm: 'view message' },
+        { href: '/messages/inbox', label: 'nav.inbox', icon: 'messages', perm: 'view message' },
         { href: '/messages/templates', label: 'nav.templates', icon: 'sermons', perm: 'view message' },
         { href: '/automations', label: 'nav.automations', icon: 'automations', role: 'Admin' },
       ],

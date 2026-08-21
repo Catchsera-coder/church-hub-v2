@@ -44,6 +44,8 @@ const upsertSchema = z.object({
   customFields: z.record(z.string()).optional(),
   // Gifts / skills / interests (free tags) for ministry matching.
   skills: z.array(z.string().trim().min(1).max(40)).max(40).optional(),
+  // Assimilation/follow-up pipeline stage.
+  followUpStage: z.string().max(30).nullable().optional(),
 });
 
 // GET /api/people — paginated, searchable across both locales of the name.
@@ -102,6 +104,28 @@ peopleRouter.get(
       ))
       .limit(8);
     res.json({ data: rows });
+  }),
+);
+
+// Safeguarding/document clearances expiring soon (or already lapsed) — powers the
+// "expiry reminders" dashboard card so nobody serves on a lapsed check.
+peopleRouter.get(
+  '/clearances/expiring',
+  requirePermission('view person'),
+  asyncHandler(async (req, res) => {
+    const days = Math.min(365, Math.max(1, Number(req.query.days) || 45));
+    const rows = await db.execute(sql`
+      SELECT pc.id, pc.person_id, pc.type, pc.expires_on, p.given_name, p.family_name
+      FROM person_clearances pc
+      JOIN people p ON p.id = pc.person_id
+      WHERE p.deleted_at IS NULL AND p.archived_at IS NULL
+        AND pc.expires_on IS NOT NULL
+        AND pc.expires_on <= (current_date + (${days} || ' days')::interval)
+        AND pc.status <> 'expired'
+      ORDER BY pc.expires_on ASC
+      LIMIT 100
+    `);
+    res.json({ data: rows.rows.map((r) => ({ id: Number(r.id), personId: Number(r.person_id), type: r.type, expiresOn: r.expires_on, givenName: r.given_name, familyName: r.family_name })) });
   }),
 );
 

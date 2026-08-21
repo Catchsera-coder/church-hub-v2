@@ -21,6 +21,9 @@ export const peopleListQuery = z.object({
   // Archived visibility: default hides archived; 'only' shows just archived;
   // 'include' shows both.
   archived: z.enum(['only', 'include']).optional(),
+  // Assimilation/follow-up pipeline stage (exact match; 'new_visitor' also pulls
+  // in un-staged self-registered newcomers so the pipeline auto-seeds).
+  followUpStage: z.string().max(30).optional(),
 });
 export type PeopleQuery = z.infer<typeof peopleListQuery>;
 
@@ -59,6 +62,10 @@ export function peopleFilters(q: PeopleQuery): SQL[] {
   if (q.optedIn === 'sms') filters.push(sql`${people.smsOptOut} = false AND ${people.mobile} IS NOT NULL AND ${people.mobile} <> ''`);
   if (q.optedIn === 'whatsapp') filters.push(sql`${people.whatsappOptOut} = false AND ${people.mobile} IS NOT NULL AND ${people.mobile} <> ''`);
   if (q.inactiveWeeks) filters.push(sql`NOT EXISTS (SELECT 1 FROM ${attendanceRecords} ar WHERE ar.person_id = ${people.id} AND ar.checked_in_at >= now() - (${q.inactiveWeeks} * interval '1 week'))`);
+  if (q.followUpStage) {
+    if (q.followUpStage === 'new_visitor') filters.push(sql`(${people.followUpStage} = 'new_visitor' OR (${people.followUpStage} IS NULL AND ${people.selfRegistered} = true AND ${people.reviewedAt} IS NULL))`);
+    else filters.push(eq(people.followUpStage, q.followUpStage));
+  }
   return filters;
 }
 
