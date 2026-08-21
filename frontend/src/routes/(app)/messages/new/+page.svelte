@@ -4,7 +4,8 @@
   import { page } from '$app/stores';
   import { api } from '$lib/api.js';
   import { get } from 'svelte/store';
-  import { t, locale, tr, enabledLocales } from '$lib/i18n.js';
+  import { t, locale, tr, enabledLocales, displayName, personContext } from '$lib/i18n.js';
+  import { nameOrder } from '$lib/stores/prefs.js';
   import PageHeader from '$lib/components/PageHeader.svelte';
   import ScheduleEditor from '$lib/components/ScheduleEditor.svelte';
   import { type Schedule, defaultSchedule, describeSchedule } from '$lib/schedule.js';
@@ -95,7 +96,7 @@
   }
   function toggleId(id: number) { const s = new Set(selectedIds); if (s.has(id)) s.delete(id); else s.add(id); selectedIds = s; }
   function selectAllShown() { const s = new Set(selectedIds); for (const p of peopleList) s.add(p.id); selectedIds = s; }
-  const personName = (p: any) => tr(p.givenName ?? {}, $locale) + ' ' + tr(p.familyName ?? {}, $locale);
+  const personName = (p: any) => displayName(p, $nameOrder, $locale);
 
   // --- Preview (all channels)
   let previewOpen = $state(false);
@@ -492,6 +493,7 @@
             <label class="flex items-center gap-2 rounded px-2 py-1 text-sm hover:bg-slate-50 dark:hover:bg-slate-800">
               <input type="checkbox" checked={selectedIds.has(p.id)} onchange={() => toggleId(p.id)} />
               <span>{personName(p)}</span>
+              {#if personContext(p, $locale)}<span class="text-xs text-slate-400">{personContext(p, $locale)}</span>{/if}
               <span class="ms-auto force-ltr text-xs text-slate-400">{form.channel === 'email' ? (p.email ?? '') : (p.mobile ?? '')}</span>
             </label>
           {:else}

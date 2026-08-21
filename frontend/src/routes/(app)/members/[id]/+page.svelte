@@ -17,7 +17,7 @@
   });
 </script>
 
-<PageHeader title={tr({ en: 'Edit member', ar: 'تعديل العضو' }, $locale)} back="/members">
+<PageHeader title={`${tr({ en: 'Edit member', ar: 'تعديل العضو' }, $locale)} · #${id}`} back="/members">
   {#snippet actions()}
     {#if person?.householdId}
       <a class="btn-ghost border border-slate-300 text-sm dark:border-slate-700" href="/families/{person.householdId}">👪 {tr({ en: 'Open family', ar: 'فتح العائلة' }, $locale)}</a>

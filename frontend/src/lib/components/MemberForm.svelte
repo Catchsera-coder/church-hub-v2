@@ -2,7 +2,8 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { api } from '$lib/api.js';
-  import { t, locale, tr, enabledLocales } from '$lib/i18n.js';
+  import { t, locale, tr, enabledLocales, displayName, personContext } from '$lib/i18n.js';
+  import { nameOrder } from '$lib/stores/prefs.js';
   import { can } from '$lib/stores/auth.js';
 
   let { initial = null, id = null }: { initial?: any; id?: number | null } = $props();
@@ -13,9 +14,16 @@
   let selectedFamily = $state<any>(null);
   let form = $state({
     givenName: initial?.givenName ?? {},
+    middleName: initial?.middleName ?? {},
     familyName: initial?.familyName ?? {},
     householdId: initial?.householdId ? String(initial.householdId) : '',
     householdRole: initial?.householdRole ?? '',
+    addressLine1: initial?.addressLine1 ?? '',
+    addressLine2: initial?.addressLine2 ?? '',
+    city: initial?.city ?? '',
+    region: initial?.region ?? '',
+    postalCode: initial?.postalCode ?? '',
+    country: initial?.country ?? '',
     membershipStatus: initial?.membershipStatus ?? 'visitor',
     email: initial?.email ?? '',
     mobile: initial?.mobile ?? '',
@@ -30,6 +38,25 @@
   });
   let saving = $state(false);
   let error = $state('');
+
+  // Duplicate guard: as the name is typed, surface existing active people with the
+  // same first+last so staff don't create a second record for the same person.
+  let dupes = $state<any[]>([]);
+  let dupeTimer: ReturnType<typeof setTimeout>;
+  function checkDupes() {
+    clearTimeout(dupeTimer);
+    const given = (form.givenName?.en ?? '').trim();
+    const family = (form.familyName?.en ?? '').trim();
+    if (given.length < 2) { dupes = []; return; }
+    dupeTimer = setTimeout(async () => {
+      try {
+        const q = new URLSearchParams({ given });
+        if (family) q.set('family', family);
+        if (id) q.set('exclude', String(id));
+        dupes = (await api<{ data: any[] }>(`/people/duplicates?${q}`)).data;
+      } catch { dupes = []; }
+    }, 350);
+  }
 
   // Skills / gifts / interests — free tags for ministry matching.
   let newSkill = $state('');
@@ -47,6 +74,18 @@
   let creatingFamily = $state(false);
 
   const statuses = ['visitor', 'regular', 'member', 'inactive'];
+  const ROLE_OPTIONS = [
+    { v: 'head', en: 'Head', ar: 'رب الأسرة' }, { v: 'husband', en: 'Husband', ar: 'زوج' }, { v: 'wife', en: 'Wife', ar: 'زوجة' },
+    { v: 'father', en: 'Father', ar: 'أب' }, { v: 'mother', en: 'Mother', ar: 'أم' }, { v: 'son', en: 'Son', ar: 'ابن' },
+    { v: 'daughter', en: 'Daughter', ar: 'ابنة' }, { v: 'brother', en: 'Brother', ar: 'أخ' }, { v: 'sister', en: 'Sister', ar: 'أخت' },
+    { v: 'grandparent', en: 'Grandparent', ar: 'جد/جدة' }, { v: 'guardian', en: 'Guardian', ar: 'وصي' }, { v: 'other', en: 'Other', ar: 'أخرى' },
+  ];
+  function roleValue(r?: string | null) {
+    const x = (r ?? '').trim().toLowerCase();
+    if (!x) return '';
+    if (x === 'self' || x === 'رب الأسرة') return 'head';
+    return ROLE_OPTIONS.some((o) => o.v === x) ? x : (r ?? '').trim();
+  }
 
   onMount(async () => {
     // Show the member's current family (if editing) without loading everything.
@@ -96,6 +135,12 @@
         mobile: form.mobile || null,
         dateOfBirth: form.dateOfBirth || null,
         joinedOn: form.joinedOn || null,
+        addressLine1: form.addressLine1?.trim() || null,
+        addressLine2: form.addressLine2?.trim() || null,
+        city: form.city?.trim() || null,
+        region: form.region?.trim() || null,
+        postalCode: form.postalCode?.trim() || null,
+        country: form.country?.trim() || null,
       };
       if (id) await api(`/people/${id}`, { method: 'PUT', body: JSON.stringify(body) });
       else await api('/people', { method: 'POST', body: JSON.stringify(body) });
@@ -109,18 +154,41 @@
 <form class="w-full space-y-6" onsubmit={submit}>
   {#if error}<p class="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:bg-rose-900/30 dark:text-rose-300">{error}</p>{/if}
 
-  <div class="card grid gap-4 p-6 sm:grid-cols-2">
+  <div class="card space-y-4 p-6">
     {#each $enabledLocales as l}
-      <label class="block space-y-1">
-        <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'First name', ar: 'الاسم الأول' }, $locale)} ({l.native})</span>
-        <input class="input" dir={l.dir} bind:value={form.givenName[l.code]} required={l.code === 'en'} />
-      </label>
-      <label class="block space-y-1">
-        <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Last name', ar: 'اسم العائلة' }, $locale)} ({l.native})</span>
-        <input class="input" dir={l.dir} bind:value={form.familyName[l.code]} />
-      </label>
+      <div class="grid gap-4 sm:grid-cols-3">
+        <label class="block space-y-1">
+          <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'First name', ar: 'الاسم الأول' }, $locale)} ({l.native})</span>
+          <input class="input" dir={l.dir} bind:value={form.givenName[l.code]} oninput={checkDupes} required={l.code === 'en'} />
+        </label>
+        <label class="block space-y-1">
+          <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: "Middle / father's", ar: 'الأوسط / اسم الأب' }, $locale)} ({l.native})</span>
+          <input class="input" dir={l.dir} bind:value={form.middleName[l.code]} />
+        </label>
+        <label class="block space-y-1">
+          <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Last name', ar: 'اسم العائلة' }, $locale)} ({l.native})</span>
+          <input class="input" dir={l.dir} bind:value={form.familyName[l.code]} oninput={checkDupes} />
+        </label>
+      </div>
     {/each}
+    <p class="text-xs text-slate-400">{tr({ en: "Middle / father's name is optional — it helps tell apart people who share a last name.", ar: 'الاسم الأوسط / اسم الأب اختياري — يساعد على التمييز بين من يتشاركون اسم العائلة.' }, $locale)}</p>
   </div>
+
+  {#if dupes.length}
+    <div class="rounded-xl border border-amber-300 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-900/20">
+      <p class="mb-2 text-sm font-medium text-amber-800 dark:text-amber-200">⚠️ {tr({ en: 'Someone with this name already exists', ar: 'يوجد شخص بهذا الاسم بالفعل' }, $locale)} ({dupes.length})</p>
+      <p class="mb-2 text-xs text-amber-700 dark:text-amber-300">{tr({ en: 'Is it one of these? Open the existing record instead of creating a duplicate.', ar: 'هل هو أحد هؤلاء؟ افتح السجل الموجود بدلاً من إنشاء نسخة مكررة.' }, $locale)}</p>
+      <ul class="space-y-1">
+        {#each dupes as d}
+          <li class="flex flex-wrap items-center gap-2 text-sm">
+            <a class="font-medium text-primary-700 hover:underline dark:text-primary-300" href="/members/{d.id}" target="_blank" rel="noopener">{displayName(d, $nameOrder, $locale)}</a>
+            <span class="text-xs text-slate-500">{personContext(d, $locale)}</span>
+            {#if d.mobile || d.email}<span class="force-ltr text-xs text-slate-400">· {d.mobile || d.email}</span>{/if}
+          </li>
+        {/each}
+      </ul>
+    </div>
+  {/if}
 
   <div class="card grid gap-4 p-6 sm:grid-cols-2">
     <label class="block space-y-1">
@@ -179,16 +247,27 @@
     {#if form.householdId}
       <label class="block space-y-1">
         <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Role in family', ar: 'الدور في العائلة' }, $locale)}</span>
-        <input class="input" list="household-roles" bind:value={form.householdRole} placeholder={tr({ en: 'e.g. Father, Mother, Son', ar: 'مثال: أب، أم، ابن' }, $locale)} maxlength="20" />
-        <datalist id="household-roles">
-          <option value={tr({ en: 'Father', ar: 'أب' }, $locale)}></option>
-          <option value={tr({ en: 'Mother', ar: 'أم' }, $locale)}></option>
-          <option value={tr({ en: 'Son', ar: 'ابن' }, $locale)}></option>
-          <option value={tr({ en: 'Daughter', ar: 'ابنة' }, $locale)}></option>
-          <option value={tr({ en: 'Guardian', ar: 'وصي' }, $locale)}></option>
-        </datalist>
+        <select class="input" value={roleValue(form.householdRole)} onchange={(e) => (form.householdRole = (e.currentTarget as HTMLSelectElement).value)}>
+          <option value="">{tr({ en: '— none —', ar: '— بدون —' }, $locale)}</option>
+          {#each ROLE_OPTIONS as o}<option value={o.v}>{tr({ en: o.en, ar: o.ar }, $locale)}</option>{/each}
+          {#if roleValue(form.householdRole) && !ROLE_OPTIONS.some((o) => o.v === roleValue(form.householdRole))}<option value={roleValue(form.householdRole)}>{form.householdRole}</option>{/if}
+        </select>
       </label>
     {/if}
+  </div>
+
+  <!-- Optional per-person address (blank → the family's address is used) -->
+  <div class="card grid gap-4 p-6 sm:grid-cols-2">
+    <div class="sm:col-span-2">
+      <h2 class="text-sm font-semibold text-slate-700 dark:text-slate-200">🏠 {tr({ en: 'Home address (optional)', ar: 'عنوان المنزل (اختياري)' }, $locale)}</h2>
+      <p class="text-xs text-slate-500 dark:text-slate-400">{tr({ en: "Leave blank to use the family's address. Fill this only if this person lives somewhere different.", ar: 'اتركه فارغاً لاستخدام عنوان العائلة. املأه فقط إذا كان هذا الشخص يقيم في مكان مختلف.' }, $locale)}</p>
+    </div>
+    <label class="block space-y-1 sm:col-span-2"><span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Address line 1', ar: 'العنوان ١' }, $locale)}</span><input class="input" bind:value={form.addressLine1} /></label>
+    <label class="block space-y-1 sm:col-span-2"><span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Address line 2', ar: 'العنوان ٢' }, $locale)}</span><input class="input" bind:value={form.addressLine2} /></label>
+    <label class="block space-y-1"><span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'City', ar: 'المدينة' }, $locale)}</span><input class="input" bind:value={form.city} /></label>
+    <label class="block space-y-1"><span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Region', ar: 'المنطقة' }, $locale)}</span><input class="input" bind:value={form.region} /></label>
+    <label class="block space-y-1"><span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Postal code', ar: 'الرمز البريدي' }, $locale)}</span><input class="input force-ltr" bind:value={form.postalCode} /></label>
+    <label class="block space-y-1"><span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Country', ar: 'الدولة' }, $locale)}</span><input class="input" bind:value={form.country} /></label>
   </div>
 
   <div class="card space-y-3 p-6">

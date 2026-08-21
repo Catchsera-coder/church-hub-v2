@@ -28,9 +28,14 @@ export function peopleFilters(q: PeopleQuery): SQL[] {
   if (q.review === 'pending') { filters.push(eq(people.selfRegistered, true)); filters.push(isNull(people.reviewedAt)); }
   if (q.search) {
     const like = `%${q.search}%`;
+    // Also let people be found by member number ("#42" or "42") and by their
+    // middle/father's name (a common-surname disambiguator).
+    const digits = q.search.replace(/^#/, '').trim();
+    const idMatch = /^\d+$/.test(digits) ? sql` OR ${people.id} = ${Number(digits)}` : sql``;
     filters.push(sql`(${people.givenName}->>'en' ILIKE ${like} OR ${people.familyName}->>'en' ILIKE ${like}
       OR ${people.givenName}->>'ar' ILIKE ${like} OR ${people.familyName}->>'ar' ILIKE ${like}
-      OR ${people.email} ILIKE ${like} OR ${people.mobile} ILIKE ${like})`);
+      OR ${people.middleName}->>'en' ILIKE ${like} OR ${people.middleName}->>'ar' ILIKE ${like}
+      OR ${people.email} ILIKE ${like} OR ${people.mobile} ILIKE ${like}${idMatch})`);
   }
   if (q.ageGroup === 'child') filters.push(sql`${people.dateOfBirth} IS NOT NULL AND extract(year from age(${people.dateOfBirth})) < 13`);
   if (q.ageGroup === 'youth') filters.push(sql`extract(year from age(${people.dateOfBirth})) BETWEEN 13 AND 17`);

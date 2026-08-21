@@ -123,7 +123,7 @@ ministriesRouter.get('/:id/members', requirePermission('view ministry'), asyncHa
   const id = Number(req.params.id);
   const rows = await db
     .select({
-      id: people.id, givenName: people.givenName, familyName: people.familyName,
+      id: people.id, givenName: people.givenName, middleName: people.middleName, familyName: people.familyName,
       email: people.email, mobile: people.mobile, membershipStatus: people.membershipStatus,
       skills: people.skills,
       role: personServiceType.role, status: personServiceType.status,

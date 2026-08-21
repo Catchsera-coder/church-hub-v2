@@ -1,8 +1,8 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, getTableColumns, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { db } from '../../db/index.js';
-import { people, personServiceType, serviceTypes, automations, messageTemplates, personClearances } from '../../db/schema.js';
+import { people, households, personServiceType, serviceTypes, automations, messageTemplates, personClearances } from '../../db/schema.js';
 import { asyncHandler } from '../../http/asyncHandler.js';
 import { authenticate, requirePermission } from '../../middleware/auth.js';
 import { notFound } from '../../http/errors.js';
@@ -15,10 +15,19 @@ export const peopleRouter = Router();
 peopleRouter.use(authenticate);
 
 const i18n = z.record(z.string()).default({});
+const addr = () => z.string().max(190).nullable().optional();
 const upsertSchema = z.object({
   givenName: i18n,
+  middleName: i18n,
   familyName: i18n,
   householdId: z.number().int().positive().nullable().optional(),
+  // Optional per-person address (blank → inherits the family's).
+  addressLine1: addr(),
+  addressLine2: addr(),
+  city: addr(),
+  region: addr(),
+  postalCode: z.string().max(20).nullable().optional(),
+  country: addr(),
   householdRole: z.string().max(20).nullable().optional(),
   membershipStatus: z.enum(['visitor', 'regular', 'member', 'inactive']).default('visitor'),
   email: z.string().email().nullable().optional(),
@@ -45,14 +54,53 @@ peopleRouter.get(
     const { page, limit } = q;
     const where = and(...peopleFilters(q));
     const [{ count }] = await db.select({ count: sql<number>`count(*)::int` }).from(people).where(where);
+    // All people columns PLUS the household name + city, so lists and pickers can
+    // disambiguate common names ("Samy Ibrahim · Ibrahim family · Boston").
     const rows = await db
-      .select()
+      .select({
+        ...getTableColumns(people),
+        householdName: sql<Record<string, string> | null>`(SELECT h.name FROM ${households} h WHERE h.id = people.household_id)`,
+        householdCity: sql<string | null>`(SELECT h.city FROM ${households} h WHERE h.id = people.household_id)`,
+      })
       .from(people)
       .where(where)
       .orderBy(desc(people.createdAt))
       .limit(limit)
       .offset((page - 1) * limit);
     res.json({ data: rows, meta: { page, limit, total: count, pages: Math.ceil(count / limit) } });
+  }),
+);
+
+// Duplicate guard: given a first + last name, return existing active people with
+// the same name so the composer/create form can warn "3 people already named X".
+// Non-blocking — it only surfaces matches; the user decides.
+peopleRouter.get(
+  '/duplicates',
+  requirePermission('view person'),
+  asyncHandler(async (req, res) => {
+    const { given, family, exclude } = z.object({
+      given: z.string().trim().min(1).max(80),
+      family: z.string().trim().max(80).optional().default(''),
+      exclude: z.coerce.number().int().positive().optional(),
+    }).parse(req.query);
+    const g = `%${given}%`;
+    const f = family ? `%${family}%` : null;
+    const rows = await db
+      .select({
+        id: people.id, givenName: people.givenName, middleName: people.middleName, familyName: people.familyName,
+        email: people.email, mobile: people.mobile,
+        householdName: sql<Record<string, string> | null>`(SELECT h.name FROM ${households} h WHERE h.id = people.household_id)`,
+        householdCity: sql<string | null>`(SELECT h.city FROM ${households} h WHERE h.id = people.household_id)`,
+      })
+      .from(people)
+      .where(and(
+        isNull(people.deletedAt), eq(people.isActive, true),
+        sql`(${people.givenName}->>'en' ILIKE ${g} OR ${people.givenName}->>'ar' ILIKE ${g})`,
+        ...(f ? [sql`(${people.familyName}->>'en' ILIKE ${f} OR ${people.familyName}->>'ar' ILIKE ${f})`] : []),
+        ...(exclude ? [ne(people.id, exclude)] : []),
+      ))
+      .limit(8);
+    res.json({ data: rows });
   }),
 );
 

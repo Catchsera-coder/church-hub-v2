@@ -203,8 +203,19 @@ export const households = pgTable('households', {
 export const people = pgTable('people', {
   id: serial('id').primaryKey(),
   givenName: jsonb('given_name').$type<I18n>().notNull().default({}),
+  // Optional middle / father's name — a natural disambiguator for common
+  // surnames (Arabic full names are First Father Last). Woven into displayName.
+  middleName: jsonb('middle_name').$type<I18n>().notNull().default({}),
   familyName: jsonb('family_name').$type<I18n>().notNull().default({}),
   householdId: integer('household_id').references(() => households.id, { onDelete: 'set null' }),
+  // Optional per-person home address. When any line is set it's the person's own
+  // address; when blank they inherit their household's address in displays.
+  addressLine1: text('address_line1'),
+  addressLine2: text('address_line2'),
+  city: varchar('city', { length: 120 }),
+  region: varchar('region', { length: 120 }),
+  postalCode: varchar('postal_code', { length: 20 }),
+  country: varchar('country', { length: 120 }),
   membershipStatus: membershipStatus('membership_status').notNull().default('visitor'),
   email: varchar('email', { length: 190 }),
   mobile: varchar('mobile', { length: 40 }),

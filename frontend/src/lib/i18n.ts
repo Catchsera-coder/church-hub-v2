@@ -162,11 +162,29 @@ export function tr(value: Record<string, string> | null | undefined, l: Locale):
 // Format a person's name in the chosen order. Both parts are always kept; only
 // the display order changes (a per-device preference).
 export function displayName(
-  p: { givenName?: Record<string, string> | null; familyName?: Record<string, string> | null },
+  p: { givenName?: Record<string, string> | null; middleName?: Record<string, string> | null; familyName?: Record<string, string> | null },
   order: 'given-first' | 'family-first',
   l: Locale,
 ): string {
   const given = tr(p.givenName, l);
+  const middle = tr(p.middleName, l); // optional father's/middle name — disambiguates common surnames
   const family = tr(p.familyName, l);
-  return (order === 'family-first' ? `${family} ${given}` : `${given} ${family}`).trim();
+  const parts = order === 'family-first' ? [family, given, middle] : [given, middle, family];
+  return parts.filter(Boolean).join(' ').trim();
+}
+
+/** Compact disambiguating context for a person: family · city · b.YEAR · #id.
+ *  Used next to names in lists/pickers so two "Samy Ibrahim"s are tellable apart. */
+export function personContext(
+  p: { id?: number; householdName?: Record<string, string> | null; householdCity?: string | null; city?: string | null; dateOfBirth?: string | null },
+  l: Locale,
+): string {
+  const bits: string[] = [];
+  const fam = tr(p.householdName, l);
+  if (fam) bits.push(fam);
+  const city = p.householdCity || p.city;
+  if (city) bits.push(city);
+  if (p.dateOfBirth) { const y = new Date(p.dateOfBirth).getFullYear(); if (y > 1900 && y < 2100) bits.push(`b.${y}`); }
+  if (p.id) bits.push(`#${p.id}`);
+  return bits.join(' · ');
 }

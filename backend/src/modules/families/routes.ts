@@ -57,7 +57,7 @@ familiesRouter.get('/:id', requirePermission('view household'), asyncHandler(asy
 familiesRouter.get('/:id/members', requirePermission('view household'), asyncHandler(async (req, res) => {
   const rows = await db
     .select({
-      id: people.id, givenName: people.givenName, familyName: people.familyName,
+      id: people.id, givenName: people.givenName, middleName: people.middleName, familyName: people.familyName,
       membershipStatus: people.membershipStatus, email: people.email, mobile: people.mobile,
       householdRole: people.householdRole, dateOfBirth: people.dateOfBirth, joinedOn: people.joinedOn,
       preferredLanguage: people.preferredLanguage, isActive: people.isActive,

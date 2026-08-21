@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { api } from '$lib/api.js';
-  import { t, locale, tr, displayName } from '$lib/i18n.js';
+  import { t, locale, tr, displayName, personContext } from '$lib/i18n.js';
   import { nameOrder } from '$lib/stores/prefs.js';
   import { can } from '$lib/stores/auth.js';
   import FilterBar from '$lib/components/FilterBar.svelte';
@@ -22,9 +22,41 @@
   interface Meta { page: number; limit: number; total: number; pages: number }
 
   // "self"/"head" is not a relationship — it marks the primary person in the
-  // household. Show it as a subtle head-of-household star; show real relationships
-  // (wife, son…) as a clean capitalized chip.
+  // household. Show it as a clear "Head" chip; show real relationships (wife,
+  // son…) as a capitalized chip. Editable inline and synced everywhere (it writes
+  // the same people.householdRole the family roster reads).
   function isHead(r?: string | null) { const x = (r ?? '').trim().toLowerCase(); return x === 'self' || x === 'head' || x === 'رب الأسرة'; }
+  const editableRole = can('update person');
+  const ROLE_OPTIONS = [
+    { v: 'head', en: 'Head', ar: 'رب الأسرة' },
+    { v: 'husband', en: 'Husband', ar: 'زوج' },
+    { v: 'wife', en: 'Wife', ar: 'زوجة' },
+    { v: 'father', en: 'Father', ar: 'أب' },
+    { v: 'mother', en: 'Mother', ar: 'أم' },
+    { v: 'son', en: 'Son', ar: 'ابن' },
+    { v: 'daughter', en: 'Daughter', ar: 'ابنة' },
+    { v: 'brother', en: 'Brother', ar: 'أخ' },
+    { v: 'sister', en: 'Sister', ar: 'أخت' },
+    { v: 'grandparent', en: 'Grandparent', ar: 'جد/جدة' },
+    { v: 'guardian', en: 'Guardian', ar: 'وصي' },
+    { v: 'other', en: 'Other', ar: 'أخرى' },
+  ];
+  // Map a stored role to a select value (legacy 'self' → 'head'); keep unknown
+  // custom values as their own option so nothing is lost.
+  function roleValue(r?: string | null) {
+    const x = (r ?? '').trim().toLowerCase();
+    if (!x) return '';
+    if (x === 'self' || x === 'رب الأسرة') return 'head';
+    return ROLE_OPTIONS.some((o) => o.v === x) ? x : r!.trim();
+  }
+  let savingRole = $state<number | null>(null);
+  async function setRole(p: any, value: string) {
+    savingRole = p.id;
+    try {
+      await api(`/people/${p.id}`, { method: 'PUT', body: JSON.stringify({ householdRole: value || null }) });
+      p.householdRole = value || null; rows = rows; // reflect locally
+    } catch (err) { alert((err as Error).message); } finally { savingRole = null; }
+  }
 
   const MONTHS = [
     { v: 1, en: 'January', ar: 'يناير' }, { v: 2, en: 'February', ar: 'فبراير' },
@@ -232,15 +264,24 @@
         {#each rows as p}
           <tr class="border-b border-slate-100 last:border-0 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/50">
             <td class="p-3">
-              <a class="font-medium text-primary-700 hover:underline dark:text-primary-300" href="/members/{p.id}">
-                {displayName(p, $nameOrder, $locale)}
-              </a>
-              {#if p.selfRegistered && !p.reviewedAt}
-                <span class="ms-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">{tr({ en: 'new', ar: 'جديد' }, $locale)}</span>
-              {/if}
+              <div class="flex items-center gap-2">
+                <a class="font-medium text-primary-700 hover:underline dark:text-primary-300" href="/members/{p.id}">
+                  {displayName(p, $nameOrder, $locale)}
+                </a>
+                {#if p.selfRegistered && !p.reviewedAt}
+                  <span class="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">{tr({ en: 'new', ar: 'جديد' }, $locale)}</span>
+                {/if}
+              </div>
+              {#if personContext(p, $locale)}<div class="mt-0.5 text-xs text-slate-400">{personContext(p, $locale)}</div>{/if}
             </td>
             <td class="p-3">
-              {#if p.householdRole}
+              {#if editableRole}
+                <select class="input h-8 w-32 py-0 text-xs {isHead(p.householdRole) ? 'font-medium' : ''}" value={roleValue(p.householdRole)} disabled={savingRole === p.id} onchange={(e) => setRole(p, (e.currentTarget as HTMLSelectElement).value)}>
+                  <option value="">{tr({ en: '— none —', ar: '— بدون —' }, $locale)}</option>
+                  {#each ROLE_OPTIONS as o}<option value={o.v}>{tr({ en: o.en, ar: o.ar }, $locale)}</option>{/each}
+                  {#if roleValue(p.householdRole) && !ROLE_OPTIONS.some((o) => o.v === roleValue(p.householdRole))}<option value={roleValue(p.householdRole)}>{p.householdRole}</option>{/if}
+                </select>
+              {:else if p.householdRole}
                 <span class="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs capitalize text-slate-600 dark:bg-slate-800 dark:text-slate-300">
                   {#if isHead(p.householdRole)}👑 {tr({ en: 'Head', ar: 'رب الأسرة' }, $locale)}{:else}{p.householdRole}{/if}
                 </span>
