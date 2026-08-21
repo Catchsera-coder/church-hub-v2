@@ -2,6 +2,16 @@
   import { goto } from '$app/navigation';
   import { api } from '$lib/api.js';
   import { t, locale, tr, enabledLocales } from '$lib/i18n.js';
+  import AddressAutocomplete from '$lib/components/AddressAutocomplete.svelte';
+
+  function fillAddr(a: { line1: string; line2: string; city: string; region: string; postalCode: string; country: string }) {
+    if (a.line1) form.addressLine1 = a.line1;
+    if (a.line2) form.addressLine2 = a.line2;
+    if (a.city) form.city = a.city;
+    if (a.region) form.region = a.region;
+    if (a.postalCode) form.postalCode = a.postalCode;
+    if (a.country) form.country = a.country;
+  }
 
   // `redirect` (default) navigates to /families after save. When false (e.g. the
   // inline editor on the family detail page) we stay put and call `onsaved`.
@@ -53,6 +63,7 @@
   </div>
 
   <div class="card grid gap-4 p-6 sm:grid-cols-2">
+    <div class="sm:col-span-2"><AddressAutocomplete onpick={fillAddr} /></div>
     <label class="block space-y-1 sm:col-span-2">
       <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Address line 1', ar: 'العنوان ١' }, $locale)}</span>
       <input class="input" bind:value={form.addressLine1} />

@@ -19,6 +19,7 @@ const addr = () => z.string().max(190).nullable().optional();
 const upsertSchema = z.object({
   givenName: i18n,
   middleName: i18n,
+  nickName: i18n,
   familyName: i18n,
   householdId: z.number().int().positive().nullable().optional(),
   // Optional per-person address (blank → inherits the family's).
@@ -94,7 +95,7 @@ peopleRouter.get(
       })
       .from(people)
       .where(and(
-        isNull(people.deletedAt), eq(people.isActive, true),
+        isNull(people.deletedAt), isNull(people.archivedAt),
         sql`(${people.givenName}->>'en' ILIKE ${g} OR ${people.givenName}->>'ar' ILIKE ${g})`,
         ...(f ? [sql`(${people.familyName}->>'en' ILIKE ${f} OR ${people.familyName}->>'ar' ILIKE ${f})`] : []),
         ...(exclude ? [ne(people.id, exclude)] : []),
@@ -259,6 +260,36 @@ peopleRouter.put(
     }
     await logActivity(req, 'updated', 'person', personId, 'clearances');
     res.json({ data: { count: clearances.length } });
+  }),
+);
+
+// Archive / un-archive. Archived people are kept but excluded from lists,
+// pickers, ministry sends and messaging (we also flip isActive so every existing
+// isActive filter honours it). Reversible — un-archive restores them.
+peopleRouter.post(
+  '/:id/archive',
+  requirePermission('update person'),
+  asyncHandler(async (req, res) => {
+    const id = Number(req.params.id);
+    const [row] = await db.update(people)
+      .set({ archivedAt: new Date(), isActive: false, updatedAt: new Date() })
+      .where(and(eq(people.id, id), isNull(people.deletedAt))).returning();
+    if (!row) throw notFound();
+    await logActivity(req, 'updated', 'person', id, 'archived');
+    res.json({ data: row });
+  }),
+);
+peopleRouter.post(
+  '/:id/unarchive',
+  requirePermission('update person'),
+  asyncHandler(async (req, res) => {
+    const id = Number(req.params.id);
+    const [row] = await db.update(people)
+      .set({ archivedAt: null, isActive: true, updatedAt: new Date() })
+      .where(and(eq(people.id, id), isNull(people.deletedAt))).returning();
+    if (!row) throw notFound();
+    await logActivity(req, 'updated', 'person', id, 'unarchived');
+    res.json({ data: row });
   }),
 );
 

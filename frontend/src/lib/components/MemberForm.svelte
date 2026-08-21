@@ -5,6 +5,16 @@
   import { t, locale, tr, enabledLocales, displayName, personContext } from '$lib/i18n.js';
   import { nameOrder } from '$lib/stores/prefs.js';
   import { can } from '$lib/stores/auth.js';
+  import AddressAutocomplete from '$lib/components/AddressAutocomplete.svelte';
+
+  function fillAddr(a: { line1: string; line2: string; city: string; region: string; postalCode: string; country: string }) {
+    if (a.line1) form.addressLine1 = a.line1;
+    if (a.line2) form.addressLine2 = a.line2;
+    if (a.city) form.city = a.city;
+    if (a.region) form.region = a.region;
+    if (a.postalCode) form.postalCode = a.postalCode;
+    if (a.country) form.country = a.country;
+  }
 
   let { initial = null, id = null }: { initial?: any; id?: number | null } = $props();
 
@@ -15,6 +25,7 @@
   let form = $state({
     givenName: initial?.givenName ?? {},
     middleName: initial?.middleName ?? {},
+    nickName: initial?.nickName ?? {},
     familyName: initial?.familyName ?? {},
     householdId: initial?.householdId ? String(initial.householdId) : '',
     householdRole: initial?.householdRole ?? '',
@@ -171,7 +182,15 @@
         </label>
       </div>
     {/each}
-    <p class="text-xs text-slate-400">{tr({ en: "Middle / father's name is optional — it helps tell apart people who share a last name.", ar: 'الاسم الأوسط / اسم الأب اختياري — يساعد على التمييز بين من يتشاركون اسم العائلة.' }, $locale)}</p>
+    <div class="grid gap-4 sm:grid-cols-3">
+      {#each $enabledLocales as l}
+        <label class="block space-y-1">
+          <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Nickname', ar: 'اللقب' }, $locale)} ({l.native})</span>
+          <input class="input" dir={l.dir} bind:value={form.nickName[l.code]} placeholder={tr({ en: 'e.g. Sam', ar: 'مثال: سام' }, $locale)} />
+        </label>
+      {/each}
+    </div>
+    <p class="text-xs text-slate-400">{tr({ en: "Middle / father's name and nickname are optional — they help tell apart people who share a last name, and show under the full name.", ar: 'الاسم الأوسط / اسم الأب واللقب اختياريان — يساعدان على التمييز بين من يتشاركون اسم العائلة، ويظهران تحت الاسم الكامل.' }, $locale)}</p>
   </div>
 
   {#if dupes.length}
@@ -262,6 +281,7 @@
       <h2 class="text-sm font-semibold text-slate-700 dark:text-slate-200">🏠 {tr({ en: 'Home address (optional)', ar: 'عنوان المنزل (اختياري)' }, $locale)}</h2>
       <p class="text-xs text-slate-500 dark:text-slate-400">{tr({ en: "Leave blank to use the family's address. Fill this only if this person lives somewhere different.", ar: 'اتركه فارغاً لاستخدام عنوان العائلة. املأه فقط إذا كان هذا الشخص يقيم في مكان مختلف.' }, $locale)}</p>
     </div>
+    <div class="sm:col-span-2"><AddressAutocomplete onpick={fillAddr} /></div>
     <label class="block space-y-1 sm:col-span-2"><span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Address line 1', ar: 'العنوان ١' }, $locale)}</span><input class="input" bind:value={form.addressLine1} /></label>
     <label class="block space-y-1 sm:col-span-2"><span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Address line 2', ar: 'العنوان ٢' }, $locale)}</span><input class="input" bind:value={form.addressLine2} /></label>
     <label class="block space-y-1"><span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'City', ar: 'المدينة' }, $locale)}</span><input class="input" bind:value={form.city} /></label>

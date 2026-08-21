@@ -18,12 +18,18 @@ export const peopleListQuery = z.object({
   optedIn: z.enum(['email', 'sms', 'whatsapp']).optional(),
   missingContact: z.enum(['true']).optional(),
   inactiveWeeks: z.coerce.number().int().min(1).max(104).optional(),
+  // Archived visibility: default hides archived; 'only' shows just archived;
+  // 'include' shows both.
+  archived: z.enum(['only', 'include']).optional(),
 });
 export type PeopleQuery = z.infer<typeof peopleListQuery>;
 
 /** Build the WHERE conditions for a people query (always excludes soft-deleted). */
 export function peopleFilters(q: PeopleQuery): SQL[] {
   const filters: SQL[] = [isNull(people.deletedAt)];
+  // Archived are excluded from normal views/pickers unless explicitly requested.
+  if (q.archived === 'only') filters.push(sql`${people.archivedAt} IS NOT NULL`);
+  else if (q.archived !== 'include') filters.push(isNull(people.archivedAt));
   if (q.status) filters.push(eq(people.membershipStatus, q.status));
   if (q.review === 'pending') { filters.push(eq(people.selfRegistered, true)); filters.push(isNull(people.reviewedAt)); }
   if (q.search) {
@@ -35,6 +41,7 @@ export function peopleFilters(q: PeopleQuery): SQL[] {
     filters.push(sql`(${people.givenName}->>'en' ILIKE ${like} OR ${people.familyName}->>'en' ILIKE ${like}
       OR ${people.givenName}->>'ar' ILIKE ${like} OR ${people.familyName}->>'ar' ILIKE ${like}
       OR ${people.middleName}->>'en' ILIKE ${like} OR ${people.middleName}->>'ar' ILIKE ${like}
+      OR ${people.nickName}->>'en' ILIKE ${like} OR ${people.nickName}->>'ar' ILIKE ${like}
       OR ${people.email} ILIKE ${like} OR ${people.mobile} ILIKE ${like}${idMatch})`);
   }
   if (q.ageGroup === 'child') filters.push(sql`${people.dateOfBirth} IS NOT NULL AND extract(year from age(${people.dateOfBirth})) < 13`);

@@ -46,6 +46,9 @@ export type MessagingSettings = {
   azureOpenaiKey?: string;        // secret
   azureOpenaiDeployment?: string; // deployment name (defaults to aiModel)
   azureOpenaiApiVersion?: string; // defaults to a recent stable version
+  // Optional Azure Maps key for higher-quality address autocomplete. When unset,
+  // the app falls back to the free Photon (OpenStreetMap) service. No AI involved.
+  azureMapsKey?: string;
 };
 
 /**
@@ -206,6 +209,9 @@ export const people = pgTable('people', {
   // Optional middle / father's name — a natural disambiguator for common
   // surnames (Arabic full names are First Father Last). Woven into displayName.
   middleName: jsonb('middle_name').$type<I18n>().notNull().default({}),
+  // Optional nickname / preferred name (e.g. "Sam" for Samy). Shown under the
+  // full name; helps staff recognise people by what they're actually called.
+  nickName: jsonb('nick_name').$type<I18n>().notNull().default({}),
   familyName: jsonb('family_name').$type<I18n>().notNull().default({}),
   householdId: integer('household_id').references(() => households.id, { onDelete: 'set null' }),
   // Optional per-person home address. When any line is set it's the person's own
@@ -242,6 +248,10 @@ export const people = pgTable('people', {
   householdRole: varchar('household_role', { length: 20 }),
   reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
   isActive: boolean('is_active').notNull().default(true),
+  // Archived people are kept for the record but excluded from every active use —
+  // lists, pickers, ministry rosters, messaging audiences — until un-archived.
+  // Distinct from deletedAt (soft delete) and from isActive (a softer flag).
+  archivedAt: timestamp('archived_at', { withTimezone: true }),
   // Gifts / skills / interests (Tier D) — free tags used to match & recruit
   // people into ministries ("plays guitar", "good with kids", "speaks Arabic").
   skills: jsonb('skills').$type<string[]>().notNull().default([]),

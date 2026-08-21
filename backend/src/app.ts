@@ -28,6 +28,7 @@ import { automationsRouter } from './modules/automations/routes.js';
 import { vendorsRouter } from './modules/vendors/routes.js';
 import { importRouter } from './modules/import/routes.js';
 import { analyticsRouter } from './modules/analytics/routes.js';
+import { geoRouter } from './modules/geo/routes.js';
 import { mediaRouter, publicMediaRouter } from './modules/media/routes.js';
 import { publicConsentRouter } from './modules/consent/public.routes.js';
 import { publicMinistriesRouter } from './modules/ministries/public.routes.js';
@@ -72,6 +73,7 @@ export function createApp() {
   app.use('/api/vendors', vendorsRouter);
   app.use('/api/import', importRouter);
   app.use('/api/analytics', analyticsRouter);
+  app.use('/api/geo', geoRouter);
   app.use('/api/media', mediaRouter);
   app.use('/api/funds', fundsRouter);
   app.use('/api/contributions', contributionsRouter);

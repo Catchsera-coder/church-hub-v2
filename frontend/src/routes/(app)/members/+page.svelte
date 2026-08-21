@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { api } from '$lib/api.js';
-  import { t, locale, tr, displayName, personContext } from '$lib/i18n.js';
+  import { t, locale, tr } from '$lib/i18n.js';
   import { nameOrder } from '$lib/stores/prefs.js';
   import { can } from '$lib/stores/auth.js';
   import FilterBar from '$lib/components/FilterBar.svelte';
@@ -11,6 +11,8 @@
   interface Person {
     id: number;
     givenName: Record<string, string>;
+    middleName?: Record<string, string>;
+    nickName?: Record<string, string>;
     familyName: Record<string, string>;
     membershipStatus: string;
     email: string | null;
@@ -18,6 +20,10 @@
     selfRegistered?: boolean;
     reviewedAt?: string | null;
     householdRole?: string | null;
+    archivedAt?: string | null;
+    householdName?: Record<string, string> | null;
+    householdCity?: string | null;
+    dateOfBirth?: string | null;
   }
   interface Meta { page: number; limit: number; total: number; pages: number }
 
@@ -58,6 +64,19 @@
     } catch (err) { alert((err as Error).message); } finally { savingRole = null; }
   }
 
+  // Line 1 = first + last only (order-aware); the middle/father's name and
+  // nickname go on their own subtle line below.
+  function primaryName(p: any) {
+    const g = tr(p.givenName, $locale), f = tr(p.familyName, $locale);
+    return ($nameOrder === 'family-first' ? `${f} ${g}` : `${g} ${f}`).trim();
+  }
+  function nameExtras(p: any) {
+    const parts: string[] = [];
+    const nick = tr(p.nickName, $locale); if (nick) parts.push(`“${nick}”`);
+    const mid = tr(p.middleName, $locale); if (mid) parts.push(mid);
+    return parts.join(' · ');
+  }
+
   const MONTHS = [
     { v: 1, en: 'January', ar: 'يناير' }, { v: 2, en: 'February', ar: 'فبراير' },
     { v: 3, en: 'March', ar: 'مارس' }, { v: 4, en: 'April', ar: 'أبريل' },
@@ -90,6 +109,7 @@
   let page = $state(1);
   let loading = $state(true);
   let reviewOnly = $state(false);
+  let showArchived = $state(false);
   let pendingCount = $state(0);
   let ministries = $state<{ id: number; name: Record<string, string> }[]>([]);
   let timer: ReturnType<typeof setTimeout>;
@@ -100,6 +120,7 @@
       const q = new URLSearchParams({ page: String(page), limit: '25' });
       if (search.trim()) q.set('search', search.trim());
       if (reviewOnly) q.set('review', 'pending');
+      if (showArchived) q.set('archived', 'only');
       for (const [k, v] of Object.entries(f)) if (v !== '') q.set(k, String(v));
       const r = await api<{ data: Person[]; meta: Meta }>(`/people?${q}`);
       rows = r.data;
@@ -117,7 +138,8 @@
   function onSearch() { clearTimeout(timer); timer = setTimeout(() => { page = 1; load(); }, 300); }
   function applyFilters() { page = 1; load(); }
   function clearFilters() { f = { ...EMPTY }; page = 1; load(); }
-  function toggleReview() { reviewOnly = !reviewOnly; page = 1; load(); }
+  function toggleReview() { reviewOnly = !reviewOnly; if (reviewOnly) showArchived = false; page = 1; load(); }
+  function toggleArchived() { showArchived = !showArchived; if (showArchived) reviewOnly = false; page = 1; load(); }
 
   async function markReviewed(p: Person, sendWelcome = false) {
     const r = await api<{ welcomeSent?: boolean }>(`/people/${p.id}/review`, { method: 'POST', body: JSON.stringify({ sendWelcome }) });
@@ -164,6 +186,9 @@
   <input class="input max-w-xs" placeholder={$t('common.search')} bind:value={search} oninput={onSearch} />
   <button class="btn-ghost text-sm {reviewOnly ? 'text-amber-700 ring-1 ring-amber-400 dark:text-amber-300' : ''}" onclick={toggleReview}>
     {reviewOnly ? tr({ en: '✓ Needs review', ar: '✓ يحتاج مراجعة' }, $locale) : tr({ en: 'Needs review', ar: 'يحتاج مراجعة' }, $locale)}
+  </button>
+  <button class="btn-ghost text-sm {showArchived ? 'text-slate-700 ring-1 ring-slate-400 dark:text-slate-200' : ''}" onclick={toggleArchived}>
+    {showArchived ? tr({ en: '✓ Archived', ar: '✓ المؤرشفون' }, $locale) : tr({ en: '🗄 Archived', ar: '🗄 المؤرشفون' }, $locale)}
   </button>
   <div class="ms-auto flex items-center gap-2 text-sm text-slate-500">
     <span>{tr({ en: 'Name', ar: 'الاسم' }, $locale)}:</span>
@@ -252,6 +277,7 @@
     <table class="w-full text-sm">
       <thead class="border-b border-slate-200 text-start text-slate-500 dark:border-slate-800">
         <tr>
+          <th class="p-3 text-end font-medium tabular-nums text-slate-400">#</th>
           <th class="p-3 text-start font-medium">{tr({ en: 'Name', ar: 'الاسم' }, $locale)}</th>
           <th class="p-3 text-start font-medium">{tr({ en: 'Household', ar: 'الأسرة' }, $locale)}</th>
           <th class="p-3 text-start font-medium">{tr({ en: 'Status', ar: 'الحالة' }, $locale)}</th>
@@ -263,16 +289,20 @@
       <tbody>
         {#each rows as p}
           <tr class="border-b border-slate-100 last:border-0 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/50">
+            <td class="p-3 text-end align-top text-xs tabular-nums text-slate-400">{p.id}</td>
             <td class="p-3">
-              <div class="flex items-center gap-2">
+              <div class="flex flex-wrap items-center gap-2">
                 <a class="font-medium text-primary-700 hover:underline dark:text-primary-300" href="/members/{p.id}">
-                  {displayName(p, $nameOrder, $locale)}
+                  {primaryName(p)}
                 </a>
                 {#if p.selfRegistered && !p.reviewedAt}
                   <span class="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">{tr({ en: 'new', ar: 'جديد' }, $locale)}</span>
                 {/if}
+                {#if p.archivedAt}
+                  <span class="rounded-full bg-slate-200 px-2 py-0.5 text-xs text-slate-600 dark:bg-slate-700 dark:text-slate-300">🗄 {tr({ en: 'archived', ar: 'مؤرشف' }, $locale)}</span>
+                {/if}
               </div>
-              {#if personContext(p, $locale)}<div class="mt-0.5 text-xs text-slate-400">{personContext(p, $locale)}</div>{/if}
+              {#if nameExtras(p)}<div class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{nameExtras(p)}</div>{/if}
             </td>
             <td class="p-3">
               {#if editableRole}
