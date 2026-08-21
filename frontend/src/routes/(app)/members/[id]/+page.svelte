@@ -6,6 +6,7 @@
   import PageHeader from '$lib/components/PageHeader.svelte';
   import MemberForm from '$lib/components/MemberForm.svelte';
   import RosterEditor from '$lib/components/RosterEditor.svelte';
+  import MemberClearances from '$lib/components/MemberClearances.svelte';
   import MemberQrCard from '$lib/components/MemberQrCard.svelte';
 
   let person = $state<any>(null);
@@ -28,6 +29,7 @@
     <div class="lg:col-span-3"><MemberForm initial={person} {id} /></div>
     <div class="space-y-6 lg:col-span-2">
       <RosterEditor personId={id} />
+      <MemberClearances personId={id} />
       {#if person.qrToken}
         <MemberQrCard qrToken={person.qrToken} name={`${tr(person.givenName, $locale)} ${tr(person.familyName, $locale)}`.trim()} />
       {/if}

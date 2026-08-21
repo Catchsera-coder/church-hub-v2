@@ -30,6 +30,7 @@ import { importRouter } from './modules/import/routes.js';
 import { analyticsRouter } from './modules/analytics/routes.js';
 import { mediaRouter, publicMediaRouter } from './modules/media/routes.js';
 import { publicConsentRouter } from './modules/consent/public.routes.js';
+import { publicMinistriesRouter } from './modules/ministries/public.routes.js';
 
 export function createApp() {
   const app = express();
@@ -55,6 +56,8 @@ export function createApp() {
   app.use('/api/public/media', publicMediaRouter);
   app.use('/api/public/unsubscribe', rateLimit({ windowMs: 60_000, max: 30 }));
   app.use('/api/public/unsubscribe', publicConsentRouter);
+  app.use('/api/public/ministries', rateLimit({ windowMs: 60_000, max: 30 }));
+  app.use('/api/public/ministries', publicMinistriesRouter);
 
   app.use('/api/auth', authRouter);
   app.use('/api/settings', settingsRouter);

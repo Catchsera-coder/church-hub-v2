@@ -26,9 +26,20 @@
     emailOptOut: initial?.emailOptOut ?? false,
     smsOptOut: initial?.smsOptOut ?? false,
     whatsappOptOut: initial?.whatsappOptOut ?? false,
+    skills: (initial?.skills ?? []) as string[],
   });
   let saving = $state(false);
   let error = $state('');
+
+  // Skills / gifts / interests — free tags for ministry matching.
+  let newSkill = $state('');
+  function addSkill() {
+    const s = newSkill.trim();
+    if (s && !form.skills.includes(s)) form.skills = [...form.skills, s];
+    newSkill = '';
+  }
+  function removeSkill(s: string) { form.skills = form.skills.filter((x) => x !== s); }
+  function skillKey(e: KeyboardEvent) { if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addSkill(); } }
 
   // Inline "quick create" for a family, so the admin never has to leave this form.
   let showNewFamily = $state(false);
@@ -178,6 +189,22 @@
         </datalist>
       </label>
     {/if}
+  </div>
+
+  <div class="card space-y-3 p-6">
+    <h2 class="text-sm font-semibold text-slate-700 dark:text-slate-200">✨ {tr({ en: 'Skills, gifts & interests', ar: 'المواهب والاهتمامات' }, $locale)}</h2>
+    <p class="text-xs text-slate-500 dark:text-slate-400">{tr({ en: 'Tags to help match & recruit this person into ministries (e.g. plays guitar, good with kids, speaks Arabic).', ar: 'وسوم للمساعدة في ترشيح هذا الشخص للخدمات (مثال: يعزف الجيتار، بارع مع الأطفال).' }, $locale)}</p>
+    {#if form.skills.length}
+      <div class="flex flex-wrap gap-2">
+        {#each form.skills as s}
+          <span class="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-xs dark:bg-slate-800">{s}<button type="button" class="text-slate-400 hover:text-rose-600" onclick={() => removeSkill(s)}>✕</button></span>
+        {/each}
+      </div>
+    {/if}
+    <div class="flex gap-2">
+      <input class="input" bind:value={newSkill} onkeydown={skillKey} placeholder={tr({ en: 'Add a skill and press Enter', ar: 'أضف مهارة واضغط Enter' }, $locale)} maxlength="40" />
+      <button type="button" class="btn-ghost shrink-0" onclick={addSkill}>{tr({ en: 'Add', ar: 'إضافة' }, $locale)}</button>
+    </div>
   </div>
 
   <div class="card space-y-3 p-6">

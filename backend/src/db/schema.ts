@@ -231,6 +231,9 @@ export const people = pgTable('people', {
   householdRole: varchar('household_role', { length: 20 }),
   reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
   isActive: boolean('is_active').notNull().default(true),
+  // Gifts / skills / interests (Tier D) — free tags used to match & recruit
+  // people into ministries ("plays guitar", "good with kids", "speaks Arabic").
+  skills: jsonb('skills').$type<string[]>().notNull().default([]),
   notes: text('notes'),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
   ...timestamps,
@@ -262,17 +265,82 @@ export const serviceTypes = pgTable('service_types', {
   parentId: integer('parent_id').references((): AnyPgColumn => serviceTypes.id, { onDelete: 'set null' }),
   sortOrder: integer('sort_order').notNull().default(0),
   isActive: boolean('is_active').notNull().default(true),
+  // --- Ministry structure (Tier A/C) ---------------------------------------
+  // 'ministry' = a serving team/area; 'group' = a small/home/cell group. Same
+  // table so attendance, rosters, and streaming are shared. Varchar (not enum)
+  // keeps additions migration-free.
+  kind: varchar('kind', { length: 20 }).notNull().default('ministry'),
+  // Free-ish category label (worship, children, youth, hospitality, prayer…).
+  category: varchar('category', { length: 40 }),
+  // The person who leads/coordinates this ministry (for contact + accountability).
+  leaderId: integer('leader_id').references((): AnyPgColumn => people.id, { onDelete: 'set null' }),
+  contactEmail: varchar('contact_email', { length: 190 }),
+  // Where it meets (room, or a group's host home) + when (kept simple + free).
+  location: varchar('location', { length: 190 }),
+  meetingDay: varchar('meeting_day', { length: 20 }),
+  meetingTime: varchar('meeting_time', { length: 20 }),
+  // Optional cap on team size + whether people may self-sign-up via a public link.
+  capacity: integer('capacity'),
+  openToSignup: boolean('open_to_signup').notNull().default(false),
+  // Unguessable token for the public "join this ministry" link/QR.
+  publicToken: uuid('public_token').notNull().defaultRandom(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
   ...timestamps,
-}, (t) => ({ parentIdx: index('service_types_parent_idx').on(t.parentId) }));
+}, (t) => ({
+  parentIdx: index('service_types_parent_idx').on(t.parentId),
+  leaderIdx: index('service_types_leader_idx').on(t.leaderId),
+  publicTokenIdx: uniqueIndex('service_types_public_token_idx').on(t.publicToken),
+}));
 
+// Ministry roster membership. Now carries a role WITHIN the ministry (leader/
+// coordinator/volunteer/member), an active/paused status, and when they started
+// serving (for milestones). Varchar roles keep it flexible + migration-free.
 export const personServiceType = pgTable('person_service_type', {
   personId: integer('person_id').notNull().references(() => people.id, { onDelete: 'cascade' }),
   serviceTypeId: integer('service_type_id').notNull().references(() => serviceTypes.id, { onDelete: 'cascade' }),
+  role: varchar('role', { length: 20 }).notNull().default('member'), // leader|coordinator|volunteer|member
+  status: varchar('status', { length: 20 }).notNull().default('active'), // active|paused
+  servingSince: date('serving_since'),
+  notes: text('notes'),
+  ...timestamps,
 }, (t) => ({
   pk: uniqueIndex('person_service_type_pk').on(t.personId, t.serviceTypeId),
   serviceIdx: index('person_service_type_service_idx').on(t.serviceTypeId),
 }));
+
+// Serving rota (Tier B): who serves in a ministry on a given date/service, in
+// what role, and whether they've confirmed. Reused by the rota builder + the
+// reminder worker. serveDate OR attendanceEventId anchors the occasion.
+export const servingAssignments = pgTable('serving_assignments', {
+  id: serial('id').primaryKey(),
+  serviceTypeId: integer('service_type_id').notNull().references(() => serviceTypes.id, { onDelete: 'cascade' }),
+  personId: integer('person_id').notNull().references(() => people.id, { onDelete: 'cascade' }),
+  attendanceEventId: integer('attendance_event_id').references(() => attendanceEvents.id, { onDelete: 'set null' }),
+  serveDate: date('serve_date').notNull(),
+  role: varchar('role', { length: 60 }), // ministry-specific: Vocals, Usher, Teacher…
+  status: varchar('status', { length: 20 }).notNull().default('invited'), // invited|confirmed|declined
+  reminderSentAt: timestamp('reminder_sent_at', { withTimezone: true }),
+  notes: text('notes'),
+  ...timestamps,
+}, (t) => ({
+  serviceDateIdx: index('serving_assignments_service_date_idx').on(t.serviceTypeId, t.serveDate),
+  personIdx: index('serving_assignments_person_idx').on(t.personId),
+  dateIdx: index('serving_assignments_date_idx').on(t.serveDate),
+}));
+
+// Safeguarding clearances (Tier C): background checks / training per person,
+// with issue + expiry dates. Surfaced as a warning when assigning someone to a
+// children/youth ministry without a valid, unexpired clearance.
+export const personClearances = pgTable('person_clearances', {
+  id: serial('id').primaryKey(),
+  personId: integer('person_id').notNull().references(() => people.id, { onDelete: 'cascade' }),
+  type: varchar('type', { length: 40 }).notNull(), // background_check|safeguarding_training|other
+  status: varchar('status', { length: 20 }).notNull().default('valid'), // valid|pending|expired
+  issuedOn: date('issued_on'),
+  expiresOn: date('expires_on'),
+  notes: text('notes'),
+  ...timestamps,
+}, (t) => ({ personIdx: index('person_clearances_person_idx').on(t.personId) }));
 
 // ---------------------------------------------------------------------------
 // Attendance

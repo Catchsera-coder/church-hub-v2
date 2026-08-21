@@ -1,8 +1,8 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { and, desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { db } from '../../db/index.js';
-import { people, personServiceType, serviceTypes, automations, messageTemplates } from '../../db/schema.js';
+import { people, personServiceType, serviceTypes, automations, messageTemplates, personClearances } from '../../db/schema.js';
 import { asyncHandler } from '../../http/asyncHandler.js';
 import { authenticate, requirePermission } from '../../middleware/auth.js';
 import { notFound } from '../../http/errors.js';
@@ -32,6 +32,8 @@ const upsertSchema = z.object({
   smsOptOut: z.boolean().optional(),
   whatsappOptOut: z.boolean().optional(),
   customFields: z.record(z.string()).optional(),
+  // Gifts / skills / interests (free tags) for ministry matching.
+  skills: z.array(z.string().trim().min(1).max(40)).max(40).optional(),
 });
 
 // GET /api/people — paginated, searchable across both locales of the name.
@@ -154,14 +156,61 @@ peopleRouter.put(
     const { serviceTypeIds } = z.object({ serviceTypeIds: z.array(z.number().int().positive()).default([]) }).parse(req.body);
     const [person] = await db.select({ id: people.id }).from(people).where(and(eq(people.id, personId), isNull(people.deletedAt))).limit(1);
     if (!person) throw notFound();
-    await db.delete(personServiceType).where(eq(personServiceType.personId, personId));
-    if (serviceTypeIds.length) {
+    // Non-destructive: only remove ministries that were unchecked and add the new
+    // ones (default role). Existing memberships keep their role/status/servingSince
+    // so editing from the member profile never wipes a ministry role.
+    const current = await db.select({ serviceTypeId: personServiceType.serviceTypeId }).from(personServiceType).where(eq(personServiceType.personId, personId));
+    const currentIds = new Set(current.map((r) => r.serviceTypeId));
+    const wanted = new Set(serviceTypeIds);
+    const toRemove = [...currentIds].filter((x) => !wanted.has(x));
+    const toAdd = [...wanted].filter((x) => !currentIds.has(x));
+    if (toRemove.length) await db.delete(personServiceType).where(and(eq(personServiceType.personId, personId), inArray(personServiceType.serviceTypeId, toRemove)));
+    if (toAdd.length) {
       await db.insert(personServiceType)
-        .values(serviceTypeIds.map((serviceTypeId) => ({ personId, serviceTypeId })))
+        .values(toAdd.map((serviceTypeId) => ({ personId, serviceTypeId })))
         .onConflictDoNothing();
     }
     await logActivity(req, 'updated', 'person', personId, 'roster');
     res.json({ data: { serviceTypeIds } });
+  }),
+);
+
+// --- Safeguarding clearances (per person) ------------------------------------
+peopleRouter.get(
+  '/:id/clearances',
+  requirePermission('view person'),
+  asyncHandler(async (req, res) => {
+    const personId = Number(req.params.id);
+    const rows = await db.select().from(personClearances).where(eq(personClearances.personId, personId)).orderBy(desc(personClearances.createdAt));
+    res.json({ data: rows });
+  }),
+);
+
+const clearanceSchema = z.object({
+  type: z.string().min(1).max(40),
+  status: z.enum(['valid', 'pending', 'expired']).default('valid'),
+  issuedOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  expiresOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  notes: z.string().max(2000).nullable().optional(),
+});
+
+// Replace the person's whole clearance set in one call (simple + race-free).
+peopleRouter.put(
+  '/:id/clearances',
+  requirePermission('update person'),
+  asyncHandler(async (req, res) => {
+    const personId = Number(req.params.id);
+    const { clearances } = z.object({ clearances: z.array(clearanceSchema).max(20).default([]) }).parse(req.body);
+    const [person] = await db.select({ id: people.id }).from(people).where(and(eq(people.id, personId), isNull(people.deletedAt))).limit(1);
+    if (!person) throw notFound();
+    await db.delete(personClearances).where(eq(personClearances.personId, personId));
+    if (clearances.length) {
+      await db.insert(personClearances).values(clearances.map((c) => ({
+        personId, type: c.type, status: c.status, issuedOn: c.issuedOn ?? null, expiresOn: c.expiresOn ?? null, notes: c.notes ?? null,
+      })));
+    }
+    await logActivity(req, 'updated', 'person', personId, 'clearances');
+    res.json({ data: { count: clearances.length } });
   }),
 );
 

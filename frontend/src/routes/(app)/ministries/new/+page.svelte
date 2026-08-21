@@ -4,5 +4,5 @@
   import MinistryForm from '$lib/components/MinistryForm.svelte';
 </script>
 
-<PageHeader title={tr({ en: 'New ministry', ar: 'خدمة جديدة' }, $locale)} />
-<MinistryForm />
+<PageHeader title={tr({ en: 'New ministry or group', ar: 'خدمة أو مجموعة جديدة' }, $locale)} back="/ministries" />
+<div class="max-w-3xl"><MinistryForm /></div>
