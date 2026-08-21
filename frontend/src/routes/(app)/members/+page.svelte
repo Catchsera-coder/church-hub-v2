@@ -277,7 +277,7 @@
     <table class="w-full text-sm">
       <thead class="border-b border-slate-200 text-start text-slate-500 dark:border-slate-800">
         <tr>
-          <th class="p-3 text-end font-medium tabular-nums text-slate-400">#</th>
+          <th class="w-16 p-3 text-start font-medium text-slate-400">{tr({ en: 'ID', ar: 'المعرّف' }, $locale)}</th>
           <th class="p-3 text-start font-medium">{tr({ en: 'Name', ar: 'الاسم' }, $locale)}</th>
           <th class="p-3 text-start font-medium">{tr({ en: 'Household', ar: 'الأسرة' }, $locale)}</th>
           <th class="p-3 text-start font-medium">{tr({ en: 'Status', ar: 'الحالة' }, $locale)}</th>
@@ -289,8 +289,10 @@
       <tbody>
         {#each rows as p}
           <tr class="border-b border-slate-100 last:border-0 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/50">
-            <td class="p-3 text-end align-top text-xs tabular-nums text-slate-400">{p.id}</td>
-            <td class="p-3">
+            <td class="p-3 align-top">
+              <span class="inline-block rounded-md bg-slate-100 px-2 py-0.5 text-xs font-semibold tabular-nums text-slate-500 dark:bg-slate-800 dark:text-slate-400">{p.id}</span>
+            </td>
+            <td class="p-3 align-top">
               <div class="flex flex-wrap items-center gap-2">
                 <a class="font-medium text-primary-700 hover:underline dark:text-primary-300" href="/members/{p.id}">
                   {primaryName(p)}
