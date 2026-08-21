@@ -54,7 +54,7 @@
     }
   }
   function applyTemplate(p: string) { const t = template(p); subject = { ...t.subject }; body = { ...t.body }; bodyTouched = false; }
-  function setPurpose(p: string) { purpose = p; applyTemplate(p); }
+  function setPurpose(p: string) { purpose = p; applyTemplate(p); previewSoon(); }
   applyTemplate(initialPurpose); // seed once on open
 
   // Group + people pickers.
@@ -100,7 +100,29 @@
       catch { reach = null; }
     }, 250);
   }
-  function setChannel(c: 'sms' | 'email' | 'whatsapp') { channel = c; refreshReach(); }
+  function setChannel(c: 'sms' | 'email' | 'whatsapp') { channel = c; refreshReach(); previewSoon(); }
+
+  // Live preview: render exactly how a recipient receives it — merge fields filled
+  // with a sample person — via the shared /messages/preview endpoint (branded email
+  // HTML, or the SMS/WhatsApp text with any CTA appended).
+  let previewOpen = $state(false);
+  let previewData = $state<any>(null);
+  let previewing = $state(false);
+  let previewErr = $state('');
+  let pvTimer: ReturnType<typeof setTimeout>;
+  async function doPreview() {
+    previewing = true; previewErr = '';
+    const donation = purpose === 'donation' && channel === 'email' && ctaUrl.trim();
+    try {
+      previewData = (await api<{ data: any }>('/messages/preview', { method: 'POST', body: JSON.stringify({
+        channel, subject, body,
+        ctaLabel: donation ? { en: 'Give now', ar: 'تبرّع الآن' } : null,
+        ctaUrl: donation ? ctaUrl.trim() : null,
+      }) })).data;
+    } catch (e) { previewErr = (e as Error).message; previewData = null; } finally { previewing = false; }
+  }
+  function togglePreview() { previewOpen = !previewOpen; if (previewOpen) doPreview(); }
+  function previewSoon() { if (!previewOpen) return; clearTimeout(pvTimer); pvTimer = setTimeout(doPreview, 300); }
 
   let sending = $state(false);
   let sent = $state<{ sent: number; total: number } | null>(null);
@@ -224,14 +246,42 @@
 
         <!-- 4. Message (auto-written, editable) -->
         <div>
-          <p class="mb-1.5 text-sm font-medium text-slate-700 dark:text-slate-200">4 · {tr({ en: 'Message', ar: 'الرسالة' }, $locale)} <span class="font-normal text-slate-400">{tr({ en: '· auto-written, edit freely', ar: '· مكتوبة تلقائياً، عدّلها بحرية' }, $locale)}</span></p>
+          <div class="mb-1.5 flex items-center justify-between gap-2">
+            <p class="text-sm font-medium text-slate-700 dark:text-slate-200">4 · {tr({ en: 'Message', ar: 'الرسالة' }, $locale)} <span class="font-normal text-slate-400">{tr({ en: '· auto-written, edit freely', ar: '· مكتوبة تلقائياً، عدّلها بحرية' }, $locale)}</span></p>
+            <button type="button" class="shrink-0 text-xs font-medium text-primary-600 hover:underline dark:text-primary-300" onclick={togglePreview}>{previewOpen ? tr({ en: '✕ Hide preview', ar: '✕ إخفاء المعاينة' }, $locale) : tr({ en: '👁 Preview', ar: '👁 معاينة' }, $locale)}</button>
+          </div>
           {#if channel === 'email'}
-            <input class="input mb-2" bind:value={subject.en} placeholder={tr({ en: 'Email subject', ar: 'عنوان البريد' }, $locale)} />
+            <input class="input mb-2" bind:value={subject.en} oninput={previewSoon} placeholder={tr({ en: 'Email subject', ar: 'عنوان البريد' }, $locale)} />
           {/if}
-          <textarea class="input min-h-[7rem] w-full" bind:value={body.en} oninput={() => (bodyTouched = true)}></textarea>
+          <textarea class="input min-h-[7rem] w-full" bind:value={body.en} oninput={() => { bodyTouched = true; previewSoon(); }}></textarea>
           <p class="mt-1 text-[11px] text-slate-400">{tr({ en: 'Tip: {{firstName}} and {{churchName}} fill in automatically per person. No names or private details are included unless you add them.', ar: 'تلميح: {{firstName}} و {{churchName}} تُملأ تلقائياً لكل شخص. لا تُدرَج أسماء أو تفاصيل خاصة إلا إذا أضفتها.' }, $locale)}</p>
           {#if purpose === 'donation' && channel === 'email'}
-            <input class="input mt-2 force-ltr" bind:value={ctaUrl} placeholder={tr({ en: 'Giving link (adds a “Give now” button)', ar: 'رابط التبرع (يضيف زر «تبرّع الآن»)' }, $locale)} />
+            <input class="input mt-2 force-ltr" bind:value={ctaUrl} oninput={previewSoon} placeholder={tr({ en: 'Giving link (adds a “Give now” button)', ar: 'رابط التبرع (يضيف زر «تبرّع الآن»)' }, $locale)} />
+          {/if}
+
+          {#if previewOpen}
+            <div class="mt-3 overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700">
+              <div class="flex items-center justify-between bg-slate-50 px-3 py-1.5 text-[11px] font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                <span>{tr({ en: 'Preview — how they receive it', ar: 'معاينة — كيف يستلمها العضو' }, $locale)}</span>
+                {#if previewing}<span>…</span>{/if}
+              </div>
+              {#if previewErr}
+                <p class="p-3 text-xs text-rose-600 dark:text-rose-400">{previewErr}</p>
+              {:else if !previewData}
+                <p class="p-3 text-xs text-slate-400">…</p>
+              {:else if channel === 'email'}
+                <div class="border-b border-slate-100 px-3 py-2 text-xs text-slate-600 dark:border-slate-800 dark:text-slate-300"><span class="text-slate-400">{tr({ en: 'Subject', ar: 'الموضوع' }, $locale)}:</span> {previewData.subject}</div>
+                <iframe title="email preview" srcdoc={previewData.html} sandbox="" class="h-64 w-full bg-white"></iframe>
+              {:else}
+                <div class="bg-slate-100 p-4 dark:bg-slate-800/40">
+                  <div class="mx-auto max-w-[16rem]">
+                    <div class="mb-1 text-center text-[10px] text-slate-400">{channel === 'whatsapp' ? tr({ en: 'WhatsApp', ar: 'واتساب' }, $locale) : tr({ en: 'Text message (SMS)', ar: 'رسالة نصية' }, $locale)}</div>
+                    <div class="whitespace-pre-wrap rounded-2xl rounded-tl-sm px-3 py-2 text-sm shadow-sm {channel === 'whatsapp' ? 'bg-[#d9fdd3] text-slate-800' : 'bg-white text-slate-800 dark:bg-slate-700 dark:text-slate-100'}">{previewData.text}</div>
+                  </div>
+                </div>
+              {/if}
+              <p class="px-3 py-1.5 text-[10px] text-slate-400">{tr({ en: 'Sample data shown (name “Sarah”, your church name). Each person sees their own.', ar: 'بيانات تجريبية (الاسم «سارة»، اسم كنيستك). كل شخص يرى بياناته.' }, $locale)}</p>
+            </div>
           {/if}
         </div>
       </div>
