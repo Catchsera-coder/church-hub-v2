@@ -21,6 +21,11 @@
   }
   interface Meta { page: number; limit: number; total: number; pages: number }
 
+  // "self"/"head" is not a relationship — it marks the primary person in the
+  // household. Show it as a subtle head-of-household star; show real relationships
+  // (wife, son…) as a clean capitalized chip.
+  function isHead(r?: string | null) { const x = (r ?? '').trim().toLowerCase(); return x === 'self' || x === 'head' || x === 'رب الأسرة'; }
+
   const MONTHS = [
     { v: 1, en: 'January', ar: 'يناير' }, { v: 2, en: 'February', ar: 'فبراير' },
     { v: 3, en: 'March', ar: 'مارس' }, { v: 4, en: 'April', ar: 'أبريل' },
@@ -232,7 +237,13 @@
               {#if p.selfRegistered && !p.reviewedAt}
                 <span class="ms-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">{tr({ en: 'new', ar: 'جديد' }, $locale)}</span>
               {/if}
-              {#if p.householdRole}<span class="ms-1 text-xs text-slate-400">· {p.householdRole}</span>{/if}
+              {#if p.householdRole}
+                {#if isHead(p.householdRole)}
+                  <span class="ms-1.5 align-middle" title={tr({ en: 'Head of household', ar: 'رب الأسرة' }, $locale)}>⭐</span>
+                {:else}
+                  <span class="ms-1.5 rounded-full bg-slate-100 px-2 py-0.5 text-xs capitalize text-slate-600 dark:bg-slate-800 dark:text-slate-300">{p.householdRole}</span>
+                {/if}
+              {/if}
             </td>
             <td class="p-3 capitalize text-slate-600 dark:text-slate-300">{p.membershipStatus}</td>
             <td class="p-3 force-ltr text-slate-600 dark:text-slate-300">{p.email ?? '—'}</td>
