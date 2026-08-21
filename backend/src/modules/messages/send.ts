@@ -3,7 +3,7 @@ import { db } from '../../db/index.js';
 import { messageCampaigns, messageRecipients, people } from '../../db/schema.js';
 import { config } from '../../config.js';
 import { currentOrg } from '../settings/routes.js';
-import { resolveMessaging, sendMessage } from './delivery.js';
+import { resolveMessaging, sendMessage, sleep } from './delivery.js';
 import { resolveAudienceIds } from './audience.js';
 import { buildContext, renderText, brandedEmailHtml, localeName } from './render.js';
 
@@ -65,6 +65,12 @@ export async function sendCampaignNow(campaignId: number): Promise<{ sent: numbe
     const ok = await sendMessage(messaging, c.channel, p.contact as string, subject, plain, html, c.mediaUrl ?? undefined);
     await db.update(messageRecipients).set({ status: ok ? 'sent' : 'failed' }).where(eq(messageRecipients.id, rec.id));
     if (ok) sent++;
+    // Gentle pacing to smooth bursts under the provider per-minute caps (SMS
+    // toll-free 200/min, ACS custom-domain email 30/min); the delivery layer also
+    // retries on 429, so nothing is dropped. For very large church-wide blasts
+    // prefer scheduling the campaign — the background worker drains it without
+    // holding an HTTP request open.
+    await sleep(75);
   }
 
   const finalStatus = audience.length > 0 && sent === 0 ? 'failed' : 'sent';

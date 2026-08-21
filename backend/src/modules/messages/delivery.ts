@@ -89,6 +89,30 @@ export function resolveMessaging(dbMsg?: MessagingSettings | null, opts?: { repl
   };
 }
 
+export const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+const throttledFetch = (url: string, init: RequestInit) => withThrottleRetry(() => fetch(url, init));
+
+/**
+ * Run a provider request and transparently retry on HTTP 429 (throttled).
+ * Azure ACS (SMS toll-free 200/min, email custom-domain 30/min·100/hr) and
+ * Twilio all return 429 when a group send exceeds the per-minute cap; without
+ * this, those recipients would be marked 'failed' and dropped. We honour the
+ * `Retry-After` header when present, else exponential backoff (capped). `doFetch`
+ * is re-invoked each attempt so ACS requests are re-signed with a fresh date.
+ */
+async function withThrottleRetry(doFetch: () => Promise<Response>, maxRetries = 4): Promise<Response> {
+  let res = await doFetch();
+  let attempt = 0;
+  while (res.status === 429 && attempt < maxRetries) {
+    const ra = Number(res.headers.get('retry-after'));
+    const waitMs = Number.isFinite(ra) && ra > 0 ? Math.min(ra * 1000, 60_000) : Math.min(1000 * 2 ** attempt, 30_000);
+    await sleep(waitMs);
+    res = await doFetch();
+    attempt++;
+  }
+  return res;
+}
+
 export async function sendMessage(
   m: ResolvedMessaging,
   channel: 'email' | 'sms' | 'whatsapp',
@@ -160,7 +184,7 @@ async function sendEmailSendgrid(m: ResolvedMessaging, to: string, subject: stri
   const content = html
     ? [{ type: 'text/plain', value: body }, { type: 'text/html', value: html }]
     : [{ type: 'text/plain', value: body }];
-  const res = await fetch('https://api.sendgrid.com/v3/mail/send', {
+  const res = await throttledFetch('https://api.sendgrid.com/v3/mail/send', {
     method: 'POST',
     headers: { Authorization: `Bearer ${m.sendgridApiKey}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -199,7 +223,7 @@ async function sendSmsTwilio(m: ResolvedMessaging, to: string, body: string, med
   const auth = Buffer.from(`${m.twilioAccountSid}:${m.twilioAuthToken}`).toString('base64');
   const params = new URLSearchParams({ To: to, From: m.smsFrom!, Body: body });
   if (mediaUrl) params.append('MediaUrl', mediaUrl); // MMS
-  const res = await fetch(url, {
+  const res = await throttledFetch(url, {
     method: 'POST',
     headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/x-www-form-urlencoded' },
     body: params.toString(),
@@ -220,7 +244,7 @@ async function sendWhatsappTwilio(m: ResolvedMessaging, to: string, body: string
   const toAddr = to.startsWith('whatsapp:') ? to : `whatsapp:${to}`;
   const params = new URLSearchParams({ To: toAddr, From: from, Body: body });
   if (mediaUrl) params.append('MediaUrl', mediaUrl);
-  const res = await fetch(url, {
+  const res = await throttledFetch(url, {
     method: 'POST',
     headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/x-www-form-urlencoded' },
     body: params.toString(),
@@ -281,7 +305,10 @@ async function acsSignedFetch(connectionString: string, pathAndQuery: string, pa
   const stringToSign = `POST\n${pathAndQuery}\n${date};${host};${contentHash}`;
   const signature = createHmac('sha256', Buffer.from(accessKey, 'base64')).update(stringToSign, 'utf8').digest('base64');
 
-  return fetch(endpoint + pathAndQuery, {
+  // Retry on 429 (throttled). The HMAC signature stays valid across ACS's clock-
+  // skew window (~15 min), so re-sending the same signed request within the short
+  // backoff is safe.
+  return withThrottleRetry(() => fetch(endpoint + pathAndQuery, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -290,5 +317,5 @@ async function acsSignedFetch(connectionString: string, pathAndQuery: string, pa
       Authorization: `HMAC-SHA256 SignedHeaders=x-ms-date;host;x-ms-content-sha256&Signature=${signature}`,
     },
     body: payload,
-  });
+  }));
 }
