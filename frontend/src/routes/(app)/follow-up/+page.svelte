@@ -64,13 +64,23 @@
   });
 
   async function move(p: any, stage: string) {
+    // Empty value = remove from the pipeline (stage → null): the person leaves the
+    // Follow-up board and returns to Needs attention if still absent / not yet
+    // connected. Confirm it, since it undoes the follow-up.
+    if (!stage) {
+      const ok = confirm(tr({
+        en: `Remove ${displayName(p, $nameOrder, $locale)} from follow-up? They'll go back to Needs attention if still absent or not yet connected.`,
+        ar: `إزالة ${displayName(p, $nameOrder, $locale)} من المتابعة؟ سيعود إلى "يحتاج متابعة" إن كان لا يزال غائباً أو غير مندمج.`,
+      }, $locale));
+      if (!ok) { await load(); return; } // reload resets the dropdown
+    }
     busy = true;
     try {
       // Setting a stage on an unreviewed newcomer also marks them reviewed so they
-      // leave the "needs review" queue as they enter the pipeline.
-      const body: Record<string, unknown> = { followUpStage: stage };
+      // leave the "needs review" queue as they enter the pipeline. '' → null clears it.
+      const body: Record<string, unknown> = { followUpStage: stage || null };
       await api(`/people/${p.id}`, { method: 'PUT', body: JSON.stringify(body) });
-      if (p.selfRegistered && !p.reviewedAt) { try { await api(`/people/${p.id}/review`, { method: 'POST', body: '{}' }); } catch { /* ok */ } }
+      if (stage && p.selfRegistered && !p.reviewedAt) { try { await api(`/people/${p.id}/review`, { method: 'POST', body: '{}' }); } catch { /* ok */ } }
       await load();
     } catch (err) { alert((err as Error).message); } finally { busy = false; }
   }
@@ -117,6 +127,7 @@
                 {#if editable}
                   <select class="input h-8 flex-1 py-0 text-xs" value={p.followUpStage ?? s.v} disabled={busy} onchange={(e) => move(p, (e.currentTarget as HTMLSelectElement).value)}>
                     {#each STAGES as st}<option value={st.v}>{tr({ en: st.en, ar: st.ar }, $locale)}</option>{/each}
+                    <option value="">↩ {tr({ en: 'Remove — back to Needs attention', ar: 'إزالة — العودة إلى يحتاج متابعة' }, $locale)}</option>
                   </select>
                 {/if}
                 {#if canMessage}<button class="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-700" title={tr({ en: 'Message', ar: 'رسالة' }, $locale)} onclick={() => messagePerson(p)}>✉️</button>{/if}
