@@ -31,6 +31,7 @@ const upsertSchema = z.object({
   country: addr(),
   householdRole: z.string().max(20).nullable().optional(),
   membershipStatus: z.enum(['visitor', 'regular', 'member', 'inactive']).default('visitor'),
+  category: z.enum(['congregation', 'contact']).optional(),
   email: z.string().email().nullable().optional(),
   mobile: z.string().max(40).nullable().optional(),
   preferredLanguage: z.string().max(8).default('en'),

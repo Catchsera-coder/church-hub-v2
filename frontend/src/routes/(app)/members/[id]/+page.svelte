@@ -50,6 +50,17 @@
     try { await api(`/people/${id}`, { method: 'DELETE' }); await goto('/members'); }
     catch (err) { alert(err instanceof ApiError ? err.message : (err as Error).message); deleting = false; }
   }
+  // Move between the congregation (Members) and the external directory (Contacts).
+  async function moveCategory() {
+    const to = person?.category === 'contact' ? 'congregation' : 'contact';
+    const msg = to === 'contact'
+      ? tr({ en: 'Move this person to Contacts (external directory)? They leave the Members list but stay searchable.', ar: 'نقل هذا الشخص إلى جهات الاتصال (الدليل الخارجي)؟ سيغادر قائمة الأعضاء لكنه يبقى قابلاً للبحث.' }, $locale)
+      : tr({ en: 'Move this contact into Members (your congregation)?', ar: 'نقل جهة الاتصال هذه إلى الأعضاء (رعيّتك)؟' }, $locale);
+    if (!confirm(msg)) return;
+    busy = true;
+    try { await api(`/people/${id}`, { method: 'PUT', body: JSON.stringify({ category: to }) }); await reload(); }
+    catch (err) { alert(err instanceof ApiError ? err.message : (err as Error).message); } finally { busy = false; }
+  }
 </script>
 
 <PageHeader title={`${tr({ en: 'Edit member', ar: 'تعديل العضو' }, $locale)} · #${id}`} back="/members">
@@ -58,6 +69,9 @@
       <a class="btn-ghost border border-slate-300 text-sm dark:border-slate-700" href="/families/{person.householdId}">👪 {tr({ en: 'Open family', ar: 'فتح العائلة' }, $locale)}</a>
     {/if}
     {#if person && can('update person')}
+      <button class="btn-ghost border border-slate-300 text-sm dark:border-slate-700" onclick={moveCategory} disabled={busy}>
+        {person.category === 'contact' ? tr({ en: '⛪ Move to Members', ar: '⛪ نقل إلى الأعضاء' }, $locale) : tr({ en: '📇 Move to Contacts', ar: '📇 نقل إلى جهات الاتصال' }, $locale)}
+      </button>
       {#if person.archivedAt}
         <button class="btn-ghost border border-slate-300 text-sm dark:border-slate-700" onclick={unarchive} disabled={busy}>♻️ {tr({ en: 'Unarchive', ar: 'إلغاء الأرشفة' }, $locale)}</button>
       {:else}
