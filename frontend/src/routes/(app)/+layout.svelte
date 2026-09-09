@@ -22,7 +22,7 @@
         { href: '/members', label: 'nav.members', icon: 'members', perm: 'view person' },
         { href: '/families', label: 'nav.families', icon: 'families', perm: 'view household' },
         { href: '/follow-up', label: 'nav.followUp', icon: 'activity', perm: 'update person' },
-        { href: '/reengagement', label: 'nav.reengagement', icon: 'activity', perm: 'update person' },
+        { href: '/reengagement', label: 'nav.reengagement', icon: 'bell', perm: 'update person' },
         { href: '/care', label: 'nav.care', icon: 'members', perm: 'view care' },
       ],
     },
