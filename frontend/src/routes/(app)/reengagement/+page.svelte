@@ -21,29 +21,36 @@
   const editable = can('update person');
   const canMessage = can('create message');
 
-  // --- First-seen time filter (client-side, over the already-loaded list) ---
-  // Narrows the list by WHEN each person first appeared (the "since YYYY" pill):
-  // 'all' = any time, a year string = that year only, 'custom' = a from/to date range.
-  let seenFilter = $state<string>('all');
+  // --- Time filter (client-side, over the already-loaded list) ---
+  // Pick the AXIS — when they FIRST appeared, or when they were LAST seen (went
+  // quiet) — then a PERIOD: 'all' = any time, a year = that year, 'custom' = a
+  // from/to date range. First-seen suits never-connected visitors; last-seen suits
+  // the lapsed group. The chosen axis decides which date each row is judged on.
+  let axis = $state<'first' | 'last'>('first');
+  let period = $state<string>('all');
   let fromDate = $state('');
   let toDate = $state('');
   function seenYearOf(r: Row): string | null { return r.firstSeenYear ?? (r.firstVisitOn ? r.firstVisitOn.slice(0, 4) : null); }
   function seenDateOf(r: Row): string | null { return r.firstVisitOn ?? (r.firstSeenYear ? `${r.firstSeenYear}-01-01` : null); }
-  // Distinct first-seen years present in the data, newest first — powers the dropdown.
-  const years = $derived([...new Set(rows.map(seenYearOf).filter((y): y is string => !!y))].sort((a, b) => b.localeCompare(a)));
+  const yearOf = (r: Row): string | null => (axis === 'first' ? seenYearOf(r) : r.lastSeen ? r.lastSeen.slice(0, 4) : null);
+  const dateOf = (r: Row): string | null => (axis === 'first' ? seenDateOf(r) : r.lastSeen);
+  // Distinct years present for the chosen axis, newest first — powers the period dropdown.
+  const years = $derived([...new Set(rows.map(yearOf).filter((y): y is string => !!y))].sort((a, b) => b.localeCompare(a)));
   const shown = $derived(rows.filter((r) => {
-    if (seenFilter === 'all') return true;
-    if (seenFilter === 'custom') {
-      const d = seenDateOf(r);
+    if (period === 'all') return true;
+    if (period === 'custom') {
+      const d = dateOf(r);
       if (!d) return false;
       if (fromDate && d < fromDate) return false;
       if (toDate && d > toDate) return false;
       return true;
     }
-    return seenYearOf(r) === seenFilter;
+    return yearOf(r) === period;
   }));
-  const filtered = $derived(seenFilter !== 'all');
-  function clearFilter() { seenFilter = 'all'; fromDate = ''; toDate = ''; }
+  const filtered = $derived(period !== 'all');
+  function clearFilter() { period = 'all'; fromDate = ''; toDate = ''; }
+  // Switching axis resets the period — the available years differ between the two.
+  function onAxisChange() { clearFilter(); }
 
   // Multi-select + bulk actions.
   let selected = $state<Set<number>>(new Set());
@@ -122,15 +129,19 @@
 {:else if rows.length === 0}
   <div class="card p-10 text-center text-slate-500">{tr({ en: 'Nobody needs attention right now — everyone’s connected or being followed up. 🎉', ar: 'لا أحد يحتاج متابعة الآن — الجميع مندمج أو قيد المتابعة. 🎉' }, $locale)}</div>
 {:else}
-  <!-- First-seen time filter: narrows the list by when each person first appeared -->
+  <!-- Time filter: choose the axis (first seen / last seen), then a period -->
   <div class="mb-3 flex flex-wrap items-center gap-2 text-sm">
-    <span class="font-medium text-slate-600 dark:text-slate-300">🗓 {tr({ en: 'First seen', ar: 'أول ظهور' }, $locale)}</span>
-    <select class="input w-auto py-1 text-sm" bind:value={seenFilter}>
+    <span class="font-medium text-slate-600 dark:text-slate-300">🗓 {tr({ en: 'Filter by', ar: 'تصفية حسب' }, $locale)}</span>
+    <select class="input w-auto py-1 text-sm" bind:value={axis} onchange={onAxisChange}>
+      <option value="first">{tr({ en: 'First seen', ar: 'أول ظهور' }, $locale)}</option>
+      <option value="last">{tr({ en: 'Last seen (went quiet)', ar: 'آخر ظهور (انقطع)' }, $locale)}</option>
+    </select>
+    <select class="input w-auto py-1 text-sm" bind:value={period}>
       <option value="all">{tr({ en: 'Any time', ar: 'أي وقت' }, $locale)}</option>
       {#each years as y}<option value={y}>{y}</option>{/each}
       <option value="custom">{tr({ en: 'Custom range…', ar: 'مدة مخصصة…' }, $locale)}</option>
     </select>
-    {#if seenFilter === 'custom'}
+    {#if period === 'custom'}
       <input type="date" class="input w-auto py-1 text-sm" bind:value={fromDate} aria-label={tr({ en: 'From date', ar: 'من تاريخ' }, $locale)} />
       <span class="text-slate-400">→</span>
       <input type="date" class="input w-auto py-1 text-sm" bind:value={toDate} aria-label={tr({ en: 'To date', ar: 'إلى تاريخ' }, $locale)} />
@@ -172,7 +183,7 @@
 
   {#if shown.length === 0}
     <div class="card p-8 text-center text-slate-500">
-      {tr({ en: 'No one first appeared in this period.', ar: 'لا أحد ظهر لأول مرة في هذه المدة.' }, $locale)}
+      {tr({ en: 'No one matches this time filter.', ar: 'لا أحد يطابق هذا الفلتر الزمني.' }, $locale)}
       <button class="text-primary-700 hover:underline dark:text-primary-300" onclick={clearFilter}>{tr({ en: 'Clear filter', ar: 'مسح الفلتر' }, $locale)}</button>
     </div>
   {:else}
