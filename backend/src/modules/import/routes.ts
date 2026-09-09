@@ -13,6 +13,11 @@ import { logActivity } from '../activity/service.js';
  * Bulk import of members from an Excel/CSV file. Flow: download a template →
  * fill it → upload → the server maps columns, validates each row and FLAGS what's
  * missing/invalid → the client imports only the good rows.
+ *
+ * Captures name, contact (email/mobile/home phone), full address, key dates
+ * (DOB / joined / first-visit), family, status, and category ('congregation' vs
+ * 'contact' — external directory). Imports DEDUPE against existing people by
+ * email or mobile so re-imports and overlapping lists never create duplicates.
  */
 export const importRouter = Router();
 importRouter.use(authenticate);
@@ -22,22 +27,42 @@ const COLUMNS = [
   { key: 'familyName', header: 'Last name' },
   { key: 'email', header: 'Email' },
   { key: 'mobile', header: 'Mobile' },
+  { key: 'homePhone', header: 'Home phone' },
+  { key: 'addressLine1', header: 'Address line 1' },
+  { key: 'city', header: 'City' },
+  { key: 'region', header: 'State / Region' },
+  { key: 'postalCode', header: 'Postal code' },
+  { key: 'country', header: 'Country' },
   { key: 'dateOfBirth', header: 'Date of birth (YYYY-MM-DD)' },
   { key: 'joinedOn', header: 'Joined (YYYY-MM-DD)' },
+  { key: 'firstVisitOn', header: 'First visit (YYYY-MM-DD)' },
   { key: 'household', header: 'Family' },
   { key: 'membershipStatus', header: 'Status (visitor/regular/member)' },
+  { key: 'category', header: 'Category (congregation/contact)' },
 ];
 
 const norm = (h: string) => h.toLowerCase().replace(/[^a-z]/g, '');
 const ALIASES: Record<string, string> = {
   firstname: 'givenName', first: 'givenName', givenname: 'givenName', given: 'givenName', name: 'givenName',
-  lastname: 'familyName', last: 'familyName', familyname: 'familyName', surname: 'familyName',
+  lastname: 'familyName', last: 'familyName', familyname: 'familyName', surname: 'familyName', householdname: 'familyName',
   email: 'email', emailaddress: 'email',
-  mobile: 'mobile', phone: 'mobile', cell: 'mobile', cellphone: 'mobile', mobilephone: 'mobile', phonenumber: 'mobile',
+  mobile: 'mobile', cell: 'mobile', cellphone: 'mobile', mobilephone: 'mobile', mobileno: 'mobile',
+  phone: 'mobile', phonenumber: 'mobile',
+  homephone: 'homePhone', landline: 'homePhone', housephone: 'homePhone', telephone: 'homePhone',
+  address: 'addressLine1', addressline: 'addressLine1', addressline1: 'addressLine1', street: 'addressLine1', streetaddress: 'addressLine1',
+  city: 'city', town: 'city',
+  state: 'region', stateorprovince: 'region', province: 'region', region: 'region',
+  zip: 'postalCode', zipcode: 'postalCode', postalcode: 'postalCode', postcode: 'postalCode',
+  country: 'country',
   dob: 'dateOfBirth', dateofbirth: 'dateOfBirth', dateofbirthyyyymmdd: 'dateOfBirth', birthday: 'dateOfBirth', birthdate: 'dateOfBirth',
   joined: 'joinedOn', joinedon: 'joinedOn', joindate: 'joinedOn', joinedyyyymmdd: 'joinedOn', membershipdate: 'joinedOn',
+  firstvisit: 'firstVisitOn', firstvisiton: 'firstVisitOn', firstvisityyyymmdd: 'firstVisitOn', datevisited: 'firstVisitOn', dateofvisit: 'firstVisitOn', visited: 'firstVisitOn', visitdate: 'firstVisitOn',
   family: 'household', household: 'household', familygroup: 'household',
   status: 'membershipStatus', membership: 'membershipStatus', membershipstatus: 'membershipStatus', statusvisitorregularmember: 'membershipStatus',
+  category: 'category', categorycongregationcontact: 'category', list: 'category',
+  firstseenyear: 'firstSeenYear', seenyear: 'firstSeenYear',
+  source: 'sourceList', sourcelist: 'sourceList', sources: 'sourceList',
+  notes: 'notes', note: 'notes', comment: 'notes', comments: 'notes',
 };
 const STATUSES = new Set(['visitor', 'regular', 'member', 'inactive']);
 
@@ -48,11 +73,19 @@ const FIELD_TOKENS: Record<string, string[]> = {
   givenName: ['firstname', 'first', 'given', 'fname'],
   familyName: ['lastname', 'last', 'surname', 'family', 'lname'],
   email: ['email', 'mail'],
-  mobile: ['mobile', 'phone', 'cell', 'whatsapp', 'tel', 'contact', 'number'],
+  homePhone: ['landline', 'housephone'],
+  mobile: ['mobile', 'cell', 'whatsapp'],
+  addressLine1: ['address', 'street'],
+  city: ['city', 'town'],
+  region: ['state', 'province', 'region'],
+  postalCode: ['zip', 'postal', 'postcode'],
+  country: ['country'],
   dateOfBirth: ['dob', 'birth', 'born'],
-  joinedOn: ['join', 'since', 'registered', 'membershipdate'],
-  household: ['household', 'family', 'home'],
-  membershipStatus: ['status', 'membership', 'type'],
+  joinedOn: ['join', 'membershipdate'],
+  firstVisitOn: ['visit', 'firstseen'],
+  household: ['household', 'family'],
+  membershipStatus: ['status', 'membership'],
+  category: ['category'],
 };
 function detectField(header: string): string | null {
   const n = norm(header);
@@ -72,6 +105,7 @@ function toDate(v: unknown): string | null {
   const d = new Date(s);
   return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
 }
+const last10 = (s?: string | null) => { const d = (s || '').replace(/[^0-9]/g, ''); return d.length >= 10 ? d.slice(-10) : ''; };
 
 // GET template (xlsx with the expected headers + one example row).
 importRouter.get('/members/template', requirePermission('create person'), asyncHandler(async (_req, res) => {
@@ -79,8 +113,8 @@ importRouter.get('/members/template', requirePermission('create person'), asyncH
   const ws = wb.addWorksheet('Members');
   ws.addRow(COLUMNS.map((c) => c.header));
   ws.getRow(1).font = { bold: true };
-  ws.addRow(['John', 'Doe', 'john@example.com', '+15551234567', '1990-05-20', '2022-01-15', 'Doe Family', 'member']);
-  COLUMNS.forEach((_c, i) => { ws.getColumn(i + 1).width = 26; });
+  ws.addRow(['John', 'Doe', 'john@example.com', '+15551234567', '5085551234', '12 Main St', 'Boston', 'MA', '02118', 'USA', '1990-05-20', '2022-01-15', '2021-11-07', 'Doe Family', 'member', 'congregation']);
+  COLUMNS.forEach((_c, i) => { ws.getColumn(i + 1).width = 24; });
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.setHeader('Content-Disposition', 'attachment; filename="members-template.xlsx"');
   await wb.xlsx.write(res);
@@ -90,7 +124,7 @@ importRouter.get('/members/template', requirePermission('create person'), asyncH
 // Parse an uploaded file (base64) and return mapped rows + per-row flags.
 const previewSchema = z.object({
   filename: z.string(),
-  base64: z.string().max(8_000_000),
+  base64: z.string().max(12_000_000),
   // Optional user corrections from the confirm screen: header → field key ('' = ignore).
   overrides: z.record(z.string()).optional(),
 });
@@ -115,7 +149,7 @@ importRouter.post('/members/preview', requirePermission('create person'), asyncH
     for (let r = 2; r <= ws.rowCount; r++) {
       const row = ws.getRow(r);
       const vals: unknown[] = [];
-      for (let c = 1; c <= headers.length; c++) vals.push(row.getCell(c).value);
+      for (let c = 1; c <= headers.length; c++) { const raw = row.getCell(c).value as unknown; let v: unknown = raw; if (raw && typeof raw === 'object') { const o = raw as { text?: string; result?: unknown }; v = o.text ?? o.result ?? ''; } vals.push(v); }
       if (vals.some((v) => v != null && String(v).trim() !== '')) dataRows.push(vals);
     }
   }
@@ -138,8 +172,10 @@ importRouter.post('/members/preview', requirePermission('create person'), asyncH
     if (values.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(values.email)) errors.push('Invalid email');
     if (values.dateOfBirth) { const d = toDate(values.dateOfBirth); if (!d) warnings.push('Unrecognised date of birth'); else values.dateOfBirth = d; }
     if (values.joinedOn) { const d = toDate(values.joinedOn); if (!d) warnings.push('Unrecognised joined date'); else values.joinedOn = d; }
+    if (values.firstVisitOn) { const d = toDate(values.firstVisitOn); if (!d) warnings.push('Unrecognised first-visit date'); else values.firstVisitOn = d; }
     if (values.membershipStatus && !STATUSES.has(values.membershipStatus.toLowerCase())) { warnings.push(`Unknown status "${values.membershipStatus}" — will use visitor`); }
-    if (!values.email && !values.mobile) warnings.push('No email or phone');
+    if (values.category && !['congregation', 'contact'].includes(values.category.toLowerCase())) { warnings.push(`Unknown category "${values.category}" — will use congregation`); }
+    if (!values.email && !values.mobile && !values.homePhone) warnings.push('No email or phone');
     return { index: i + 2, values, errors, warnings };
   });
 
@@ -151,39 +187,80 @@ importRouter.post('/members/preview', requirePermission('create person'), asyncH
   } });
 }));
 
-// Import validated rows.
+// Import validated rows — dedupes against existing people (email/mobile).
 const importSchema = z.object({ rows: z.array(z.record(z.string())).max(5000) });
 importRouter.post('/members', requirePermission('create person'), asyncHandler(async (req, res) => {
   const { rows } = importSchema.parse(req.body);
+
+  // Preload existing contact keys so we never duplicate people already in the DB
+  // (small congregation → one pass). We also grow these sets as we insert, so
+  // duplicates *within* the uploaded file are skipped too.
+  const existing = await db.select({ email: people.email, mobile: people.mobile }).from(people).where(isNull(people.deletedAt));
+  const emailSet = new Set<string>();
+  const mobileSet = new Set<string>();
+  for (const e of existing) { if (e.email) emailSet.add(e.email.toLowerCase()); const m = last10(e.mobile); if (m) mobileSet.add(m); }
+
   const householdCache = new Map<string, number>();
-  let created = 0;
+  let created = 0, skipped = 0, contacts = 0;
   for (const v of rows) {
     const given = (v.givenName ?? '').trim();
-    if (!given) continue;
+    if (!given) { continue; }
+    const email = v.email?.trim() ? v.email.trim().toLowerCase() : null;
+    // No mobile? fall back to the home phone so the person is still contactable.
+    const mobile = (v.mobile?.trim() || v.homePhone?.trim()) || null;
+    const m10 = last10(mobile);
+    if ((email && emailSet.has(email)) || (m10 && mobileSet.has(m10))) { skipped++; continue; }
+
     let householdId: number | null = null;
-    const fam = (v.household ?? '').trim();
+    const fam = (v.household ?? v.familyName ?? '').trim();
     if (fam) {
       if (householdCache.has(fam)) householdId = householdCache.get(fam)!;
       else {
-        const [existing] = await db.select({ id: households.id }).from(households).where(and(sql`${households.name}->>'en' = ${fam}`, isNull(households.deletedAt))).limit(1);
-        if (existing) householdId = existing.id;
-        else { const [h] = await db.insert(households).values({ name: { en: fam } }).returning(); householdId = h?.id ?? null; }
+        const [ex] = await db.select({ id: households.id }).from(households).where(and(sql`${households.name}->>'en' = ${fam}`, isNull(households.deletedAt))).limit(1);
+        if (ex) householdId = ex.id;
+        else {
+          const [h] = await db.insert(households).values({
+            name: { en: fam },
+            homePhone: v.homePhone?.trim() || null,
+            addressLine1: v.addressLine1?.trim() || null, city: v.city?.trim() || null,
+            region: v.region?.trim() || null, postalCode: v.postalCode?.trim() || null, country: v.country?.trim() || null,
+          }).returning();
+          householdId = h?.id ?? null;
+        }
         if (householdId) householdCache.set(fam, householdId);
       }
     }
+
     const status = (v.membershipStatus ?? '').toLowerCase();
+    const category = (v.category ?? '').toLowerCase() === 'contact' ? 'contact' : 'congregation';
+    const custom: Record<string, string> = {};
+    if (v.sourceList?.trim()) custom.sourceList = v.sourceList.trim();
+    if (v.firstSeenYear?.trim()) custom.firstSeenYear = v.firstSeenYear.trim();
+
     await db.insert(people).values({
       givenName: { en: given },
       familyName: { en: (v.familyName ?? '').trim() },
-      email: v.email?.trim() ? v.email.trim().toLowerCase() : null,
-      mobile: v.mobile?.trim() || null,
+      email,
+      mobile,
+      addressLine1: v.addressLine1?.trim() || null,
+      city: v.city?.trim() || null,
+      region: v.region?.trim() || null,
+      postalCode: v.postalCode?.trim() || null,
+      country: v.country?.trim() || null,
       dateOfBirth: toDate(v.dateOfBirth),
       joinedOn: toDate(v.joinedOn),
+      firstVisitOn: toDate(v.firstVisitOn),
       householdId,
       membershipStatus: STATUSES.has(status) ? (status as 'visitor' | 'regular' | 'member' | 'inactive') : 'visitor',
+      category,
+      customFields: custom,
+      notes: v.notes?.trim() || null,
     });
+    if (email) emailSet.add(email);
+    if (m10) mobileSet.add(m10);
     created++;
+    if (category === 'contact') contacts++;
   }
-  await logActivity(req, 'created', 'person', 0, `import: ${created}`);
-  res.json({ data: { created } });
+  await logActivity(req, 'created', 'person', 0, `import: ${created} created, ${skipped} skipped (dup), ${contacts} contacts`);
+  res.json({ data: { created, skipped, contacts } });
 }));

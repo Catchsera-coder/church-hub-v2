@@ -226,13 +226,22 @@ export const people = pgTable('people', {
   postalCode: varchar('postal_code', { length: 20 }),
   country: varchar('country', { length: 120 }),
   membershipStatus: membershipStatus('membership_status').notNull().default('visitor'),
+  // Which list this person belongs to: 'congregation' = your church people
+  // (members/visitors — shown in the Members list, follow-up, counts); 'contact'
+  // = an external directory entry (e.g. the regional conference list) — managed
+  // separately but still searchable and reachable for messaging when needed.
+  category: varchar('category', { length: 20 }).notNull().default('congregation'),
   email: varchar('email', { length: 190 }),
   mobile: varchar('mobile', { length: 40 }),
   preferredLanguage: varchar('preferred_language', { length: 8 }).notNull().default('en'),
   dateOfBirth: date('date_of_birth'),
   // When this person joined the church (for membership-anniversary celebrations).
-  // First-visit is derived from the earliest attendance record.
   joinedOn: date('joined_on'),
+  // When we first met / first saw this person (from imported visitor lists or the
+  // earliest attendance). Used for "how long known" analysis + date filtering.
+  // Year-only provenance (e.g. a "2015 Visitor" list with no exact date) is kept
+  // in customFields.firstSeenYear / customFields.sourceList rather than faked here.
+  firstVisitOn: date('first_visit_on'),
   // Extra fields captured by admin-built check-in forms (Phase 3) — keyed by the
   // form field's key. Kept out of first-class columns so forms stay flexible.
   customFields: jsonb('custom_fields').$type<Record<string, string>>().notNull().default({}),

@@ -90,16 +90,22 @@
   // Empty string = filter off. Kept in one object so "active count" + clear are simple.
   const EMPTY = {
     status: '', ageGroup: '', birthdayMonth: '', anniversaryMonth: '',
-    ministryId: '', optedIn: '', hasPhone: '', inactiveWeeks: '', missingContact: '',
+    ministryId: '', optedIn: '', hasPhone: '', inactiveWeeks: '', missingContact: '', firstSeenYear: '',
   };
   let f = $state({ ...EMPTY });
   const activeCount = $derived(Object.values(f).filter((v) => v !== '').length);
+  // Congregation (your church people) vs Contacts (external directory, e.g. the
+  // conference list) — a separate view; defaults to congregation.
+  let cat = $state<'congregation' | 'contact'>('congregation');
+  // Year options for the first-seen filter (covers the imported list years).
+  const YEARS = Array.from({ length: new Date().getFullYear() - 2009 }, (_, i) => new Date().getFullYear() - i);
 
   // Active filters as a query string so Export/Print honours the current view.
   const exportParams = $derived.by(() => {
     const p = new URLSearchParams();
     if (search.trim()) p.set('search', search.trim());
     if (reviewOnly) p.set('review', 'pending');
+    p.set('category', cat);
     for (const [k, v] of Object.entries(f)) if (v !== '') p.set(k, String(v));
     return p.toString();
   });
@@ -122,6 +128,7 @@
       if (search.trim()) q.set('search', search.trim());
       if (reviewOnly) q.set('review', 'pending');
       if (showArchived) q.set('archived', 'only');
+      q.set('category', cat);
       for (const [k, v] of Object.entries(f)) if (v !== '') q.set(k, String(v));
       const r = await api<{ data: Person[]; meta: Meta }>(`/people?${q}`);
       rows = r.data;
@@ -141,6 +148,7 @@
   function clearFilters() { f = { ...EMPTY }; page = 1; load(); }
   function toggleReview() { reviewOnly = !reviewOnly; if (reviewOnly) showArchived = false; page = 1; load(); }
   function toggleArchived() { showArchived = !showArchived; if (showArchived) reviewOnly = false; page = 1; load(); }
+  function switchCategory(c: 'congregation' | 'contact') { if (cat === c) return; cat = c; reviewOnly = false; showArchived = false; page = 1; load(); }
 
   async function markReviewed(p: Person, sendWelcome = false) {
     const r = await api<{ welcomeSent?: boolean }>(`/people/${p.id}/review`, { method: 'POST', body: JSON.stringify({ sendWelcome }) });
@@ -184,6 +192,11 @@
 {/if}
 
 <div class="mb-3 flex flex-wrap items-center gap-3">
+  <!-- Congregation vs external Contacts (e.g. the conference directory) -->
+  <div class="inline-flex overflow-hidden rounded-lg border border-slate-300 dark:border-slate-700">
+    <button class="px-3 py-1.5 text-sm {cat === 'congregation' ? 'text-white' : 'text-slate-600 dark:text-slate-300'}" style={cat === 'congregation' ? 'background: var(--brand)' : ''} onclick={() => switchCategory('congregation')}>{tr({ en: 'Members', ar: 'الأعضاء' }, $locale)}</button>
+    <button class="border-s border-slate-300 px-3 py-1.5 text-sm dark:border-slate-700 {cat === 'contact' ? 'text-white' : 'text-slate-600 dark:text-slate-300'}" style={cat === 'contact' ? 'background: var(--brand)' : ''} onclick={() => switchCategory('contact')}>{tr({ en: 'Contacts', ar: 'جهات الاتصال' }, $locale)}</button>
+  </div>
   <input class="input max-w-xs" placeholder={$t('common.search')} bind:value={search} oninput={onSearch} />
   <button class="btn-ghost text-sm {reviewOnly ? 'text-amber-700 ring-1 ring-amber-400 dark:text-amber-300' : ''}" onclick={toggleReview}>
     {reviewOnly ? tr({ en: '✓ Needs review', ar: '✓ يحتاج مراجعة' }, $locale) : tr({ en: 'Needs review', ar: 'يحتاج مراجعة' }, $locale)}
@@ -201,6 +214,13 @@
 </div>
 
 <FilterBar active={activeCount} onclear={clearFilters}>
+  <label class="text-sm">
+    <span class="mb-1 block text-slate-500">👋 {tr({ en: 'First seen (year)', ar: 'أول ظهور (سنة)' }, $locale)}</span>
+    <select class="input w-36" bind:value={f.firstSeenYear} onchange={applyFilters}>
+      <option value="">{tr({ en: 'Any', ar: 'الكل' }, $locale)}</option>
+      {#each YEARS as y}<option value={y}>{y}</option>{/each}
+    </select>
+  </label>
   <label class="text-sm">
     <span class="mb-1 block text-slate-500">{tr({ en: 'Status', ar: 'الحالة' }, $locale)}</span>
     <select class="input w-40" bind:value={f.status} onchange={applyFilters}>

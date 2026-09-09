@@ -19,6 +19,8 @@
   let busy = $state(false);
   let error = $state('');
   let done = $state<number | null>(null);
+  let skipped = $state(0);
+  let contacts = $state(0);
 
   async function downloadTemplate() {
     const token = get(auth).accessToken;
@@ -62,8 +64,8 @@
     if (!valid.length) return;
     busy = true; error = '';
     try {
-      const r = await api<{ data: { created: number } }>('/import/members', { method: 'POST', body: JSON.stringify({ rows: valid }) });
-      done = r.data.created;
+      const r = await api<{ data: { created: number; skipped?: number; contacts?: number } }>('/import/members', { method: 'POST', body: JSON.stringify({ rows: valid }) });
+      done = r.data.created; skipped = r.data.skipped ?? 0; contacts = r.data.contacts ?? 0;
     } catch (err) { error = err instanceof ApiError ? err.message : (err as Error).message; }
     finally { busy = false; }
   }
@@ -74,7 +76,9 @@
 {#if done !== null}
   <div class="card p-8 text-center">
     <div class="mb-3 text-4xl">✅</div>
-    <p class="text-lg font-semibold">{done} {tr({ en: 'members imported.', ar: 'عضواً تم استيرادهم.' }, $locale)}</p>
+    <p class="text-lg font-semibold">{done} {tr({ en: 'people imported.', ar: 'شخصاً تم استيرادهم.' }, $locale)}</p>
+    {#if contacts > 0}<p class="mt-1 text-sm text-slate-500">{contacts} {tr({ en: 'saved as Contacts (directory).', ar: 'حُفظوا كجهات اتصال (الدليل).' }, $locale)}</p>{/if}
+    {#if skipped > 0}<p class="mt-1 text-sm text-slate-500">{skipped} {tr({ en: 'skipped as duplicates (already in the system).', ar: 'تم تخطّيهم كمكرّرين (موجودون مسبقاً).' }, $locale)}</p>{/if}
     <a href="/members" class="btn-primary mt-4 inline-block">{tr({ en: 'View members', ar: 'عرض الأعضاء' }, $locale)}</a>
   </div>
 {:else}

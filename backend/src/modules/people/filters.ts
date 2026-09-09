@@ -24,6 +24,13 @@ export const peopleListQuery = z.object({
   // Assimilation/follow-up pipeline stage (exact match; 'new_visitor' also pulls
   // in un-staged self-registered newcomers so the pipeline auto-seeds).
   followUpStage: z.string().max(30).optional(),
+  // 'congregation' (your church people) vs 'contact' (external directory, e.g. the
+  // conference list). The Members list defaults to congregation; a Contacts view
+  // passes 'contact'. Omitted = both (e.g. messaging can reach everyone).
+  category: z.enum(['congregation', 'contact']).optional(),
+  // First-seen year — matches the real firstVisitOn year OR the year-only
+  // provenance kept in customFields.firstSeenYear (imported lists without a date).
+  firstSeenYear: z.coerce.number().int().min(1900).max(2100).optional(),
 });
 export type PeopleQuery = z.infer<typeof peopleListQuery>;
 
@@ -34,6 +41,8 @@ export function peopleFilters(q: PeopleQuery): SQL[] {
   if (q.archived === 'only') filters.push(sql`${people.archivedAt} IS NOT NULL`);
   else if (q.archived !== 'include') filters.push(isNull(people.archivedAt));
   if (q.status) filters.push(eq(people.membershipStatus, q.status));
+  if (q.category) filters.push(eq(people.category, q.category));
+  if (q.firstSeenYear) filters.push(sql`(extract(year from ${people.firstVisitOn}) = ${q.firstSeenYear} OR ${people.customFields}->>'firstSeenYear' = ${String(q.firstSeenYear)})`);
   if (q.review === 'pending') { filters.push(eq(people.selfRegistered, true)); filters.push(isNull(people.reviewedAt)); }
   if (q.search) {
     const like = `%${q.search}%`;
