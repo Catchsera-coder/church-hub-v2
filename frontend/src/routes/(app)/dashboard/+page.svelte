@@ -57,9 +57,11 @@
   // Pastoral care + clearance-expiry cards (independent of the toggleable widgets).
   let care = $state<{ open: number; mine: number; overdue: number } | null>(null);
   let expiring = $state<any[]>([]);
+  let reengage = $state(0);
   onMount(async () => {
     if (can('view care')) { try { care = (await api<{ data: any }>('/care/counts')).data; } catch { /* optional */ } }
     if (can('view person')) { try { expiring = (await api<{ data: any[] }>('/people/clearances/expiring?days=45')).data; } catch { /* optional */ } }
+    if (can('update person')) { try { reengage = (await api<{ data: { count: number } }>('/people/reengagement/count')).data.count; } catch { /* optional */ } }
   });
   const today = new Date().toISOString().slice(0, 10);
 </script>
@@ -67,7 +69,7 @@
 <h1 class="mb-4 text-2xl font-semibold">{$t('nav.dashboard')}</h1>
 <PageHint id="dashboard" text={{ en: 'A snapshot of your church — members, families, attendance, birthdays and more. Choose which cards appear from Settings → Dashboard. Tips like this can be turned off in Settings.', ar: 'لمحة عن كنيستك — الأعضاء والعائلات والحضور وأعياد الميلاد. اختر البطاقات الظاهرة من الإعدادات ← لوحة المعلومات. يمكن إيقاف هذه التلميحات من الإعدادات.' }} />
 
-{#if (care && care.open > 0) || expiring.length}
+{#if (care && care.open > 0) || expiring.length || reengage > 0}
   <div class="mb-4 grid gap-4 sm:grid-cols-2">
     {#if care && care.open > 0}
       <a href="/care" class="card flex items-center gap-4 p-5 transition hover:shadow-md">
@@ -76,6 +78,16 @@
           <div class="text-2xl font-semibold leading-none">{care.open}</div>
           <div class="mt-1 text-sm text-slate-500">{tr({ en: 'Open care items', ar: 'عناصر رعاية مفتوحة' }, $locale)}</div>
           <div class="mt-1 text-xs text-slate-400">{care.mine} {tr({ en: 'assigned to you', ar: 'مسندة إليك' }, $locale)}{#if care.overdue} · <span class="text-rose-600 dark:text-rose-400">{care.overdue} {tr({ en: 'overdue', ar: 'متأخرة' }, $locale)}</span>{/if}</div>
+        </div>
+      </a>
+    {/if}
+    {#if reengage > 0}
+      <a href="/reengagement" class="card flex items-center gap-4 p-5 transition hover:shadow-md">
+        <span class="text-3xl">🔔</span>
+        <div class="flex-1">
+          <div class="text-2xl font-semibold leading-none">{reengage}</div>
+          <div class="mt-1 text-sm text-slate-500">{tr({ en: 'Need attention', ar: 'يحتاجون إلى متابعة' }, $locale)}</div>
+          <div class="mt-1 text-xs text-slate-400">{tr({ en: 'Absent or never connected — reach out', ar: 'غائبون أو لم يندمجوا — تواصل معهم' }, $locale)}</div>
         </div>
       </a>
     {/if}

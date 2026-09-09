@@ -13,10 +13,14 @@
     email: string | null; mobile: string | null; membershipStatus: string;
     firstVisitOn: string | null; firstSeenYear: string | null; sourceList: string | null;
     lastSeen: string | null; visits: number; householdName: Record<string, string> | null; reason: 'lapsed' | 'stale_visitor';
+    snoozedUntil?: string | null;
   }
   let rows = $state<Row[]>([]);
   let loading = $state(true);
   let weeks = $state(8);
+  // Active work list vs. the Snoozed (ignored 3 months) list, so nobody vanishes.
+  let view = $state<'active' | 'snoozed'>('active');
+  let sortBy = $state<'priority' | 'absent' | 'firstseen' | 'name'>('priority');
   let busy = $state<number | null>(null);
   const editable = can('update person');
   const canMessage = can('create message');
@@ -52,6 +56,17 @@
   // Switching axis resets the period — the available years differ between the two.
   function onAxisChange() { clearFilter(); }
 
+  // --- Sort (client-side over the filtered list) ---
+  // 'priority' keeps the server order (longest-absent first); the others let the
+  // team choose how to work the list.
+  const absentKey = (r: Row) => r.lastSeen ?? seenDateOf(r) ?? '0000-01-01';
+  const sorted = $derived([...shown].sort((a, b) => {
+    if (sortBy === 'name') return nm(a).localeCompare(nm(b));
+    if (sortBy === 'firstseen') return (seenDateOf(a) ?? '9999').localeCompare(seenDateOf(b) ?? '9999');
+    if (sortBy === 'absent') return absentKey(a).localeCompare(absentKey(b));
+    return 0;
+  }));
+
   // Multi-select + bulk actions.
   let selected = $state<Set<number>>(new Set());
   let assignees = $state<{ id: number; name: string }[]>([]);
@@ -61,9 +76,10 @@
 
   async function load() {
     loading = true; selected = new Set();
-    try { rows = (await api<{ data: Row[] }>(`/people/reengagement?weeks=${weeks}`)).data; }
+    try { rows = (await api<{ data: Row[] }>(`/people/reengagement?weeks=${weeks}&view=${view}`)).data; }
     finally { loading = false; }
   }
+  function setView(v: 'active' | 'snoozed') { if (v === view) return; view = v; clearFilter(); clearSel(); load(); }
   onMount(async () => {
     await load();
     try { assignees = (await api<{ data: any[] }>('/care/assignees')).data; } catch { /* optional */ }
@@ -85,8 +101,10 @@
     try { await fn(); rows = rows.filter((x) => x.id !== r.id); selected.delete(r.id); }
     catch (err) { alert((err as Error).message); } finally { busy = null; }
   }
-  const workOnIt = (r: Row) => act(r, () => api(`/people/${r.id}`, { method: 'PUT', body: JSON.stringify({ followUpStage: 'contacted' }) }));
+  // Route through /bulk so a care-timeline entry is logged (who started follow-up, when).
+  const workOnIt = (r: Row) => act(r, () => api('/people/bulk', { method: 'POST', body: JSON.stringify({ ids: [r.id], action: 'followup', assigneeUserId: null }) }));
   const snooze = (r: Row) => act(r, () => api(`/people/${r.id}/snooze`, { method: 'POST', body: '{}' }));
+  const unsnooze = (r: Row) => act(r, () => api(`/people/${r.id}/unsnooze`, { method: 'POST', body: '{}' }));
   const archive = (r: Row) => { if (!confirm(tr({ en: 'Archive this person?', ar: 'أرشفة هذا الشخص؟' }, $locale))) return; return act(r, () => api(`/people/${r.id}/archive`, { method: 'POST', body: '{}' })); };
   // Pre-written, personalised greeting — {{firstName}}/{{churchName}} fill in per
   // recipient at send (works for a single person AND a bulk send). Editable in the composer.
@@ -107,6 +125,26 @@
   function bulkAssign() { bulk('followup', assignee ? Number(assignee) : null); assignee = ''; }
 
   const nm = (r: Row) => displayName(r, $nameOrder, $locale);
+
+  // Export the current (filtered + sorted) list as a CSV call/visit sheet for a
+  // phone or visitation team to work offline. Client-side — no server round-trip.
+  const csvCell = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  function exportCsv() {
+    const header = ['Name', 'Family', 'Email', 'Phone', 'Status', 'Reason', 'First seen', 'Last seen', 'Source'];
+    const lines = [header.map(csvCell).join(',')];
+    for (const r of sorted) {
+      lines.push([
+        nm(r), r.householdName ? tr(r.householdName, $locale) : '', r.email ?? '', r.mobile ?? '',
+        r.membershipStatus, r.reason === 'lapsed' ? 'Lapsed' : 'Never connected',
+        seenDateOf(r) ?? r.firstSeenYear ?? '', r.lastSeen ?? '', r.sourceList ?? '',
+      ].map(csvCell).join(','));
+    }
+    const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `needs-attention-${view}-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click(); URL.revokeObjectURL(url);
+  }
 </script>
 
 <PageHeader title={tr({ en: 'Needs attention', ar: 'يحتاج إلى متابعة' }, $locale)}>
@@ -126,9 +164,21 @@
 
 {#if loading}
   <p class="text-slate-400">{$t('common.loading')}</p>
-{:else if rows.length === 0}
-  <div class="card p-10 text-center text-slate-500">{tr({ en: 'Nobody needs attention right now — everyone’s connected or being followed up. 🎉', ar: 'لا أحد يحتاج متابعة الآن — الجميع مندمج أو قيد المتابعة. 🎉' }, $locale)}</div>
 {:else}
+  <!-- View tabs: the Active work list vs. the Snoozed (ignored 3mo) list, so nobody vanishes -->
+  <div class="mb-3 inline-flex rounded-lg border border-slate-200 p-0.5 text-sm dark:border-slate-700">
+    <button class="rounded-md px-3 py-1 font-medium {view === 'active' ? 'bg-primary-600 text-white' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'}" onclick={() => setView('active')}>{tr({ en: 'Active', ar: 'نشِط' }, $locale)}</button>
+    <button class="rounded-md px-3 py-1 font-medium {view === 'snoozed' ? 'bg-primary-600 text-white' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'}" onclick={() => setView('snoozed')}>💤 {tr({ en: 'Snoozed', ar: 'مؤجل' }, $locale)}</button>
+  </div>
+
+  {#if rows.length === 0}
+    <div class="card p-10 text-center text-slate-500">
+      {view === 'snoozed'
+        ? tr({ en: 'No one is snoozed. People you snooze appear here so you can bring them back anytime.', ar: 'لا أحد مؤجل. من تؤجّلهم يظهرون هنا لتعيدهم في أي وقت.' }, $locale)
+        : tr({ en: 'Nobody needs attention right now — everyone’s connected or being followed up. 🎉', ar: 'لا أحد يحتاج متابعة الآن — الجميع مندمج أو قيد المتابعة. 🎉' }, $locale)}
+    </div>
+  {:else}
+  {#if view === 'active'}
   <!-- Time filter: choose the axis (first seen / last seen), then a period -->
   <div class="mb-3 flex flex-wrap items-center gap-2 text-sm">
     <span class="font-medium text-slate-600 dark:text-slate-300">🗓 {tr({ en: 'Filter by', ar: 'تصفية حسب' }, $locale)}</span>
@@ -150,20 +200,33 @@
       <button class="text-xs text-primary-700 hover:underline dark:text-primary-300" onclick={clearFilter}>{tr({ en: 'Clear filter', ar: 'مسح الفلتر' }, $locale)}</button>
     {/if}
   </div>
+  {/if}
 
-  <!-- Select-all + count -->
+  <!-- Select-all + count + sort + export -->
   <div class="mb-2 flex flex-wrap items-center gap-3 text-sm">
-    {#if editable}
+    {#if editable && view === 'active'}
       <label class="flex items-center gap-2 text-slate-600 dark:text-slate-300">
         <input type="checkbox" checked={allShown} onchange={toggleAll} />
         {tr({ en: 'Select all', ar: 'تحديد الكل' }, $locale)}
       </label>
     {/if}
-    <span class="text-slate-500">{shown.length}{#if filtered} / {rows.length}{/if} {tr({ en: 'to re-engage', ar: 'لإعادة التواصل' }, $locale)}</span>
+    <span class="text-slate-500">{shown.length}{#if filtered} / {rows.length}{/if} {view === 'snoozed' ? tr({ en: 'snoozed', ar: 'مؤجل' }, $locale) : tr({ en: 'to re-engage', ar: 'لإعادة التواصل' }, $locale)}</span>
+    <div class="ms-auto flex items-center gap-2">
+      <label class="flex items-center gap-1 text-slate-500">
+        {tr({ en: 'Sort', ar: 'ترتيب' }, $locale)}
+        <select class="input w-auto py-1 text-sm" bind:value={sortBy}>
+          <option value="priority">{tr({ en: 'Priority', ar: 'الأولوية' }, $locale)}</option>
+          <option value="absent">{tr({ en: 'Longest absent', ar: 'الأطول غياباً' }, $locale)}</option>
+          <option value="firstseen">{tr({ en: 'Oldest first seen', ar: 'الأقدم ظهوراً' }, $locale)}</option>
+          <option value="name">{tr({ en: 'Name A–Z', ar: 'الاسم أ–ي' }, $locale)}</option>
+        </select>
+      </label>
+      <button class="rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800" onclick={exportCsv}>⬇ {tr({ en: 'Export CSV', ar: 'تصدير CSV' }, $locale)}</button>
+    </div>
   </div>
 
   <!-- Bulk action bar (CRM-style): appears when rows are selected -->
-  {#if selected.size > 0}
+  {#if view === 'active' && selected.size > 0}
     <div class="sticky top-2 z-10 mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-primary-200 bg-primary-50 px-3 py-2 text-sm shadow-sm dark:border-primary-800 dark:bg-primary-900/30">
       <span class="font-medium text-primary-800 dark:text-primary-200">{selected.size} {tr({ en: 'selected', ar: 'محدد' }, $locale)}</span>
       <span class="mx-1 h-4 w-px bg-primary-200 dark:bg-primary-700"></span>
@@ -188,9 +251,9 @@
     </div>
   {:else}
   <div class="space-y-2">
-    {#each shown as r (r.id)}
+    {#each sorted as r (r.id)}
       <div class="card flex items-center gap-3 p-4 {selected.has(r.id) ? 'ring-1 ring-primary-300 dark:ring-primary-700' : ''}">
-        {#if editable}<input type="checkbox" class="shrink-0" checked={selected.has(r.id)} onchange={() => toggle(r.id)} />{/if}
+        {#if editable && view === 'active'}<input type="checkbox" class="shrink-0" checked={selected.has(r.id)} onchange={() => toggle(r.id)} />{/if}
         <!-- Left column: identity + contact details -->
         <div class="min-w-0 shrink-0 basis-72">
           <a class="block truncate font-medium text-primary-700 hover:underline dark:text-primary-300" href="/members/{r.id}">{nm(r)}</a>
@@ -210,19 +273,27 @@
               <span class="rounded-full bg-slate-200 px-2 py-0.5 text-xs text-slate-700 dark:bg-slate-700 dark:text-slate-200">{tr({ en: 'Never connected', ar: 'لم يندمج' }, $locale)}{#if r.firstSeenYear} · {tr({ en: 'since', ar: 'منذ' }, $locale)} {r.firstSeenYear}{/if}</span>
             {/if}
             <span class="rounded-full bg-slate-100 px-2 py-0.5 text-xs capitalize text-slate-500 dark:bg-slate-800 dark:text-slate-400">{r.membershipStatus}</span>
+            {#if view === 'snoozed' && r.snoozedUntil}
+              <span class="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">💤 {tr({ en: 'Snoozed until', ar: 'مؤجل حتى' }, $locale)} <span class="force-ltr">{r.snoozedUntil}</span></span>
+            {/if}
           </div>
         </div>
         <!-- Aligned, colour-coded action bar -->
         <div class="flex shrink-0 items-center gap-1.5">
-          {#if canMessage}<button class="rounded-md border border-blue-200 px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-50 dark:border-blue-900 dark:text-blue-300 dark:hover:bg-blue-900/30" disabled={busy === r.id} onclick={() => message(r)}>✉ {tr({ en: 'Message', ar: 'رسالة' }, $locale)}</button>{/if}
-          {#if editable}
-            <button class="rounded-md border border-emerald-200 px-2 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50 dark:border-emerald-900 dark:text-emerald-300 dark:hover:bg-emerald-900/30" disabled={busy === r.id} onclick={() => workOnIt(r)}>👋 {tr({ en: 'Working on it', ar: 'قيد المتابعة' }, $locale)}</button>
-            <button class="rounded-md border border-amber-200 px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-50 dark:border-amber-900 dark:text-amber-300 dark:hover:bg-amber-900/30" disabled={busy === r.id} onclick={() => snooze(r)}>💤 {tr({ en: 'Snooze', ar: 'تأجيل' }, $locale)}</button>
-            <button class="rounded-md border border-slate-200 px-2 py-1 text-xs font-medium text-slate-500 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800" disabled={busy === r.id} onclick={() => archive(r)}>🗄 {tr({ en: 'Archive', ar: 'أرشفة' }, $locale)}</button>
+          {#if view === 'snoozed'}
+            {#if editable}<button class="rounded-md border border-emerald-200 px-2 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50 dark:border-emerald-900 dark:text-emerald-300 dark:hover:bg-emerald-900/30" disabled={busy === r.id} onclick={() => unsnooze(r)}>↩ {tr({ en: 'Un-snooze', ar: 'إلغاء التأجيل' }, $locale)}</button>{/if}
+          {:else}
+            {#if canMessage}<button class="rounded-md border border-blue-200 px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-50 dark:border-blue-900 dark:text-blue-300 dark:hover:bg-blue-900/30" disabled={busy === r.id} onclick={() => message(r)}>✉ {tr({ en: 'Message', ar: 'رسالة' }, $locale)}</button>{/if}
+            {#if editable}
+              <button class="rounded-md border border-emerald-200 px-2 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50 dark:border-emerald-900 dark:text-emerald-300 dark:hover:bg-emerald-900/30" disabled={busy === r.id} onclick={() => workOnIt(r)}>👋 {tr({ en: 'Working on it', ar: 'قيد المتابعة' }, $locale)}</button>
+              <button class="rounded-md border border-amber-200 px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-50 dark:border-amber-900 dark:text-amber-300 dark:hover:bg-amber-900/30" disabled={busy === r.id} onclick={() => snooze(r)}>💤 {tr({ en: 'Snooze', ar: 'تأجيل' }, $locale)}</button>
+              <button class="rounded-md border border-slate-200 px-2 py-1 text-xs font-medium text-slate-500 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800" disabled={busy === r.id} onclick={() => archive(r)}>🗄 {tr({ en: 'Archive', ar: 'أرشفة' }, $locale)}</button>
+            {/if}
           {/if}
         </div>
       </div>
     {/each}
   </div>
+  {/if}
   {/if}
 {/if}

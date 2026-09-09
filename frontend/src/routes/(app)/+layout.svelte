@@ -14,6 +14,8 @@
   let logo = $state<string | null>(null);
   let ready = $state(false);
   let sidebarOpen = $state(false);
+  // Live "needs attention" count → small badge on the nav item so it isn't out of sight.
+  let reengageCount = $state(0);
 
   const groups = [
     {
@@ -89,6 +91,7 @@
       // Default is English; only allow Arabic when the church has enabled it.
       arabicEnabled.set(!!s.data.arabicEnabled);
       if (!s.data.arabicEnabled && $locale !== 'en') locale.set('en');
+      if (can('update person')) { try { reengageCount = (await api<{ data: { count: number } }>('/people/reengagement/count')).data.count; } catch { /* optional */ } }
     } catch {
       clearSession();
       return goto('/login', { replaceState: true });
@@ -141,6 +144,9 @@
                 {#each items as item}
                   <a href={item.href} class="nav-link {isActive(item.href) ? 'nav-link-active' : ''}" onclick={closeSidebar}>
                     <Icon name={item.icon} />{$t(item.label)}
+                    {#if item.href === '/reengagement' && reengageCount > 0}
+                      <span class="ms-auto rounded-full bg-primary-100 px-2 py-0.5 text-xs font-semibold text-primary-700 dark:bg-primary-900/50 dark:text-primary-300">{reengageCount}</span>
+                    {/if}
                   </a>
                 {/each}
               </div>
