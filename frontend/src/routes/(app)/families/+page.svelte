@@ -2,7 +2,8 @@
   import { onMount } from 'svelte';
   import { api } from '$lib/api.js';
   import { t, locale, tr, displayName } from '$lib/i18n.js';
-  import { nameOrder } from '$lib/stores/prefs.js';
+  import { nameOrder, pageSize, toLimit } from '$lib/stores/prefs.js';
+  import PageSizeSelect from '$lib/components/PageSizeSelect.svelte';
   import { can } from '$lib/stores/auth.js';
   import DataTable from '$lib/components/DataTable.svelte';
   import PageHeader from '$lib/components/PageHeader.svelte';
@@ -59,7 +60,7 @@
   async function load() {
     loading = true;
     try {
-      const q = new URLSearchParams({ limit: '50' });
+      const q = new URLSearchParams({ limit: String(toLimit($pageSize)) });
       if (search.trim()) q.set('search', search.trim());
       if (showEmpty) q.set('empty', 'include');
       for (const [k, v] of Object.entries(f)) if (v !== '') q.set(k, String(v));
@@ -86,6 +87,7 @@
   <label class="flex items-center gap-2 text-sm text-slate-500">
     <input type="checkbox" bind:checked={showEmpty} onchange={load} /> {tr({ en: 'Show empty families', ar: 'إظهار العائلات الفارغة' }, $locale)}
   </label>
+  <div class="ms-auto"><PageSizeSelect onchange={load} /></div>
 </div>
 
 <FilterBar active={activeCount} onclear={clearFilters}>

@@ -129,6 +129,74 @@ peopleRouter.get(
   }),
 );
 
+// "Needs attention" — people to re-engage: (a) LAPSED — had attendance but none
+// in the last N weeks; or (b) STALE VISITOR — no attendance, still 'visitor', and
+// first seen over a year ago (real firstVisitOn or the year-only provenance).
+// Excludes contacts, archived, those already in the follow-up pipeline, and
+// anyone currently snoozed. Ordered longest-absent first.
+function reengagementWhere(weeks: number) {
+  return sql`
+    p.deleted_at IS NULL AND p.archived_at IS NULL AND p.category = 'congregation'
+    AND p.follow_up_stage IS NULL
+    AND (p.reengage_snoozed_until IS NULL OR p.reengage_snoozed_until < current_date)
+    AND (
+      (ls.last_at IS NOT NULL AND ls.last_at < now() - (${weeks} * interval '1 week'))
+      OR (ls.last_at IS NULL AND p.membership_status = 'visitor' AND (
+        (p.first_visit_on IS NOT NULL AND p.first_visit_on < current_date - interval '1 year')
+        OR (p.custom_fields->>'firstSeenYear' ~ '^[0-9]{4}$' AND (p.custom_fields->>'firstSeenYear')::int <= extract(year from current_date)::int - 1)
+      ))
+    )`;
+}
+peopleRouter.get(
+  '/reengagement',
+  requirePermission('view person'),
+  asyncHandler(async (req, res) => {
+    const weeks = Math.min(104, Math.max(1, Number(req.query.weeks) || 8));
+    const rows = await db.execute(sql`
+      WITH ls AS (SELECT person_id, max(checked_in_at) AS last_at, count(*)::int AS visits FROM attendance_records GROUP BY person_id)
+      SELECT p.id, p.given_name, p.family_name, p.middle_name, p.email, p.mobile, p.membership_status,
+             p.first_visit_on, p.custom_fields->>'firstSeenYear' AS first_seen_year, p.custom_fields->>'sourceList' AS source_list,
+             ls.last_at AS last_seen, coalesce(ls.visits, 0) AS visits,
+             (SELECT h.name FROM households h WHERE h.id = p.household_id) AS household_name,
+             CASE WHEN ls.last_at IS NOT NULL THEN 'lapsed' ELSE 'stale_visitor' END AS reason
+      FROM people p LEFT JOIN ls ON ls.person_id = p.id
+      WHERE ${reengagementWhere(weeks)}
+      ORDER BY reason ASC, ls.last_at ASC NULLS LAST, p.first_visit_on ASC NULLS LAST
+      LIMIT 500`);
+    res.json({ data: rows.rows.map((r) => ({
+      id: Number(r.id), givenName: r.given_name, familyName: r.family_name, middleName: r.middle_name,
+      email: r.email, mobile: r.mobile, membershipStatus: r.membership_status,
+      firstVisitOn: r.first_visit_on, firstSeenYear: r.first_seen_year, sourceList: r.source_list,
+      lastSeen: r.last_seen, visits: Number(r.visits), householdName: r.household_name, reason: r.reason,
+    })) });
+  }),
+);
+peopleRouter.get(
+  '/reengagement/count',
+  requirePermission('view person'),
+  asyncHandler(async (req, res) => {
+    const weeks = Math.min(104, Math.max(1, Number(req.query.weeks) || 8));
+    const r = await db.execute(sql`
+      WITH ls AS (SELECT person_id, max(checked_in_at) AS last_at FROM attendance_records GROUP BY person_id)
+      SELECT count(*)::int AS n FROM people p LEFT JOIN ls ON ls.person_id = p.id WHERE ${reengagementWhere(weeks)}`);
+    res.json({ data: { count: Number(r.rows[0]?.n ?? 0) } });
+  }),
+);
+// Snooze a person off the re-engagement list for 3 months (admin "Ignore").
+peopleRouter.post(
+  '/:id/snooze',
+  requirePermission('update person'),
+  asyncHandler(async (req, res) => {
+    const id = Number(req.params.id);
+    const [row] = await db.update(people)
+      .set({ reengageSnoozedUntil: sql`current_date + interval '3 months'`, updatedAt: new Date() })
+      .where(and(eq(people.id, id), isNull(people.deletedAt))).returning();
+    if (!row) throw notFound();
+    await logActivity(req, 'updated', 'person', id, 're-engagement snoozed 3mo');
+    res.json({ data: row });
+  }),
+);
+
 peopleRouter.get(
   '/:id',
   requirePermission('view person'),

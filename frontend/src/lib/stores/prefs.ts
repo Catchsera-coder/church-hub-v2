@@ -15,6 +15,12 @@ function persisted<T extends string>(key: string, initial: T) {
 // How to show people's names in lists: "Given Family" or "Family Given".
 export const nameOrder = persisted<NameOrder>('name-order', 'given-first');
 
+// How many rows list pages show per page (device-level, applies system-wide).
+export type PageSize = '25' | '50' | '100' | 'all';
+export const PAGE_SIZE_ALL = 1000; // "All" cap (matches the backend max)
+export const pageSize = persisted<PageSize>('page-size', '25');
+export function toLimit(v: PageSize): number { return v === 'all' ? PAGE_SIZE_ALL : Number(v); }
+
 // --- Page tips / hints -------------------------------------------------------
 // Master on/off for the little "how to use this page" hint banners (device-level).
 export const pageTips = persisted<'on' | 'off'>('page-tips', 'on');

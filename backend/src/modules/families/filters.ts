@@ -4,7 +4,7 @@ import { households, people } from '../../db/schema.js';
 
 export const familyListQuery = z.object({
   page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(25),
+  limit: z.coerce.number().int().min(1).max(1000).default(25),
   search: z.string().trim().optional(),
   city: z.string().trim().optional(),
   hasChildren: z.enum(['true']).optional(),

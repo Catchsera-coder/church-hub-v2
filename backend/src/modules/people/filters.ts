@@ -5,7 +5,7 @@ import { people, personServiceType, attendanceRecords } from '../../db/schema.js
 // Shared people list/export filters so the list and its export stay identical.
 export const peopleListQuery = z.object({
   page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(25),
+  limit: z.coerce.number().int().min(1).max(1000).default(25),
   search: z.string().trim().optional(),
   status: z.enum(['visitor', 'regular', 'member', 'inactive']).optional(),
   review: z.enum(['pending']).optional(),

@@ -2,9 +2,10 @@
   import { onMount } from 'svelte';
   import { api } from '$lib/api.js';
   import { t, locale, tr } from '$lib/i18n.js';
-  import { nameOrder } from '$lib/stores/prefs.js';
+  import { nameOrder, pageSize, toLimit } from '$lib/stores/prefs.js';
   import { can } from '$lib/stores/auth.js';
   import FilterBar from '$lib/components/FilterBar.svelte';
+  import PageSizeSelect from '$lib/components/PageSizeSelect.svelte';
   import ExportMenu from '$lib/components/ExportMenu.svelte';
   import PageHint from '$lib/components/PageHint.svelte';
 
@@ -124,7 +125,7 @@
   async function load() {
     loading = true;
     try {
-      const q = new URLSearchParams({ page: String(page), limit: '25' });
+      const q = new URLSearchParams({ page: String(page), limit: String(toLimit($pageSize)) });
       if (search.trim()) q.set('search', search.trim());
       if (reviewOnly) q.set('review', 'pending');
       if (showArchived) q.set('archived', 'only');
@@ -204,7 +205,8 @@
   <button class="btn-ghost text-sm {showArchived ? 'text-slate-700 ring-1 ring-slate-400 dark:text-slate-200' : ''}" onclick={toggleArchived}>
     {showArchived ? tr({ en: '✓ Archived', ar: '✓ المؤرشفون' }, $locale) : tr({ en: '🗄 Archived', ar: '🗄 المؤرشفون' }, $locale)}
   </button>
-  <div class="ms-auto flex items-center gap-2 text-sm text-slate-500">
+  <div class="ms-auto flex items-center gap-3 text-sm text-slate-500">
+    <PageSizeSelect onchange={() => { page = 1; load(); }} />
     <span>{tr({ en: 'Name', ar: 'الاسم' }, $locale)}:</span>
     <select class="input w-auto py-1 text-sm" bind:value={$nameOrder}>
       <option value="given-first">{tr({ en: 'First Last', ar: 'الأول الأخير' }, $locale)}</option>

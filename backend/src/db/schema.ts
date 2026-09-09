@@ -242,6 +242,9 @@ export const people = pgTable('people', {
   // Year-only provenance (e.g. a "2015 Visitor" list with no exact date) is kept
   // in customFields.firstSeenYear / customFields.sourceList rather than faked here.
   firstVisitOn: date('first_visit_on'),
+  // "Needs attention" re-engagement: when set to a future date, this person is
+  // snoozed off the re-engagement list until then (admin clicked Ignore/Snooze).
+  reengageSnoozedUntil: date('reengage_snoozed_until'),
   // Extra fields captured by admin-built check-in forms (Phase 3) — keyed by the
   // form field's key. Kept out of first-class columns so forms stay flexible.
   customFields: jsonb('custom_fields').$type<Record<string, string>>().notNull().default({}),
