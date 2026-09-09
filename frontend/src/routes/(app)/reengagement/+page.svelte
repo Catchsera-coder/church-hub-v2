@@ -57,7 +57,10 @@
   const workOnIt = (r: Row) => act(r, () => api(`/people/${r.id}`, { method: 'PUT', body: JSON.stringify({ followUpStage: 'contacted' }) }));
   const snooze = (r: Row) => act(r, () => api(`/people/${r.id}/snooze`, { method: 'POST', body: '{}' }));
   const archive = (r: Row) => { if (!confirm(tr({ en: 'Archive this person?', ar: 'أرشفة هذا الشخص؟' }, $locale))) return; return act(r, () => api(`/people/${r.id}/archive`, { method: 'POST', body: '{}' })); };
-  const message = (r: Row) => goto(`/messages/new?people=${r.id}`);
+  // Pre-written, personalised greeting — {{firstName}}/{{churchName}} fill in per
+  // recipient at send (works for a single person AND a bulk send). Editable in the composer.
+  const greeting = () => tr({ en: "Hi {{firstName}}, we've missed you at {{churchName}} and would love to see you again soon. Is there anything we can pray with you about?", ar: 'مرحباً {{firstName}}، لقد افتقدناك في {{churchName}} ونحبّ أن نراك قريباً. هل من أمرٍ نصلّي معك من أجله؟' }, $locale);
+  const message = (r: Row) => goto(`/messages/new?people=${r.id}&body=${encodeURIComponent(greeting())}`);
 
   // --- bulk actions on the selection ---
   const ids = () => [...selected];
@@ -69,7 +72,7 @@
     try { await api('/people/bulk', { method: 'POST', body: JSON.stringify({ ids: chosen, action, assigneeUserId: assigneeUserId ?? null }) }); dropIds(chosen); }
     catch (err) { alert((err as Error).message); } finally { bulkBusy = false; }
   }
-  function bulkMessage() { if (selected.size) goto(`/messages/new?people=${ids().join(',')}`); }
+  function bulkMessage() { if (selected.size) goto(`/messages/new?people=${ids().join(',')}&body=${encodeURIComponent(greeting())}`); }
   function bulkAssign() { bulk('followup', assignee ? Number(assignee) : null); assignee = ''; }
 
   const nm = (r: Row) => displayName(r, $nameOrder, $locale);
