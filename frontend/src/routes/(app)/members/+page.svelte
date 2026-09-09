@@ -213,6 +213,13 @@
   </div>
 </div>
 
+<p class="mb-3 flex items-start gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+  <span>{cat === 'contact' ? '📇' : '⛪'}</span>
+  <span>{cat === 'contact'
+    ? tr({ en: 'Contacts are an external directory (e.g. the regional conference list) — NOT your congregation. Kept separate from Members, but still searchable and reachable for messaging.', ar: 'جهات الاتصال دليل خارجي (مثل قائمة المؤتمر الإقليمي) — ليست من رعيّتك. تُدار بمعزل عن الأعضاء، لكنها تبقى قابلة للبحث والمراسلة عند الحاجة.' }, $locale)
+    : tr({ en: 'Members are your congregation — visitors, regulars and members you pastor, follow up, and count. (External contacts live under the Contacts tab.)', ar: 'الأعضاء هم رعيّتك — الزوار والمنتظمون والأعضاء الذين ترعاهم وتتابعهم وتَعُدّهم. (جهات الاتصال الخارجية في تبويب جهات الاتصال.)' }, $locale)}</span>
+</p>
+
 <FilterBar active={activeCount} onclear={clearFilters}>
   <label class="text-sm">
     <span class="mb-1 block text-slate-500">👋 {tr({ en: 'First seen (year)', ar: 'أول ظهور (سنة)' }, $locale)}</span>
