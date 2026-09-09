@@ -21,12 +21,36 @@
   const editable = can('update person');
   const canMessage = can('create message');
 
+  // --- First-seen time filter (client-side, over the already-loaded list) ---
+  // Narrows the list by WHEN each person first appeared (the "since YYYY" pill):
+  // 'all' = any time, a year string = that year only, 'custom' = a from/to date range.
+  let seenFilter = $state<string>('all');
+  let fromDate = $state('');
+  let toDate = $state('');
+  function seenYearOf(r: Row): string | null { return r.firstSeenYear ?? (r.firstVisitOn ? r.firstVisitOn.slice(0, 4) : null); }
+  function seenDateOf(r: Row): string | null { return r.firstVisitOn ?? (r.firstSeenYear ? `${r.firstSeenYear}-01-01` : null); }
+  // Distinct first-seen years present in the data, newest first — powers the dropdown.
+  const years = $derived([...new Set(rows.map(seenYearOf).filter((y): y is string => !!y))].sort((a, b) => b.localeCompare(a)));
+  const shown = $derived(rows.filter((r) => {
+    if (seenFilter === 'all') return true;
+    if (seenFilter === 'custom') {
+      const d = seenDateOf(r);
+      if (!d) return false;
+      if (fromDate && d < fromDate) return false;
+      if (toDate && d > toDate) return false;
+      return true;
+    }
+    return seenYearOf(r) === seenFilter;
+  }));
+  const filtered = $derived(seenFilter !== 'all');
+  function clearFilter() { seenFilter = 'all'; fromDate = ''; toDate = ''; }
+
   // Multi-select + bulk actions.
   let selected = $state<Set<number>>(new Set());
   let assignees = $state<{ id: number; name: string }[]>([]);
   let assignee = $state<string>('');
   let bulkBusy = $state(false);
-  const allShown = $derived(rows.length > 0 && rows.every((r) => selected.has(r.id)));
+  const allShown = $derived(shown.length > 0 && shown.every((r) => selected.has(r.id)));
 
   async function load() {
     loading = true; selected = new Set();
@@ -39,7 +63,7 @@
   });
 
   function toggle(id: number) { const s = new Set(selected); s.has(id) ? s.delete(id) : s.add(id); selected = s; }
-  function toggleAll() { selected = allShown ? new Set() : new Set(rows.map((r) => r.id)); }
+  function toggleAll() { selected = allShown ? new Set() : new Set(shown.map((r) => r.id)); }
   function clearSel() { selected = new Set(); }
   function dropIds(ids: number[]) { const set = new Set(ids); rows = rows.filter((r) => !set.has(r.id)); selected = new Set(); }
 
@@ -98,6 +122,24 @@
 {:else if rows.length === 0}
   <div class="card p-10 text-center text-slate-500">{tr({ en: 'Nobody needs attention right now — everyone’s connected or being followed up. 🎉', ar: 'لا أحد يحتاج متابعة الآن — الجميع مندمج أو قيد المتابعة. 🎉' }, $locale)}</div>
 {:else}
+  <!-- First-seen time filter: narrows the list by when each person first appeared -->
+  <div class="mb-3 flex flex-wrap items-center gap-2 text-sm">
+    <span class="font-medium text-slate-600 dark:text-slate-300">🗓 {tr({ en: 'First seen', ar: 'أول ظهور' }, $locale)}</span>
+    <select class="input w-auto py-1 text-sm" bind:value={seenFilter}>
+      <option value="all">{tr({ en: 'Any time', ar: 'أي وقت' }, $locale)}</option>
+      {#each years as y}<option value={y}>{y}</option>{/each}
+      <option value="custom">{tr({ en: 'Custom range…', ar: 'مدة مخصصة…' }, $locale)}</option>
+    </select>
+    {#if seenFilter === 'custom'}
+      <input type="date" class="input w-auto py-1 text-sm" bind:value={fromDate} aria-label={tr({ en: 'From date', ar: 'من تاريخ' }, $locale)} />
+      <span class="text-slate-400">→</span>
+      <input type="date" class="input w-auto py-1 text-sm" bind:value={toDate} aria-label={tr({ en: 'To date', ar: 'إلى تاريخ' }, $locale)} />
+    {/if}
+    {#if filtered}
+      <button class="text-xs text-primary-700 hover:underline dark:text-primary-300" onclick={clearFilter}>{tr({ en: 'Clear filter', ar: 'مسح الفلتر' }, $locale)}</button>
+    {/if}
+  </div>
+
   <!-- Select-all + count -->
   <div class="mb-2 flex flex-wrap items-center gap-3 text-sm">
     {#if editable}
@@ -106,7 +148,7 @@
         {tr({ en: 'Select all', ar: 'تحديد الكل' }, $locale)}
       </label>
     {/if}
-    <span class="text-slate-500">{rows.length} {tr({ en: 'to re-engage', ar: 'لإعادة التواصل' }, $locale)}</span>
+    <span class="text-slate-500">{shown.length}{#if filtered} / {rows.length}{/if} {tr({ en: 'to re-engage', ar: 'لإعادة التواصل' }, $locale)}</span>
   </div>
 
   <!-- Bulk action bar (CRM-style): appears when rows are selected -->
@@ -128,8 +170,14 @@
     </div>
   {/if}
 
+  {#if shown.length === 0}
+    <div class="card p-8 text-center text-slate-500">
+      {tr({ en: 'No one first appeared in this period.', ar: 'لا أحد ظهر لأول مرة في هذه المدة.' }, $locale)}
+      <button class="text-primary-700 hover:underline dark:text-primary-300" onclick={clearFilter}>{tr({ en: 'Clear filter', ar: 'مسح الفلتر' }, $locale)}</button>
+    </div>
+  {:else}
   <div class="space-y-2">
-    {#each rows as r (r.id)}
+    {#each shown as r (r.id)}
       <div class="card flex items-center gap-3 p-4 {selected.has(r.id) ? 'ring-1 ring-primary-300 dark:ring-primary-700' : ''}">
         {#if editable}<input type="checkbox" class="shrink-0" checked={selected.has(r.id)} onchange={() => toggle(r.id)} />{/if}
         <!-- Left column: identity + contact details -->
@@ -165,4 +213,5 @@
       </div>
     {/each}
   </div>
+  {/if}
 {/if}
