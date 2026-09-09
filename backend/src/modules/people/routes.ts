@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { and, desc, eq, getTableColumns, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { db } from '../../db/index.js';
-import { people, households, personServiceType, serviceTypes, automations, messageTemplates, personClearances } from '../../db/schema.js';
+import { people, households, personServiceType, serviceTypes, automations, messageTemplates, personClearances, careItems } from '../../db/schema.js';
 import { asyncHandler } from '../../http/asyncHandler.js';
 import { authenticate, requirePermission } from '../../middleware/auth.js';
 import { notFound } from '../../http/errors.js';
@@ -195,6 +195,37 @@ peopleRouter.post(
     if (!row) throw notFound();
     await logActivity(req, 'updated', 'person', id, 're-engagement snoozed 3mo');
     res.json({ data: row });
+  }),
+);
+
+// Bulk action on a set of people (from the "Needs attention" multi-select).
+// snooze = hide 3 months; archive = move out of active lists; followup = enter the
+// Follow-up pipeline (stage 'contacted') and, if a servant is chosen, create a
+// pastoral-care task assigned to them for each person.
+const bulkSchema = z.object({
+  ids: z.array(z.number().int().positive()).min(1).max(2000),
+  action: z.enum(['snooze', 'archive', 'followup']),
+  assigneeUserId: z.number().int().positive().nullable().optional(),
+});
+peopleRouter.post(
+  '/bulk',
+  requirePermission('update person'),
+  asyncHandler(async (req, res) => {
+    const b = bulkSchema.parse(req.body);
+    if (b.action === 'snooze') {
+      await db.update(people).set({ reengageSnoozedUntil: sql`current_date + interval '3 months'`, updatedAt: new Date() }).where(inArray(people.id, b.ids));
+    } else if (b.action === 'archive') {
+      await db.update(people).set({ archivedAt: new Date(), isActive: false, updatedAt: new Date() }).where(and(inArray(people.id, b.ids), isNull(people.deletedAt)));
+    } else if (b.action === 'followup') {
+      await db.update(people).set({ followUpStage: 'contacted', updatedAt: new Date() }).where(inArray(people.id, b.ids));
+      if (b.assigneeUserId) {
+        for (const pid of b.ids) {
+          await db.insert(careItems).values({ type: 'task', subject: 'Re-engage — reach out and reconnect', personId: pid, assignedToUserId: b.assigneeUserId, status: 'open', createdByUserId: req.auth!.sub });
+        }
+      }
+    }
+    await logActivity(req, 'updated', 'person', 0, `bulk ${b.action}: ${b.ids.length}${b.assigneeUserId ? ` → user ${b.assigneeUserId}` : ''}`);
+    res.json({ data: { affected: b.ids.length } });
   }),
 );
 
