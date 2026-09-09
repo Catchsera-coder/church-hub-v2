@@ -132,21 +132,25 @@
     {#each rows as r (r.id)}
       <div class="card flex items-center gap-3 p-4 {selected.has(r.id) ? 'ring-1 ring-primary-300 dark:ring-primary-700' : ''}">
         {#if editable}<input type="checkbox" class="shrink-0" checked={selected.has(r.id)} onchange={() => toggle(r.id)} />{/if}
+        <!-- Left column: identity + contact details -->
+        <div class="min-w-0 shrink-0 basis-72">
+          <a class="block truncate font-medium text-primary-700 hover:underline dark:text-primary-300" href="/members/{r.id}">{nm(r)}</a>
+          <div class="mt-1 flex flex-wrap gap-x-3 text-xs text-slate-500 dark:text-slate-400">
+            {#if r.householdName}<span>👪 {tr(r.householdName, $locale)}</span>{/if}
+            {#if r.email}<span class="force-ltr">{r.email}</span>{/if}
+            {#if r.mobile}<span class="force-ltr">{r.mobile}</span>{/if}
+            {#if r.sourceList}<span class="text-slate-400">· {r.sourceList}</span>{/if}
+          </div>
+        </div>
+        <!-- Middle column: status pills, left-aligned and lined up across rows, with a gap before the action bar -->
         <div class="min-w-0 flex-1">
           <div class="flex flex-wrap items-center gap-2">
-            <a class="font-medium text-primary-700 hover:underline dark:text-primary-300" href="/members/{r.id}">{nm(r)}</a>
             {#if r.reason === 'lapsed'}
               <span class="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">Lapsed · {weeksAgo(r.lastSeen)} {tr({ en: 'wks', ar: 'أسبوع' }, $locale)}</span>
             {:else}
               <span class="rounded-full bg-slate-200 px-2 py-0.5 text-xs text-slate-700 dark:bg-slate-700 dark:text-slate-200">{tr({ en: 'Never connected', ar: 'لم يندمج' }, $locale)}{#if r.firstSeenYear} · {tr({ en: 'since', ar: 'منذ' }, $locale)} {r.firstSeenYear}{/if}</span>
             {/if}
             <span class="rounded-full bg-slate-100 px-2 py-0.5 text-xs capitalize text-slate-500 dark:bg-slate-800 dark:text-slate-400">{r.membershipStatus}</span>
-          </div>
-          <div class="mt-1 flex flex-wrap gap-x-3 text-xs text-slate-500 dark:text-slate-400">
-            {#if r.householdName}<span>👪 {tr(r.householdName, $locale)}</span>{/if}
-            {#if r.email}<span class="force-ltr">{r.email}</span>{/if}
-            {#if r.mobile}<span class="force-ltr">{r.mobile}</span>{/if}
-            {#if r.sourceList}<span class="text-slate-400">· {r.sourceList}</span>{/if}
           </div>
         </div>
         <!-- Aligned, colour-coded action bar -->
