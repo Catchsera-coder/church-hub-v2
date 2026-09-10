@@ -65,6 +65,7 @@
       key: 'group.admin',
       items: [
         { href: '/analytics', label: 'nav.analytics', icon: 'activity', perm: 'view person' },
+        { href: '/cleanup', label: 'nav.cleanup', icon: 'recycle', perm: 'update person' },
         { href: '/team', label: 'nav.team', icon: 'team', perm: 'view user' },
         { href: '/vendors', label: 'nav.vendors', icon: 'vendors', role: 'Admin' },
         { href: '/activity', label: 'nav.activity', icon: 'activity', role: 'Admin' },

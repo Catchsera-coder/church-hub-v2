@@ -311,6 +311,40 @@ peopleRouter.post(
     res.json({ data: row });
   }),
 );
+// Same-name groups — people who share a full name (given+family) or just a family
+// name, so staff can spot true duplicates vs. same-surname-different-family and
+// fix households. Groups of 2+ only, biggest first.
+peopleRouter.get(
+  '/name-groups',
+  requirePermission('view person'),
+  asyncHandler(async (req, res) => {
+    const by = req.query.by === 'last' ? 'last' : 'full';
+    const rows = await db.execute(sql`
+      SELECT p.id, p.given_name, p.family_name, p.middle_name, p.email, p.mobile, p.membership_status,
+             p.household_id, (SELECT h.name FROM households h WHERE h.id = p.household_id AND h.deleted_at IS NULL) AS household_name
+      FROM people p
+      WHERE p.deleted_at IS NULL AND p.archived_at IS NULL AND p.category = 'congregation'`);
+    const norm = (s: unknown) => String(s ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
+    const groups = new Map<string, any[]>();
+    for (const r of rows.rows as any[]) {
+      const given = norm((r.given_name as any)?.en ?? (r.given_name as any)?.ar);
+      const family = norm((r.family_name as any)?.en ?? (r.family_name as any)?.ar);
+      const key = by === 'last' ? family : `${given} ${family}`.trim();
+      if (!key || key === ' ') continue;
+      const person = {
+        id: Number(r.id), givenName: r.given_name, familyName: r.family_name, middleName: r.middle_name,
+        email: r.email, mobile: r.mobile, membershipStatus: r.membership_status,
+        householdId: r.household_id ? Number(r.household_id) : null, householdName: r.household_name,
+      };
+      (groups.get(key) ?? groups.set(key, []).get(key)!).push(person);
+    }
+    const data = [...groups.entries()]
+      .filter(([, ppl]) => ppl.length > 1)
+      .map(([key, people]) => ({ key, count: people.length, people }))
+      .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key));
+    res.json({ data });
+  }),
+);
 
 peopleRouter.get(
   '/:id',

@@ -140,6 +140,30 @@
     catch (err) { alert(err instanceof ApiError ? err.message : (err as Error).message); }
     finally { busy = false; }
   }
+
+  // Bulk split: select several members and move them together into a NEW household
+  // — the fast fix for an over-merged import that lumped different families under
+  // one surname.
+  let selected = $state<Set<number>>(new Set());
+  function toggleSel(id: number) { const s = new Set(selected); s.has(id) ? s.delete(id) : s.add(id); selected = s; }
+  async function moveSelectedToNewFamily() {
+    if (!selected.size) return;
+    const chosen = members.filter((m) => selected.has(m.id));
+    if (!confirm(tr({ en: `Move ${chosen.length} selected people into a new family of their own?`, ar: `نقل ${chosen.length} أشخاص محددين إلى عائلة جديدة خاصة بهم؟` }, $locale))) return;
+    busy = true;
+    try {
+      const first = chosen[0];
+      const name: Record<string, string> = {};
+      if (first?.familyName?.en) name.en = first.familyName.en;
+      if (first?.familyName?.ar) name.ar = first.familyName.ar;
+      if (!name.en && !name.ar) name.en = tr({ en: 'New family', ar: 'عائلة جديدة' }, $locale);
+      const created = await api<{ data: { id: number } }>('/families', { method: 'POST', body: JSON.stringify({ name }) });
+      for (const m of chosen) await api(`/people/${m.id}`, { method: 'PUT', body: JSON.stringify({ householdId: created.data.id }) });
+      selected = new Set();
+      await onchanged();
+    } catch (err) { alert(err instanceof ApiError ? err.message : (err as Error).message); }
+    finally { busy = false; }
+  }
   function messagePerson(m: any) { goto(`/messages/new?people=${m.id}`); }
 
   // ---- inline edit ------------------------------------------------------------
@@ -231,6 +255,13 @@
       {tr({ en: 'No one in this family yet. Add the first member above.', ar: 'لا أحد في هذه العائلة بعد. أضف أول فرد بالأعلى.' }, $locale)}
     </p>
   {:else}
+    {#if editable && selected.size > 0}
+      <div class="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-primary-200 bg-primary-50 px-3 py-2 text-sm dark:border-primary-800 dark:bg-primary-900/30">
+        <span class="font-medium text-primary-800 dark:text-primary-200">{selected.size} {tr({ en: 'selected', ar: 'محدد' }, $locale)}</span>
+        <button class="rounded-md border border-primary-300 bg-white px-2.5 py-1 text-xs font-medium text-primary-700 hover:bg-primary-100 disabled:opacity-50 dark:border-primary-700 dark:bg-transparent dark:text-primary-300" disabled={busy} onclick={moveSelectedToNewFamily}>🏠 {tr({ en: 'Move to a new family', ar: 'نقل إلى عائلة جديدة' }, $locale)}</button>
+        <button class="ms-auto text-xs text-primary-700 hover:underline dark:text-primary-300" onclick={() => (selected = new Set())}>{tr({ en: 'Clear', ar: 'مسح' }, $locale)}</button>
+      </div>
+    {/if}
     <ul class="space-y-2">
       {#each members as m (m.id)}
         {@const av = avatar(m)}
@@ -238,6 +269,7 @@
         <li class="rounded-xl border border-slate-200 transition hover:border-slate-300 dark:border-slate-700 dark:hover:border-slate-600">
           <!-- summary row -->
           <div class="flex items-start gap-3 p-3">
+            {#if editable}<input type="checkbox" class="mt-3 shrink-0" checked={selected.has(m.id)} onchange={() => toggleSel(m.id)} aria-label={tr({ en: 'Select', ar: 'تحديد' }, $locale)} />{/if}
             <span class="mt-0.5 grid h-10 w-10 shrink-0 place-items-center rounded-full text-sm font-semibold text-white" style="background:{av.color}">{av.initials}</span>
             <div class="min-w-0 flex-1">
               <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
