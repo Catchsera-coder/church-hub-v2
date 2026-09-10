@@ -45,7 +45,9 @@
         { method: 'POST', body: JSON.stringify({ email, password }) },
       );
       setSession(r);
-      await goto('/dashboard', { replaceState: true });
+      // A member whose password was set by an admin (or otherwise flagged) must
+      // choose their own before continuing.
+      await goto(r.user?.mustChangePassword ? '/change-password' : '/dashboard', { replaceState: true });
     } catch (err) {
       error = err instanceof ApiError && err.status === 401 ? $t('auth.invalid') : (err as Error).message;
     } finally {

@@ -137,6 +137,12 @@ export const users = pgTable('users', {
   personId: integer('person_id'),
   invitedAt: timestamp('invited_at', { withTimezone: true }),
   lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
+  // Team-member invite: an opaque join link lets a new member set their own
+  // password. Hash stored (never the raw token); longer-lived than the reset code.
+  inviteTokenHash: text('invite_token_hash'),
+  inviteExpiresAt: timestamp('invite_expires_at', { withTimezone: true }),
+  // Force a password change at next login (e.g. after an admin sets a temp one).
+  mustChangePassword: boolean('must_change_password').notNull().default(false),
   ...timestamps,
 }, (t) => ({
   emailUnique: uniqueIndex('users_email_unique').on(t.email),

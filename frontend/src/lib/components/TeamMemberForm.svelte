@@ -13,6 +13,7 @@
     password: '',
     isActive: initial?.isActive ?? true,
     roleIds: [] as number[],
+    sendInvite: true, // email them a set-your-password link on create
   });
   let error = $state('');
   let saving = $state(false);
@@ -50,7 +51,10 @@
       if (id) {
         await api(`/team/${id}`, { method: 'PUT', body: JSON.stringify({ name: form.name, isActive: form.isActive, roleIds: form.roleIds }) });
       } else {
-        await api('/team', { method: 'POST', body: JSON.stringify({ name: form.name, email: form.email, password: form.password || undefined, roleIds: form.roleIds }) });
+        const r = await api<{ inviteSent?: boolean }>('/team', { method: 'POST', body: JSON.stringify({ name: form.name, email: form.email, password: form.password || undefined, roleIds: form.roleIds, sendInvite: form.sendInvite }) });
+        if (form.sendInvite && r && r.inviteSent === false) {
+          alert(tr({ en: 'Member created, but the invite email could not be sent — email isn’t configured yet (Settings → Messaging). You can send it later from the Team page.', ar: 'تم إنشاء العضو، لكن تعذّر إرسال بريد الدعوة — البريد غير مُهيأ بعد. يمكنك إرساله لاحقاً من صفحة الفريق.' }, $locale));
+        }
       }
       await goto('/team');
     } catch (err) { error = (err as Error).message; } finally { saving = false; }
@@ -70,10 +74,17 @@
     </label>
 
     {#if !id}
+      <label class="flex items-start gap-2 rounded-lg border border-slate-200 p-3 text-sm dark:border-slate-700">
+        <input type="checkbox" class="mt-0.5" bind:checked={form.sendInvite} />
+        <span>
+          <span class="font-medium text-slate-700 dark:text-slate-200">{tr({ en: 'Send the invitation email now', ar: 'إرسال بريد الدعوة الآن' }, $locale)}</span>
+          <span class="mt-0.5 block text-xs text-slate-400">{tr({ en: 'A branded email with a secure link for them to set their own password and sign in. Uncheck to send later (from the Team page). Requires email configured in Settings → Messaging.', ar: 'بريد مُنسَّق يحوي رابطاً آمناً ليعيّنوا كلمة مرورهم ويسجّلوا الدخول. ألغِ التحديد للإرسال لاحقاً من صفحة الفريق. يتطلب إعداد البريد.' }, $locale)}</span>
+        </span>
+      </label>
       <label class="block space-y-1">
-        <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Temporary password', ar: 'كلمة مرور مؤقتة' }, $locale)}</span>
-        <input class="input force-ltr" type="text" bind:value={form.password} minlength="8" placeholder={tr({ en: 'Leave blank for no password yet', ar: 'اتركه فارغاً بدون كلمة مرور بعد' }, $locale)} />
-        <span class="text-xs text-slate-400">{tr({ en: 'If set, at least 8 characters. If blank, the person has no password yet — they set one via "Forgot password" (needs email configured), or an admin sets it later. No invite email is sent automatically.', ar: 'إن حُدّدت، 8 أحرف على الأقل. إن تُركت فارغة، لا كلمة مرور بعد — يعيّنها الشخص عبر «نسيت كلمة المرور» (يتطلب إعداد البريد)، أو يعيّنها المشرف لاحقاً. لا يُرسَل بريد دعوة تلقائياً.' }, $locale)}</span>
+        <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Temporary password (optional)', ar: 'كلمة مرور مؤقتة (اختياري)' }, $locale)}</span>
+        <input class="input force-ltr" type="text" bind:value={form.password} minlength="8" placeholder={tr({ en: 'Leave blank — recommended', ar: 'اتركه فارغاً — مُستحسن' }, $locale)} />
+        <span class="text-xs text-slate-400">{tr({ en: 'Recommended: leave blank so they set their own via the invite link. If you set one (8+ chars), they’ll be asked to change it at first login.', ar: 'مُستحسن: اتركه فارغاً ليعيّنوا كلمتهم عبر رابط الدعوة. إن حدّدت واحدة (8 أحرف+)، سيُطلب منهم تغييرها عند أول دخول.' }, $locale)}</span>
       </label>
     {/if}
 

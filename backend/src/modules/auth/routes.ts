@@ -51,7 +51,7 @@ authRouter.post(
     const session = await issueSession(user);
     res.json({
       ...session,
-      user: { id: user.id, name: user.name, email: user.email, locale: user.locale },
+      user: { id: user.id, name: user.name, email: user.email, locale: user.locale, mustChangePassword: user.mustChangePassword },
     });
   }),
 );
@@ -183,9 +183,43 @@ authRouter.get(
     const [user] = await db.select().from(users).where(eq(users.id, id)).limit(1);
     if (!user) throw badRequest('User not found');
     res.json({
-      user: { id: user.id, name: user.name, email: user.email, locale: user.locale },
+      user: { id: user.id, name: user.name, email: user.email, locale: user.locale, mustChangePassword: user.mustChangePassword },
       roles: req.auth!.roles,
       perms: req.auth!.perms,
     });
+  }),
+);
+
+// --- Team-member invite: set your own password from the emailed link --------
+authRouter.post(
+  '/accept-invite',
+  asyncHandler(async (req, res) => {
+    const { token, password } = z.object({ token: z.string().min(10), password: z.string().min(8) }).parse(req.body);
+    const hash = crypto.createHash('sha256').update(token).digest('hex');
+    const [user] = await db.select().from(users).where(eq(users.inviteTokenHash, hash)).limit(1);
+    if (!user || !user.isActive || !user.inviteExpiresAt || user.inviteExpiresAt < new Date()) {
+      throw badRequest('This invitation link is invalid or has expired. Ask your administrator to resend it.');
+    }
+    await db.update(users)
+      .set({ passwordHash: await hashPassword(password), inviteTokenHash: null, inviteExpiresAt: null, mustChangePassword: false, invitedAt: null, updatedAt: new Date() })
+      .where(eq(users.id, user.id));
+    res.json({ ok: true });
+  }),
+);
+
+// --- Change your own password (also clears a forced-change flag) ------------
+authRouter.post(
+  '/change-password',
+  authenticate,
+  asyncHandler(async (req, res) => {
+    const { currentPassword, newPassword } = z
+      .object({ currentPassword: z.string().min(1), newPassword: z.string().min(8) })
+      .parse(req.body);
+    const [user] = await db.select().from(users).where(eq(users.id, req.auth!.sub)).limit(1);
+    if (!user || !user.passwordHash || !(await verifyPassword(user.passwordHash, currentPassword))) {
+      throw badRequest('Your current password is incorrect.');
+    }
+    await db.update(users).set({ passwordHash: await hashPassword(newPassword), mustChangePassword: false, updatedAt: new Date() }).where(eq(users.id, user.id));
+    res.json({ ok: true });
   }),
 );
