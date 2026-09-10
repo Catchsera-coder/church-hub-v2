@@ -97,10 +97,46 @@
     } catch (err) { alert(err instanceof ApiError ? err.message : (err as Error).message); }
     finally { busy = false; }
   }
-  async function remove(m: any) {
-    if (!confirm(tr({ en: `Remove ${displayName(m, $nameOrder, $locale)} from this family? (Their profile is kept.)`, ar: 'إزالة هذا الشخص من العائلة؟ (يبقى ملفه محفوظاً.)' }, $locale))) return;
-    busy = true;
-    try { await api(`/people/${m.id}`, { method: 'PUT', body: JSON.stringify({ householdId: null }) }); if (editingId === m.id) cancelEdit(); await onchanged(); }
+  // Remove / move-out flow. Clicking 🗑 opens an inline choice (below) instead of
+  // a blunt delete: "Move to their own family" (split a same-surname person into
+  // their own household) or "Remove from family" (leave them family-less). Both
+  // keep the person's profile and both are reversible via the Undo banner.
+  let removingId = $state<number | null>(null);
+  // Remembers the last remove/move so it can be undone: restore to the family we
+  // just took them out of (this household).
+  let lastUndo = $state<{ id: number; name: string; toHousehold: number } | null>(null);
+
+  function askRemove(m: any) { removingId = removingId === m.id ? null : m.id; }
+  async function doRemove(m: any, mode: 'orphan' | 'own') {
+    busy = true; removingId = null;
+    try {
+      if (mode === 'own') {
+        // Split them into their own new household, named after them, carrying their
+        // own phone/address, and made head — for a same-surname person who isn't
+        // actually part of this family (e.g. "Maged M" vs the other Ghobrials).
+        const name: Record<string, string> = {};
+        if (m.familyName?.en) name.en = m.familyName.en;
+        if (m.familyName?.ar) name.ar = m.familyName.ar;
+        if (!name.en && !name.ar) name.en = displayName(m, 'given-first', $locale) || 'Family';
+        const created = await api<{ data: { id: number } }>('/families', { method: 'POST', body: JSON.stringify({
+          name, homePhone: m.mobile ?? null,
+          addressLine1: m.addressLine1 ?? null, addressLine2: m.addressLine2 ?? null,
+          city: m.city ?? null, region: m.region ?? null, postalCode: m.postalCode ?? null, country: m.country ?? null,
+        }) });
+        await api(`/people/${m.id}`, { method: 'PUT', body: JSON.stringify({ householdId: created.data.id, householdRole: 'head' }) });
+      } else {
+        await api(`/people/${m.id}`, { method: 'PUT', body: JSON.stringify({ householdId: null }) });
+      }
+      lastUndo = { id: m.id, name: displayName(m, $nameOrder, $locale), toHousehold: householdId };
+      if (editingId === m.id) cancelEdit();
+      await onchanged();
+    } catch (err) { alert(err instanceof ApiError ? err.message : (err as Error).message); }
+    finally { busy = false; }
+  }
+  async function undoRemove() {
+    if (!lastUndo) return;
+    const u = lastUndo; busy = true;
+    try { await api(`/people/${u.id}`, { method: 'PUT', body: JSON.stringify({ householdId: u.toHousehold }) }); lastUndo = null; await onchanged(); }
     catch (err) { alert(err instanceof ApiError ? err.message : (err as Error).message); }
     finally { busy = false; }
   }
@@ -154,6 +190,14 @@
       </button>
     {/if}
   </div>
+
+  {#if lastUndo}
+    <div class="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm dark:border-amber-800 dark:bg-amber-900/30">
+      <span class="text-amber-800 dark:text-amber-200">↩ {tr({ en: `Moved ${lastUndo.name} out of this family.`, ar: `تم نقل ${lastUndo.name} خارج هذه العائلة.` }, $locale)}</span>
+      <button class="ms-auto rounded-md border border-amber-300 bg-white px-2.5 py-1 text-xs font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-50 dark:border-amber-700 dark:bg-transparent dark:text-amber-200" disabled={busy} onclick={undoRemove}>{tr({ en: 'Undo', ar: 'تراجع' }, $locale)}</button>
+      <button class="text-xs text-amber-700 hover:underline dark:text-amber-300" onclick={() => (lastUndo = null)}>{tr({ en: 'Dismiss', ar: 'إغلاق' }, $locale)}</button>
+    </div>
+  {/if}
 
   {#if editable && showAdd}
     <div class="mb-4 space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800/50">
@@ -219,10 +263,23 @@
               {#if canMessage}<button class="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200" title={tr({ en: 'Message', ar: 'رسالة' }, $locale)} onclick={() => messagePerson(m)}>✉️</button>{/if}
               {#if editable}
                 <button class="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200" title={tr({ en: 'Edit', ar: 'تعديل' }, $locale)} onclick={() => (editingId === m.id ? cancelEdit() : startEdit(m))}>{editingId === m.id ? '▲' : '✏️'}</button>
-                <button class="rounded-md p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-900/30 dark:hover:text-rose-400" title={tr({ en: 'Remove from family', ar: 'إزالة من العائلة' }, $locale)} onclick={() => remove(m)}>🗑️</button>
+                <button class="rounded-md p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-900/30 dark:hover:text-rose-400" title={tr({ en: 'Remove from family…', ar: 'إزالة من العائلة…' }, $locale)} onclick={() => askRemove(m)}>🗑️</button>
               {/if}
             </div>
           </div>
+
+          <!-- inline remove-choice: split into own family, or leave family-less -->
+          {#if editable && removingId === m.id}
+            <div class="border-t border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800/50">
+              <p class="mb-3 text-sm text-slate-600 dark:text-slate-300">{tr({ en: `Take ${displayName(m, $nameOrder, $locale)} out of this family? Their profile is always kept, and you can Undo.`, ar: `إخراج ${displayName(m, $nameOrder, $locale)} من هذه العائلة؟ يبقى ملفه دائماً، ويمكنك التراجع.` }, $locale)}</p>
+              <div class="flex flex-wrap gap-2">
+                <button class="rounded-md border border-primary-300 bg-white px-3 py-1.5 text-xs font-medium text-primary-700 hover:bg-primary-50 disabled:opacity-50 dark:border-primary-700 dark:bg-transparent dark:text-primary-300" disabled={busy} onclick={() => doRemove(m, 'own')}>🏠 {tr({ en: 'Move to their own family', ar: 'نقله إلى عائلته الخاصة' }, $locale)}</button>
+                <button class="rounded-md border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-50 dark:border-rose-800 dark:bg-transparent dark:text-rose-300" disabled={busy} onclick={() => doRemove(m, 'orphan')}>🚫 {tr({ en: 'Remove — no family', ar: 'إزالة — بدون عائلة' }, $locale)}</button>
+                <button class="rounded-md px-3 py-1.5 text-xs text-slate-500 hover:underline" disabled={busy} onclick={() => (removingId = null)}>{$t('common.cancel')}</button>
+              </div>
+              <p class="mt-2 text-xs text-slate-400">{tr({ en: '“Own family” is right when someone just shares a last name — e.g. a different Ghobrial household.', ar: '«عائلته الخاصة» مناسب عندما يتشارك اللقب فقط — مثل عائلة غبريال مختلفة.' }, $locale)}</p>
+            </div>
+          {/if}
 
           <!-- inline editor -->
           {#if editingId === m.id && draft}

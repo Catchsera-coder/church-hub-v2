@@ -217,6 +217,10 @@ export const people = pgTable('people', {
   nickName: jsonb('nick_name').$type<I18n>().notNull().default({}),
   familyName: jsonb('family_name').$type<I18n>().notNull().default({}),
   householdId: integer('household_id').references(() => households.id, { onDelete: 'set null' }),
+  // Remembers the household this person was last in before householdId changed,
+  // so removing someone from a family can be undone ("restore to previous family")
+  // at any time — not just in-session. Set automatically on household change.
+  priorHouseholdId: integer('prior_household_id'),
   // Optional per-person home address. When any line is set it's the person's own
   // address; when blank they inherit their household's address in displays.
   addressLine1: text('address_line1'),

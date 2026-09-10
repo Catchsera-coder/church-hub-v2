@@ -266,6 +266,52 @@ peopleRouter.post(
   }),
 );
 
+// --- Restore / undo -------------------------------------------------------
+// People removed from a family (unlinked) but still active — restorable to the
+// family they were last in via PUT { householdId: priorHouseholdId }.
+peopleRouter.get(
+  '/removed-from-family',
+  requirePermission('view person'),
+  asyncHandler(async (_req, res) => {
+    const rows = await db.execute(sql`
+      SELECT p.id, p.given_name, p.family_name, p.middle_name, p.prior_household_id,
+             (SELECT h.name FROM households h WHERE h.id = p.prior_household_id AND h.deleted_at IS NULL) AS prior_household_name
+      FROM people p
+      WHERE p.deleted_at IS NULL AND p.household_id IS NULL AND p.prior_household_id IS NOT NULL
+      ORDER BY p.updated_at DESC LIMIT 200`);
+    res.json({ data: rows.rows.map((r) => ({
+      id: Number(r.id), givenName: r.given_name, familyName: r.family_name, middleName: r.middle_name,
+      priorHouseholdId: r.prior_household_id ? Number(r.prior_household_id) : null, priorHouseholdName: r.prior_household_name,
+    })) });
+  }),
+);
+// Soft-deleted people — restorable with undelete.
+peopleRouter.get(
+  '/deleted',
+  requirePermission('view person'),
+  asyncHandler(async (_req, res) => {
+    const rows = await db.execute(sql`
+      SELECT p.id, p.given_name, p.family_name, p.middle_name, p.email, p.mobile, p.deleted_at
+      FROM people p WHERE p.deleted_at IS NOT NULL
+      ORDER BY p.deleted_at DESC LIMIT 200`);
+    res.json({ data: rows.rows.map((r) => ({
+      id: Number(r.id), givenName: r.given_name, familyName: r.family_name, middleName: r.middle_name,
+      email: r.email, mobile: r.mobile, deletedAt: r.deleted_at,
+    })) });
+  }),
+);
+peopleRouter.post(
+  '/:id/undelete',
+  requirePermission('delete person'),
+  asyncHandler(async (req, res) => {
+    const id = Number(req.params.id);
+    const [row] = await db.update(people).set({ deletedAt: null, updatedAt: new Date() }).where(eq(people.id, id)).returning();
+    if (!row) throw notFound();
+    await logActivity(req, 'updated', 'person', id, 'restored (undeleted)');
+    res.json({ data: row });
+  }),
+);
+
 peopleRouter.get(
   '/:id',
   requirePermission('view person'),
@@ -294,9 +340,16 @@ peopleRouter.put(
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
     const body = upsertSchema.partial().parse(req.body);
+    // When the household changes, remember the one they were just in so the move
+    // (including "remove from family" = householdId:null) can be restored later.
+    const patch: Record<string, unknown> = { ...body };
+    if ('householdId' in body) {
+      const [cur] = await db.select({ h: people.householdId }).from(people).where(eq(people.id, id)).limit(1);
+      if (cur && cur.h !== body.householdId && cur.h != null) patch.priorHouseholdId = cur.h;
+    }
     const [row] = await db
       .update(people)
-      .set({ ...body, updatedAt: new Date() })
+      .set({ ...patch, updatedAt: new Date() })
       .where(and(eq(people.id, id), isNull(people.deletedAt)))
       .returning();
     if (!row) throw notFound();
