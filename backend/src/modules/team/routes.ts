@@ -32,10 +32,10 @@ function renderInvite(org: any, user: { name: string }, link: string | null): { 
   const lang = org.locale || 'en';
   const churchName = localeName(org.name, lang) || 'your church';
   const first = (user.name || '').split(/\s+/)[0] || user.name || 'there';
-  const subject = `You're invited to the ${churchName} hub`;
+  const subject = `You're invited to join ${churchName}`;
   const body =
     `Hi ${first},\n\n` +
-    `You've been given access to the ${churchName} management hub — the tools the team uses to care for the church family.\n\n` +
+    `You've been given access to ${churchName}'s management hub — the tools the team uses to care for the church family.\n\n` +
     (link
       ? `Click the button below to set your password and sign in. Please choose a strong password you don't use anywhere else.`
       : `Ask your administrator for your sign-in link to set your password.`) +
@@ -45,7 +45,7 @@ function renderInvite(org: any, user: { name: string }, link: string | null): { 
     lang,
     signature,
     cta: link ? { label: 'Set my password & sign in', url: link } : null,
-    preheader: `Your invitation to the ${churchName} hub`,
+    preheader: `Your invitation to ${churchName}`,
   });
   return { subject, body, html };
 }
