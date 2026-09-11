@@ -70,13 +70,33 @@ function paragraphs(text: string): string {
     .join('');
 }
 
-/** Bulletproof, email-client-safe call-to-action button. */
+/** Lighten (positive) or darken (negative) a #rrggbb hex by a percentage. */
+function shade(hex: string, pct: number): string {
+  const n = parseInt(hex.replace('#', '').slice(0, 6), 16);
+  const clamp = (v: number) => Math.max(0, Math.min(255, Math.round(v)));
+  const r = clamp(((n >> 16) & 255) * (1 + pct / 100));
+  const g = clamp(((n >> 8) & 255) * (1 + pct / 100));
+  const b = clamp((n & 255) * (1 + pct / 100));
+  return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
+}
+
+/** Bulletproof, email-client-safe call-to-action button (centered). */
 function ctaButton(cta: { label: string; url: string }, color: string): string {
   const url = escapeHtml(cta.url);
   const label = escapeHtml(cta.label);
-  return `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:4px 0 20px"><tr><td style="border-radius:8px;background:${color}">`
-    + `<a href="${url}" target="_blank" rel="noopener" style="display:inline-block;padding:12px 30px;color:#ffffff;text-decoration:none;font-weight:600;font-size:15px;border-radius:8px">${label}</a>`
+  return `<table role="presentation" align="center" cellpadding="0" cellspacing="0" style="margin:10px auto 6px"><tr><td style="border-radius:10px;background:${color};box-shadow:0 2px 8px rgba(15,23,42,0.18)">`
+    + `<a href="${url}" target="_blank" rel="noopener" style="display:inline-block;padding:14px 38px;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;letter-spacing:.2px;border-radius:10px">${label}</a>`
     + `</td></tr></table>`;
+}
+
+/** A refined detail card (e.g. the invitee's sign-in name + email). */
+function highlightBox(h: { label: string; lines: string[] }, brand: string): string {
+  const label = `<div style="font-size:11px;font-weight:700;letter-spacing:1.3px;text-transform:uppercase;color:${brand};margin:0 0 7px">${escapeHtml(h.label)}</div>`;
+  const lines = h.lines
+    .filter(Boolean)
+    .map((l, i) => `<div style="font-size:${i === 0 ? '16px' : '14px'};font-weight:${i === 0 ? '600' : '400'};color:${i === 0 ? '#0f172a' : '#475569'};line-height:1.55">${escapeHtml(l)}</div>`)
+    .join('');
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:6px 0 22px"><tr><td style="background:#f8fafc;border:1px solid #e8ecf1;border-left:3px solid ${brand};border-radius:10px;padding:15px 18px">${label}${lines}</td></tr></table>`;
 }
 
 /** Comma-join the church's postal address from the organisation row. */
@@ -114,7 +134,9 @@ export function brandedEmailHtml(
   org: OrgBrand,
   opts: {
     lang?: string;
+    heading?: string;                         // elegant serif headline above the body
     signature?: string;                       // pre-rendered sign-off (merge already applied)
+    highlight?: { label: string; lines: string[] }; // a refined detail card under the body
     cta?: { label: string; url: string } | null;
     unsubscribeUrl?: string;                  // broadcasts → shows an unsubscribe line
     bodyFooterNote?: string;                  // small note under the body (e.g. template footer)
@@ -135,14 +157,22 @@ export function brandedEmailHtml(
   const logoSrc = org.logoPath
     ? (/^https?:\/\//i.test(org.logoPath) ? org.logoPath : (appUrl ? `${appUrl}/api/public/branding/logo` : null))
     : null;
-  const logo = logoSrc
-    ? `<img src="${escapeHtml(logoSrc)}" alt="${name}" style="height:44px;max-width:200px;object-fit:contain" />`
-    : `<div style="font-size:20px;font-weight:700;color:#ffffff;margin:0">${name}</div>`;
+  // Centered logo with the church name beneath it (name only, larger, when no logo).
+  const logoImg = logoSrc
+    ? `<img src="${escapeHtml(logoSrc)}" alt="${name}" style="height:54px;max-width:220px;object-fit:contain;display:block;margin:0 auto 10px" />`
+    : '';
+  const headerName = logoSrc
+    ? `<div style="font-size:14px;font-weight:600;letter-spacing:.5px;color:rgba(255,255,255,0.9);margin:0">${name}</div>`
+    : `<div style="font-size:22px;font-weight:700;color:#ffffff;margin:0">${name}</div>`;
 
   const preheader = opts.preheader
     ? `<div style="display:none;max-height:0;overflow:hidden;opacity:0">${escapeHtml(opts.preheader)}</div>`
     : '';
 
+  const heading = opts.heading
+    ? `<h1 style="margin:0 0 16px;font-family:Georgia,'Times New Roman',serif;font-size:23px;line-height:1.3;font-weight:700;color:#0f172a">${escapeHtml(opts.heading)}</h1>`
+    : '';
+  const highlight = opts.highlight ? highlightBox(opts.highlight, brand) : '';
   const body = paragraphs(bodyText);
   const cta = opts.cta && opts.cta.url && opts.cta.label ? ctaButton(opts.cta, btn) : '';
   const signature = opts.signature
@@ -173,12 +203,16 @@ export function brandedEmailHtml(
     ? `<tr><td style="padding:18px 28px 24px;border-top:1px solid #e2e8f0;color:#64748b;font-size:12px;line-height:1.6;text-align:center">${footerInner}</td></tr>`
     : '';
 
+  const brandDark = shade(brand, -16);
   return `<!doctype html><html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/></head>`
-    + `<body style="margin:0;background:#f1f5f9;padding:24px;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#0f172a">`
+    + `<body style="margin:0;background:#eef1f5;padding:28px 16px;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#0f172a">`
     + preheader
-    + `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;margin:0 auto;background:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 1px 3px rgba(15,23,42,0.08)">`
-    + `<tr><td style="background:${brand};padding:22px 28px">${logo}</td></tr>`
-    + `<tr><td style="padding:28px">${body}${cta}${signature}${bodyNote}</td></tr>`
+    + `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 6px 24px rgba(15,23,42,0.10)">`
+    + `<tr><td style="background:${brand};padding:32px 28px 26px;text-align:center">${logoImg}${headerName}</td></tr>`
+    + `<tr><td style="height:4px;background:${brandDark};font-size:0;line-height:0">&nbsp;</td></tr>`
+    + `<tr><td style="padding:34px 36px">${heading}${body}${highlight}${cta}${signature}${bodyNote}</td></tr>`
     + footer
-    + `</table></body></html>`;
+    + `</table>`
+    + `<div style="max-width:600px;margin:14px auto 0;text-align:center;color:#94a3b8;font-size:11px;line-height:1.5">${name}</div>`
+    + `</body></html>`;
 }

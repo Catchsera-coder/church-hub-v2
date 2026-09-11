@@ -35,20 +35,25 @@ function renderInvite(org: any, user: { name: string; email: string }, link: str
   const churchName = localeName(org.name, 'en') || localeName(org.name, lang) || 'your church';
   const first = (user.name || '').split(/\s+/)[0] || user.name || 'there';
   const subject = `You're invited to join ${churchName}`;
+  const heading = link ? 'Welcome to the team' : `You're invited to ${churchName}`;
   const body =
     `Hi ${first},\n\n` +
     `You've been given access to ${churchName}'s management hub — the tools the team uses to care for the church family.\n\n` +
-    `This invitation is for ${user.name} · ${user.email}. Please sign in with this email address.\n\n` +
     (link
-      ? `Click the button below to set your password and sign in. Please choose a strong password you don't use anywhere else.`
-      : `Ask your administrator for your sign-in link to set your password.`) +
-    `\n\nIf you weren't expecting this, you can safely ignore this email.`;
+      ? `Set your password with the button below to activate your account and sign in. Please choose a strong password you don't use anywhere else.`
+      : `Ask your administrator for your sign-in link to set your password.`);
+  const bodyFooterNote = link
+    ? `This secure link is just for you and expires in 14 days. If you weren't expecting this invitation, you can safely ignore this email.`
+    : `If you weren't expecting this invitation, you can safely ignore this email.`;
   const signature = renderText(localeName(org.emailSettings?.signature, lang), { churchName }) || undefined;
   const html = brandedEmailHtml(body, org, {
     lang,
+    heading,
     signature,
-    cta: link ? { label: 'Set my password & sign in', url: link } : null,
+    highlight: { label: 'Your sign-in', lines: [user.name, user.email] },
+    cta: link ? { label: 'Set your password & sign in', url: link } : null,
     preheader: `Your invitation to ${churchName}`,
+    bodyFooterNote,
   });
   return { subject, body, html };
 }

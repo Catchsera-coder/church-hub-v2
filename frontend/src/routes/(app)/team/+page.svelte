@@ -85,7 +85,8 @@
       </div>
       <div class="border-b border-slate-200 px-5 py-2 text-sm dark:border-slate-700"><span class="text-slate-500">{tr({ en: 'Subject', ar: 'الموضوع' }, $locale)}:</span> <span class="font-medium">{preview.subject}</span></div>
       <div class="min-h-0 flex-1 overflow-auto bg-slate-100 p-4 dark:bg-slate-800">
-        <iframe title="preview" class="h-[60vh] w-full rounded-lg border border-slate-200 bg-white dark:border-slate-700" srcdoc={preview.html} sandbox=""></iframe>
+        <!-- allow-same-origin lets the hosted logo image load so the preview matches the real email; scripts stay blocked (no allow-scripts) -->
+        <iframe title="preview" class="h-[60vh] w-full rounded-lg border border-slate-200 bg-white dark:border-slate-700" srcdoc={preview.html} sandbox="allow-same-origin"></iframe>
       </div>
       <div class="border-t border-slate-200 px-5 py-2 text-xs text-slate-400 dark:border-slate-700">{tr({ en: 'The real email embeds a personal, secure sign-in link in the button.', ar: 'البريد الفعلي يضمّن رابط دخول شخصياً وآمناً في الزر.' }, $locale)}</div>
     </div>
