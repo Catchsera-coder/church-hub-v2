@@ -7,7 +7,7 @@ import { users, roles, userRoles, refreshTokens } from '../../db/schema.js';
 import { asyncHandler } from '../../http/asyncHandler.js';
 import { authenticate, requirePermission } from '../../middleware/auth.js';
 import { badRequest, conflict, notFound } from '../../http/errors.js';
-import { hashPassword } from '../../auth/password.js';
+import { hashPassword, passwordIssue } from '../../auth/password.js';
 import { logActivity } from '../activity/service.js';
 import { config } from '../../config.js';
 import { resolveMessaging, sendMessage } from '../messages/delivery.js';
@@ -28,36 +28,43 @@ function inviteLink(token: string): string | null {
   const base = config.PUBLIC_APP_URL?.replace(/\/+$/, '');
   return base ? `${base}/accept-invite?token=${token}` : null;
 }
-function renderInvite(org: any, user: { name: string; email: string }, link: string | null): { subject: string; body: string; html: string } {
+type InviteMode = 'invite' | 'reset';
+function renderInvite(org: any, user: { name: string; email: string }, link: string | null, mode: InviteMode = 'invite'): { subject: string; body: string; html: string } {
   const lang = org.locale || 'en';
   // The hub is staff-facing and English — always use the church's English name here
   // (fall back to the local name only if no English name is set).
   const churchName = localeName(org.name, 'en') || localeName(org.name, lang) || 'your church';
   const first = (user.name || '').split(/\s+/)[0] || user.name || 'there';
-  const subject = `You're invited to join ${churchName}`;
-  const heading = link ? 'Welcome to the team' : `You're invited to ${churchName}`;
-  const body =
-    `Hi ${first},\n\n` +
-    `You've been given access to ${churchName}'s management hub — the tools the team uses to care for the church family.\n\n` +
-    (link
-      ? `Set your password with the button below to activate your account and sign in. Please choose a strong password you don't use anywhere else.`
-      : `Ask your administrator for your sign-in link to set your password.`);
-  const bodyFooterNote = link
-    ? `This secure link is just for you and expires in 14 days. If you weren't expecting this invitation, you can safely ignore this email.`
-    : `If you weren't expecting this invitation, you can safely ignore this email.`;
+  const reset = mode === 'reset';
+  const subject = reset ? `Reset your ${churchName} password` : `You're invited to join ${churchName}`;
+  const heading = reset ? 'Reset your password' : (link ? 'Welcome to the team' : `You're invited to ${churchName}`);
+  const intro = reset
+    ? `We received a request to reset the password for your ${churchName} hub account.`
+    : `You've been given access to ${churchName}'s management hub — the tools the team uses to care for the church family.`;
+  const action = link
+    ? (reset
+        ? `Click the button below to choose a new password. Please pick a strong one you don't use anywhere else.`
+        : `Set your password with the button below to activate your account and sign in. Please choose a strong password you don't use anywhere else.`)
+    : `Ask your administrator for your sign-in link to set your password.`;
+  const body = `Hi ${first},\n\n${intro}\n\n${action}`;
+  const bodyFooterNote = reset
+    ? `This secure link is just for you and expires in 14 days. If you didn't request this, you can safely ignore this email — your password stays the same.`
+    : (link
+        ? `This secure link is just for you and expires in 14 days. If you weren't expecting this invitation, you can safely ignore this email.`
+        : `If you weren't expecting this invitation, you can safely ignore this email.`);
   const signature = renderText(localeName(org.emailSettings?.signature, lang), { churchName }) || undefined;
   const html = brandedEmailHtml(body, org, {
     lang,
     heading,
     signature,
-    highlight: { label: 'Your sign-in', lines: [user.name, user.email] },
-    cta: link ? { label: 'Set your password & sign in', url: link } : null,
-    preheader: `Your invitation to ${churchName}`,
+    highlight: { label: reset ? 'Account' : 'Your sign-in', lines: [user.name, user.email] },
+    cta: link ? { label: reset ? 'Set a new password' : 'Set your password & sign in', url: link } : null,
+    preheader: reset ? `Reset your ${churchName} password` : `Your invitation to ${churchName}`,
     bodyFooterNote,
   });
   return { subject, body, html };
 }
-async function sendInviteEmail(user: { id: number; name: string; email: string }): Promise<boolean> {
+async function sendInviteEmail(user: { id: number; name: string; email: string }, mode: InviteMode = 'invite'): Promise<boolean> {
   const org = await currentOrg();
   const messaging = resolveMessaging(org.messaging, { replyTo: org.emailSettings?.replyTo || org.email });
   if (!messaging.emailProvider) return false; // email not configured — creation still succeeds
@@ -65,7 +72,7 @@ async function sendInviteEmail(user: { id: number; name: string; email: string }
   await db.update(users)
     .set({ inviteTokenHash: hash, inviteExpiresAt: new Date(Date.now() + INVITE_TTL_DAYS * 86400000), updatedAt: new Date() })
     .where(eq(users.id, user.id));
-  const { subject, body, html } = renderInvite(org, user, inviteLink(token));
+  const { subject, body, html } = renderInvite(org, user, inviteLink(token), mode);
   return await sendMessage(messaging, 'email', user.email, subject, body, html);
 }
 
@@ -132,6 +139,7 @@ teamRouter.post('/', requirePermission('create user'), asyncHandler(async (req, 
   const saId = await superAdminRoleId();
   if (saId && b.roleIds.includes(saId) && !isSuper(req)) throw badRequest('Only a Super Admin can grant the Super Admin role.');
   const email = b.email.toLowerCase();
+  if (b.password) { const w = passwordIssue(b.password, { email, name: b.name }); if (w) throw badRequest(w); }
   const [dup] = await db.select({ id: users.id }).from(users).where(eq(users.email, email)).limit(1);
   if (dup) throw conflict('A user with this email already exists');
   const [row] = await db.insert(users).values({
@@ -223,6 +231,8 @@ teamRouter.post('/:id/deactivate', requirePermission('update user'), asyncHandle
 teamRouter.post('/:id/set-password', requirePermission('update user'), asyncHandler(async (req, res) => {
   const id = Number(req.params.id);
   const { password } = z.object({ password: z.string().min(8) }).parse(req.body);
+  const weakSet = passwordIssue(password);
+  if (weakSet) throw badRequest(weakSet);
   const saId = await superAdminRoleId();
   if (saId && await userHasRole(id, saId) && !isSuper(req)) throw badRequest("Only a Super Admin can set a Super Admin's password.");
   const [row] = await db.update(users).set({ passwordHash: await hashPassword(password), mustChangePassword: true, updatedAt: new Date() }).where(eq(users.id, id)).returning();
@@ -250,4 +260,15 @@ teamRouter.post('/:id/mfa-reset', requirePermission('update user'), asyncHandler
   await db.update(refreshTokens).set({ revokedAt: new Date() }).where(and(eq(refreshTokens.userId, id), isNull(refreshTokens.revokedAt)));
   await logActivity(req, 'updated', 'user', id, 'two-factor authentication reset by admin');
   res.json({ data: { ok: true } });
+}));
+
+// Email the user a secure password-reset link (admin-initiated) — the admin never
+// sees or sets the password; the user chooses their own via the link.
+teamRouter.post('/:id/send-reset', requirePermission('update user'), asyncHandler(async (req, res) => {
+  const id = Number(req.params.id);
+  const [u] = await db.select({ id: users.id, name: users.name, email: users.email }).from(users).where(eq(users.id, id)).limit(1);
+  if (!u) throw notFound();
+  const sent = await sendInviteEmail(u, 'reset');
+  await logActivity(req, 'updated', 'user', id, sent ? 'password-reset link sent by admin' : 'password-reset link not sent (email not configured)');
+  res.json({ data: { sent } });
 }));

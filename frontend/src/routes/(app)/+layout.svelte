@@ -78,7 +78,6 @@
       key: 'group.account',
       items: [
         { href: '/security', label: 'nav.security', icon: 'shield' },
-        { href: '/change-password', label: 'nav.changePassword', icon: 'key' },
       ],
     },
   ];

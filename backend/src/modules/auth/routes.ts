@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { and, desc, eq, gt, isNull } from 'drizzle-orm';
 import { db } from '../../db/index.js';
 import { users, refreshTokens, passwordResetTokens } from '../../db/schema.js';
-import { verifyPassword, hashPassword, equalizeVerify } from '../../auth/password.js';
+import { verifyPassword, hashPassword, equalizeVerify, passwordIssue } from '../../auth/password.js';
 import { signAccessToken, newRefreshToken, hashRefreshToken, signMfaChallenge } from '../../auth/tokens.js';
 import { loadRolesAndPerms } from './service.js';
 import { asyncHandler } from '../../http/asyncHandler.js';
@@ -157,6 +157,8 @@ authRouter.post(
     const invalid = () => badRequest('That code is invalid or has expired.');
     const [user] = await db.select().from(users).where(eq(users.email, email.toLowerCase())).limit(1);
     if (!user || !user.isActive) throw invalid();
+    const weak = passwordIssue(password, { email: user.email, name: user.name });
+    if (weak) throw badRequest(weak);
 
     // Look at the newest active code for this user (regardless of match) so we
     // can count failed guesses and invalidate after too many — a 6-digit code
@@ -219,6 +221,8 @@ authRouter.post(
     if (!user || !user.isActive || !user.inviteExpiresAt || user.inviteExpiresAt < new Date()) {
       throw badRequest('This invitation link is invalid or has expired. Ask your administrator to resend it.');
     }
+    const weakInvite = passwordIssue(password, { email: user.email, name: user.name });
+    if (weakInvite) throw badRequest(weakInvite);
     await db.update(users)
       .set({ passwordHash: await hashPassword(password), inviteTokenHash: null, inviteExpiresAt: null, mustChangePassword: false, invitedAt: null, updatedAt: new Date() })
       .where(eq(users.id, user.id));
@@ -238,6 +242,8 @@ authRouter.post(
     if (!user || !user.passwordHash || !(await verifyPassword(user.passwordHash, currentPassword))) {
       throw badRequest('Your current password is incorrect.');
     }
+    const weakChange = passwordIssue(newPassword, { email: user.email, name: user.name });
+    if (weakChange) throw badRequest(weakChange);
     await db.update(users).set({ passwordHash: await hashPassword(newPassword), mustChangePassword: false, updatedAt: new Date() }).where(eq(users.id, user.id));
     res.json({ ok: true });
   }),

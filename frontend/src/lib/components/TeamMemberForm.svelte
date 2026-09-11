@@ -32,6 +32,18 @@
     } catch (err) { error = (err as Error).message; } finally { pwBusy = false; }
   }
 
+  // Admin-initiated password reset by secure email link (admin never sees the password).
+  let linkBusy = $state(false);
+  let linkDone = $state(false);
+  async function sendResetLink() {
+    linkBusy = true; linkDone = false; error = '';
+    try {
+      const r = await api<{ data: { sent: boolean } }>(`/team/${id}/send-reset`, { method: 'POST', body: '{}' });
+      if (r.data.sent) linkDone = true;
+      else error = tr({ en: 'Could not send — email isn’t configured (Settings → Messaging).', ar: 'تعذّر الإرسال — البريد غير مُهيأ.' }, $locale);
+    } catch (err) { error = (err as Error).message; } finally { linkBusy = false; }
+  }
+
   // Admin force-reset of a locked-out user's two-factor auth.
   let mfaEnabled = $state(initial?.mfaEnabled ?? false);
   let mfaBusy = $state(false);
@@ -116,12 +128,19 @@
       <label class="flex items-center gap-2 text-sm"><input type="checkbox" bind:checked={form.isActive} /> {tr({ en: 'Active', ar: 'نشط' }, $locale)}</label>
 
       <div class="border-t border-slate-200 pt-4 dark:border-slate-700">
-        <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Reset password', ar: 'إعادة تعيين كلمة المرور' }, $locale)}</span>
-        <div class="mt-1 flex gap-2">
-          <input class="input force-ltr" type="text" bind:value={newPassword} minlength="8" placeholder={tr({ en: 'New password (min 8)', ar: 'كلمة مرور جديدة (8+)' }, $locale)} />
+        <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Password reset', ar: 'إعادة تعيين كلمة المرور' }, $locale)}</span>
+        <!-- Recommended: email a secure link so the person sets their own password. -->
+        <div class="mt-1 flex flex-wrap items-center gap-2">
+          <button type="button" class="btn-primary shrink-0" onclick={sendResetLink} disabled={linkBusy}>{linkBusy ? '…' : tr({ en: '✉ Email a reset link', ar: '✉ إرسال رابط إعادة تعيين' }, $locale)}</button>
+          {#if linkDone}<span class="text-xs text-emerald-600 dark:text-emerald-400">✓ {tr({ en: 'Reset link sent', ar: 'تم إرسال الرابط' }, $locale)}</span>{/if}
+        </div>
+        <p class="mt-1 text-xs text-slate-400">{tr({ en: 'Recommended — the person chooses their own password via a secure link; you never see it.', ar: 'مُستحسن — يختار الشخص كلمة مروره عبر رابط آمن؛ ولا تراها أنت.' }, $locale)}</p>
+        <!-- Fallback: manually set a temporary password (they’re forced to change it at next login). -->
+        <div class="mt-3 flex gap-2">
+          <input class="input force-ltr" type="text" bind:value={newPassword} minlength="10" placeholder={tr({ en: 'Or set a temp password (min 10)', ar: 'أو عيّن كلمة مرور مؤقتة (10+)' }, $locale)} />
           <button type="button" class="btn-ghost shrink-0 border border-slate-300 dark:border-slate-700" onclick={setPassword} disabled={pwBusy}>{pwBusy ? '…' : tr({ en: 'Set', ar: 'تعيين' }, $locale)}</button>
         </div>
-        {#if pwDone}<span class="text-xs text-emerald-600 dark:text-emerald-400">✓ {tr({ en: 'Password updated', ar: 'تم تحديث كلمة المرور' }, $locale)}</span>{/if}
+        {#if pwDone}<span class="text-xs text-emerald-600 dark:text-emerald-400">✓ {tr({ en: 'Temporary password set — they’ll change it at next login', ar: 'تم تعيين كلمة مرور مؤقتة — سيغيّرها عند الدخول التالي' }, $locale)}</span>{/if}
       </div>
 
       <div class="border-t border-slate-200 pt-4 dark:border-slate-700">

@@ -58,7 +58,7 @@
       setSession(r);
       // A member whose password was set by an admin (or otherwise flagged) must
       // choose their own before continuing.
-      await goto(r.user?.mustChangePassword ? '/change-password' : '/dashboard', { replaceState: true });
+      await goto(r.user?.mustChangePassword ? '/security' : '/dashboard', { replaceState: true });
     } catch (err) {
       error = err instanceof ApiError && err.status === 401 ? $t('auth.invalid') : (err as Error).message;
     } finally {
@@ -71,7 +71,7 @@
     try {
       const r = await api<any>('/auth/mfa/verify', { method: 'POST', body: JSON.stringify({ challengeToken: mfaChallenge, code: mfaCode.trim() }) });
       setSession(r);
-      await goto(r.user?.mustChangePassword ? '/change-password' : '/dashboard', { replaceState: true });
+      await goto(r.user?.mustChangePassword ? '/security' : '/dashboard', { replaceState: true });
     } catch (err) { mfaError = err instanceof ApiError ? err.message : (err as Error).message; }
     finally { mfaBusy = false; }
   }

@@ -1,5 +1,25 @@
 import argon2 from 'argon2';
 
+// Minimum password policy, enforced everywhere a password is set (reset, change,
+// invite accept, admin set). NIST-aligned: length over complexity rules, block
+// the obvious weak/common choices, and don't allow the person's own name/email.
+const MIN_LENGTH = 10;
+const COMMON = new Set([
+  'password', 'password1', 'password123', 'passw0rd', '1234567890', '12345678', '123456789',
+  'qwerty123', 'qwertyuiop', 'iloveyou', 'letmein123', 'welcome123', 'admin123', 'changeme',
+  'changeme!12345', 'church123', 'jesus123', 'god12345', 'abcd1234', 'test1234', 'baptist123',
+]);
+export function passwordIssue(pw: string, ctx?: { email?: string | null; name?: string | null }): string | null {
+  if (!pw || pw.length < MIN_LENGTH) return `Use at least ${MIN_LENGTH} characters.`;
+  const low = pw.toLowerCase();
+  if (COMMON.has(low)) return 'That password is too common — please choose something harder to guess.';
+  const local = ctx?.email?.toLowerCase().split('@')[0];
+  if (local && local.length >= 3 && low.includes(local)) return 'Please don’t include your email in your password.';
+  const name = ctx?.name?.toLowerCase().trim();
+  if (name && name.length >= 3 && low.includes(name)) return 'Please don’t include your name in your password.';
+  return null;
+}
+
 // Argon2id with pinned parameters (OWASP-aligned: 64 MiB, 3 passes) so the work
 // factor can't silently drift if the library's defaults change. Verify reads the
 // params from each stored hash, so existing hashes keep working.
