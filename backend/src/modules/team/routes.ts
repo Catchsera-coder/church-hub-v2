@@ -1,9 +1,9 @@
 import crypto from 'node:crypto';
 import { Router } from 'express';
 import { z } from 'zod';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import { db } from '../../db/index.js';
-import { users, roles, userRoles } from '../../db/schema.js';
+import { users, roles, userRoles, refreshTokens } from '../../db/schema.js';
 import { asyncHandler } from '../../http/asyncHandler.js';
 import { authenticate, requirePermission } from '../../middleware/auth.js';
 import { badRequest, conflict, notFound } from '../../http/errors.js';
@@ -98,7 +98,7 @@ teamRouter.get('/', requirePermission('view user'), asyncHandler(async (_req, re
   const rows = await db
     .select({
       id: users.id, name: users.name, email: users.email, isActive: users.isActive,
-      invitedAt: users.invitedAt, lastLoginAt: users.lastLoginAt,
+      invitedAt: users.invitedAt, lastLoginAt: users.lastLoginAt, mfaEnabled: users.mfaEnabled,
       roles: sql<string[]>`coalesce(array_agg(${roles.name}) filter (where ${roles.name} is not null), '{}')`,
     })
     .from(users)
@@ -228,5 +228,26 @@ teamRouter.post('/:id/set-password', requirePermission('update user'), asyncHand
   const [row] = await db.update(users).set({ passwordHash: await hashPassword(password), mustChangePassword: true, updatedAt: new Date() }).where(eq(users.id, id)).returning();
   if (!row) throw notFound();
   await logActivity(req, 'updated', 'user', id, 'password set by admin');
+  res.json({ data: { ok: true } });
+}));
+
+// Force-reset a user's two-factor auth (lockout recovery — lost device + recovery
+// codes). Wipes all MFA state so they can sign in with their password and
+// re-enrol. A Super Admin's 2FA can only be reset by another Super Admin.
+// Revokes the target's active sessions and is audit-logged.
+teamRouter.post('/:id/mfa-reset', requirePermission('update user'), asyncHandler(async (req, res) => {
+  const id = Number(req.params.id);
+  const saId = await superAdminRoleId();
+  if (saId && (await userHasRole(id, saId)) && !isSuper(req)) {
+    throw badRequest("Only a Super Admin can reset a Super Admin's two-factor authentication.");
+  }
+  const [row] = await db.update(users).set({
+    mfaEnabled: false, mfaSecret: null, mfaPendingSecret: null, mfaRecoveryCodes: [],
+    mfaEmailCodeHash: null, mfaEmailCodeExpiresAt: null, updatedAt: new Date(),
+  }).where(eq(users.id, id)).returning();
+  if (!row) throw notFound();
+  // Force the affected user to re-authenticate.
+  await db.update(refreshTokens).set({ revokedAt: new Date() }).where(and(eq(refreshTokens.userId, id), isNull(refreshTokens.revokedAt)));
+  await logActivity(req, 'updated', 'user', id, 'two-factor authentication reset by admin');
   res.json({ data: { ok: true } });
 }));

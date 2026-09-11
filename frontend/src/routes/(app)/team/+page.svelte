@@ -60,6 +60,7 @@
       {:else}
         <span class="rounded bg-slate-100 px-2 py-0.5 text-xs dark:bg-slate-800">{tr({ en: 'Inactive', ar: 'غير نشط' }, $locale)}</span>
       {/if}
+      {#if u.mfaEnabled}<span class="ms-1 rounded bg-primary-50 px-1.5 py-0.5 text-xs text-primary-700 dark:bg-primary-900/30 dark:text-primary-300" title={tr({ en: 'Two-factor on', ar: 'المصادقة الثنائية مفعّلة' }, $locale)}>🔒 2FA</span>{/if}
     </td>
     <td class="p-3 force-ltr text-slate-600 dark:text-slate-300">{u.lastLoginAt ? dateTime(u.lastLoginAt) : '—'}</td>
     <td class="p-3">

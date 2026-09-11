@@ -32,6 +32,19 @@
     } catch (err) { error = (err as Error).message; } finally { pwBusy = false; }
   }
 
+  // Admin force-reset of a locked-out user's two-factor auth.
+  let mfaEnabled = $state(initial?.mfaEnabled ?? false);
+  let mfaBusy = $state(false);
+  let mfaDone = $state(false);
+  async function resetMfa() {
+    if (!confirm(tr({ en: `Reset two-factor authentication for ${form.name}? Their current 2FA stops working; they’ll sign in with their password and can set it up again. Do this only if they’re locked out.`, ar: `إعادة تعيين المصادقة الثنائية لـ ${form.name}؟ ستتوقف مصادقته الحالية؛ سيسجّل الدخول بكلمة مروره ويمكنه إعدادها من جديد. افعل ذلك فقط إذا كان محظوراً من الدخول.` }, $locale))) return;
+    mfaBusy = true; mfaDone = false; error = '';
+    try {
+      await api(`/team/${id}/mfa-reset`, { method: 'POST', body: '{}' });
+      mfaEnabled = false; mfaDone = true;
+    } catch (err) { error = (err as Error).message; } finally { mfaBusy = false; }
+  }
+
   onMount(async () => {
     allRoles = (await api<{ data: any[] }>('/team/roles')).data;
     // Edit: the list returns role *names*; map them back to ids for the checkboxes.
@@ -109,6 +122,20 @@
           <button type="button" class="btn-ghost shrink-0 border border-slate-300 dark:border-slate-700" onclick={setPassword} disabled={pwBusy}>{pwBusy ? '…' : tr({ en: 'Set', ar: 'تعيين' }, $locale)}</button>
         </div>
         {#if pwDone}<span class="text-xs text-emerald-600 dark:text-emerald-400">✓ {tr({ en: 'Password updated', ar: 'تم تحديث كلمة المرور' }, $locale)}</span>{/if}
+      </div>
+
+      <div class="border-t border-slate-200 pt-4 dark:border-slate-700">
+        <span class="text-sm text-slate-600 dark:text-slate-300">🔐 {tr({ en: 'Two-factor authentication', ar: 'المصادقة الثنائية' }, $locale)}</span>
+        <div class="mt-1 flex flex-wrap items-center gap-3">
+          {#if mfaEnabled}
+            <span class="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">{tr({ en: 'On', ar: 'مفعّلة' }, $locale)}</span>
+            <button type="button" class="rounded-md border border-rose-300 px-3 py-1 text-sm font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-50 dark:border-rose-800 dark:text-rose-300" onclick={resetMfa} disabled={mfaBusy}>{mfaBusy ? '…' : tr({ en: 'Reset 2FA', ar: 'إعادة تعيين' }, $locale)}</button>
+          {:else}
+            <span class="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500 dark:bg-slate-800 dark:text-slate-400">{tr({ en: 'Off', ar: 'غير مفعّلة' }, $locale)}</span>
+            {#if mfaDone}<span class="text-xs text-emerald-600 dark:text-emerald-400">✓ {tr({ en: 'Reset — they can set it up again', ar: 'تمت إعادة التعيين — يمكنه الإعداد من جديد' }, $locale)}</span>{/if}
+          {/if}
+        </div>
+        <p class="mt-1 text-xs text-slate-400">{tr({ en: 'Reset only if the person is locked out (lost device and recovery codes). It forces them to sign in again.', ar: 'أعد التعيين فقط إذا فقد الشخص جهازه ورموز الاسترداد. سيُطلب منه تسجيل الدخول من جديد.' }, $locale)}</p>
       </div>
     {/if}
   </div>
