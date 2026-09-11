@@ -1,8 +1,27 @@
+import crypto from 'node:crypto';
 import { Router } from 'express';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { db } from '../../db/index.js';
 import { people, smsMessages } from '../../db/schema.js';
 import { asyncHandler } from '../../http/asyncHandler.js';
+import { currentOrg } from '../settings/routes.js';
+
+// Validate Twilio's X-Twilio-Signature (HMAC-SHA1 over the full URL + sorted POST
+// params, base64). Only enforced when a Twilio auth token is configured, so it's
+// inert until SMS is set up and never blocks the currently-unconfigured state.
+async function twilioSignatureOk(req: import('express').Request): Promise<boolean> {
+  const org = await currentOrg();
+  const authToken = (org.messaging as { twilioAuthToken?: string } | undefined)?.twilioAuthToken;
+  if (!authToken) return true; // not configured → don't block (nothing to verify against)
+  const sig = String(req.header('x-twilio-signature') ?? '');
+  const proto = String(req.headers['x-forwarded-proto'] ?? req.protocol ?? 'https').split(',')[0].trim();
+  const host = String(req.headers['x-forwarded-host'] ?? req.headers.host ?? '').split(',')[0].trim();
+  const url = `${proto}://${host}${req.originalUrl}`;
+  const params = (req.body && typeof req.body === 'object') ? (req.body as Record<string, unknown>) : {};
+  const data = url + Object.keys(params).sort().map((k) => k + String(params[k] ?? '')).join('');
+  const expected = crypto.createHmac('sha1', authToken).update(Buffer.from(data, 'utf-8')).digest('base64');
+  return sig.length === expected.length && crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected));
+}
 
 /**
  * PUBLIC inbound-message handling for both providers.
@@ -58,6 +77,9 @@ async function handleInbound(opts: { from: string; to: string; body: string; pro
 // --- Twilio inbound (form-encoded) ------------------------------------------
 export const publicInboundRouter = Router();
 publicInboundRouter.post('/sms/inbound', asyncHandler(async (req, res) => {
+  if (!(await twilioSignatureOk(req))) {
+    return res.status(403).type('text/xml').send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+  }
   await handleInbound({
     from: String(req.body?.From ?? ''),
     to: String(req.body?.To ?? ''),

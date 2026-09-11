@@ -164,6 +164,7 @@
         <div class="flex-1"></div>
         <div class="flex items-center gap-2">
           <button class="btn-ghost" onclick={toggleTheme} aria-label={tr({ en: 'Theme', ar: 'النمط' }, $locale)}>{$theme === 'dark' ? '☀' : '☾'}</button>
+          <a class="btn-ghost" href="/security" title={tr({ en: 'Security & 2FA', ar: 'الأمان والمصادقة الثنائية' }, $locale)} aria-label={tr({ en: 'Security', ar: 'الأمان' }, $locale)}>🔒</a>
           <div class="flex items-center gap-2 ps-2">
             <span class="hidden text-sm text-slate-600 dark:text-slate-300 sm:inline">{$auth.user?.name}</span>
             <button class="btn-ghost" onclick={signOut}>{$t('auth.signout')}</button>

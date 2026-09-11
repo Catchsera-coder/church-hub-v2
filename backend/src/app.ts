@@ -6,6 +6,7 @@ import rateLimit from 'express-rate-limit';
 import { config } from './config.js';
 import { errorHandler } from './http/errors.js';
 import { authRouter } from './modules/auth/routes.js';
+import { mfaRouter } from './modules/auth/mfa.routes.js';
 import { peopleRouter } from './modules/people/routes.js';
 import { familiesRouter } from './modules/families/routes.js';
 import { ministriesRouter } from './modules/ministries/routes.js';
@@ -70,6 +71,7 @@ export function createApp() {
   app.use('/api/public/acs', rateLimit({ windowMs: 60_000, max: 120 }));
   app.use('/api/public/acs', publicAcsRouter);
 
+  app.use('/api/auth/mfa', mfaRouter);
   app.use('/api/auth', authRouter);
   app.use('/api/settings', settingsRouter);
   app.use('/api/dashboard', dashboardRouter);

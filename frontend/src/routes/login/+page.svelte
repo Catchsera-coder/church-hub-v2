@@ -14,7 +14,15 @@
   let logo = $state<string | null>(null);
 
   // Forgot-password panel (email → code → new password)
-  let mode = $state<'signin' | 'forgot'>('signin');
+  let mode = $state<'signin' | 'forgot' | 'mfa'>('signin');
+
+  // MFA second step (after the password checks out)
+  let mfaChallenge = $state('');
+  let mfaMethods = $state<{ totp?: boolean; email?: boolean; recovery?: boolean }>({});
+  let mfaCode = $state('');
+  let mfaBusy = $state(false);
+  let mfaError = $state('');
+  let mfaEmailSent = $state(false);
   let fStep = $state<'email' | 'code'>('email');
   let fEmail = $state('');
   let fCode = $state('');
@@ -40,10 +48,13 @@
     submitting = true;
     error = '';
     try {
-      const r = await api<{ accessToken: string; refreshToken: string; roles: string[]; perms: string[]; user: any }>(
-        '/auth/login',
-        { method: 'POST', body: JSON.stringify({ email, password }) },
-      );
+      const r = await api<any>('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
+      // Second factor required — move to the MFA step instead of signing in.
+      if (r.mfaRequired) {
+        mfaChallenge = r.challengeToken; mfaMethods = r.methods ?? {};
+        mfaCode = ''; mfaError = ''; mfaEmailSent = false; mode = 'mfa';
+        submitting = false; return;
+      }
       setSession(r);
       // A member whose password was set by an admin (or otherwise flagged) must
       // choose their own before continuing.
@@ -53,6 +64,22 @@
     } finally {
       submitting = false;
     }
+  }
+
+  async function verifyMfa(e: Event) {
+    e.preventDefault(); mfaBusy = true; mfaError = '';
+    try {
+      const r = await api<any>('/auth/mfa/verify', { method: 'POST', body: JSON.stringify({ challengeToken: mfaChallenge, code: mfaCode.trim() }) });
+      setSession(r);
+      await goto(r.user?.mustChangePassword ? '/change-password' : '/dashboard', { replaceState: true });
+    } catch (err) { mfaError = err instanceof ApiError ? err.message : (err as Error).message; }
+    finally { mfaBusy = false; }
+  }
+  async function sendMfaEmail() {
+    mfaBusy = true; mfaError = '';
+    try { await api('/auth/mfa/email-code', { method: 'POST', body: JSON.stringify({ challengeToken: mfaChallenge }) }); mfaEmailSent = true; }
+    catch (err) { mfaError = err instanceof ApiError ? err.message : (err as Error).message; }
+    finally { mfaBusy = false; }
   }
 
   function openForgot() {
@@ -125,6 +152,23 @@
           onclick={openForgot}>
           {$t('auth.forgot')}
         </button>
+      </form>
+    {:else if mode === 'mfa'}
+      <form class="card space-y-4 p-6" onsubmit={verifyMfa}>
+        <h1 class="text-lg font-semibold">{tr({ en: 'Two-step verification', ar: 'التحقق بخطوتين' }, $locale)}</h1>
+        <p class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Enter the 6-digit code from your authenticator app to finish signing in.', ar: 'أدخل الرمز المكوّن من 6 أرقام من تطبيق المصادقة لإكمال تسجيل الدخول.' }, $locale)}</p>
+        {#if mfaError}<p class="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:bg-rose-900/30 dark:text-rose-300">{mfaError}</p>{/if}
+        {#if mfaEmailSent}<p class="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">{tr({ en: 'We emailed you a code — enter it above. It expires in 10 minutes.', ar: 'أرسلنا لك رمزاً بالبريد — أدخله بالأعلى. ينتهي خلال 10 دقائق.' }, $locale)}</p>{/if}
+        <label class="block space-y-1">
+          <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Verification code', ar: 'رمز التحقق' }, $locale)}</span>
+          <input class="input force-ltr tracking-widest" bind:value={mfaCode} placeholder="000000" autocomplete="one-time-code" />
+        </label>
+        <button class="btn-primary w-full" type="submit" disabled={mfaBusy || mfaCode.trim().length < 6}>{mfaBusy ? $t('common.loading') : tr({ en: 'Verify', ar: 'تحقّق' }, $locale)}</button>
+        {#if mfaMethods.email}
+          <button type="button" class="w-full text-center text-sm text-primary-600 hover:underline dark:text-primary-300" onclick={sendMfaEmail} disabled={mfaBusy}>{tr({ en: 'Email me a code instead', ar: 'أرسل لي رمزاً بالبريد بدلاً من ذلك' }, $locale)}</button>
+        {/if}
+        <p class="text-center text-xs text-slate-400">{tr({ en: 'Lost your device? Enter one of your recovery codes above.', ar: 'فقدت جهازك؟ أدخل أحد رموز الاسترداد بالأعلى.' }, $locale)}</p>
+        <button type="button" class="w-full text-center text-sm text-primary-600 hover:underline dark:text-primary-300" onclick={() => { mode = 'signin'; password = ''; }}>{$t('auth.back_to_signin')}</button>
       </form>
     {:else if fStep === 'email'}
       <form class="card space-y-4 p-6" onsubmit={sendCode}>

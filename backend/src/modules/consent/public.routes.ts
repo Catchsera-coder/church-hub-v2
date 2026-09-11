@@ -34,7 +34,13 @@ publicConsentRouter.post(
     }).parse(req.body);
     const [p] = await db.select({ id: people.id }).from(people).where(eq(people.unsubToken, req.params.token)).limit(1);
     if (!p) throw notFound('Link not found.');
-    await db.update(people).set({ ...body, updatedAt: new Date() }).where(eq(people.id, p.id));
+    // Opt-OUT only: a leaked footer link must never be able to silently re-subscribe
+    // someone. Only `true` values are applied; re-subscribing is done by staff.
+    const set: Record<string, unknown> = {};
+    if (body.emailOptOut === true) set.emailOptOut = true;
+    if (body.smsOptOut === true) set.smsOptOut = true;
+    if (body.whatsappOptOut === true) set.whatsappOptOut = true;
+    if (Object.keys(set).length) await db.update(people).set({ ...set, updatedAt: new Date() }).where(eq(people.id, p.id));
     res.json({ data: { ok: true } });
   }),
 );

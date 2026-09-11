@@ -48,13 +48,19 @@ async function seed() {
     }
   }
 
-  // First Super Admin user.
-  const email = (process.env.ADMIN_EMAIL ?? 'admin@example.org').toLowerCase();
-  const password = process.env.ADMIN_PASSWORD ?? 'ChangeMe!12345';
-  await db.insert(users).values({ name: 'Administrator', email, passwordHash: await hashPassword(password), locale: config.DEFAULT_LOCALE }).onConflictDoNothing();
-  const [admin] = await db.select().from(users).where(eq(users.email, email)).limit(1);
-  const [superRole] = await db.select().from(roles).where(eq(roles.name, 'Super Admin')).limit(1);
-  if (admin && superRole) await db.insert(userRoles).values({ userId: admin.id, roleId: superRole.id }).onConflictDoNothing();
+  // First Super Admin user — only when BOTH env vars are provided. Never seed a
+  // hardcoded default account (that would be a publicly-known credential on any
+  // deployment that forgot to set them).
+  const adminEmail = process.env.ADMIN_EMAIL?.trim().toLowerCase();
+  const adminPassword = process.env.ADMIN_PASSWORD;
+  if (adminEmail && adminPassword && adminPassword.length >= 8) {
+    await db.insert(users).values({ name: 'Administrator', email: adminEmail, passwordHash: await hashPassword(adminPassword), locale: config.DEFAULT_LOCALE }).onConflictDoNothing();
+    const [admin] = await db.select().from(users).where(eq(users.email, adminEmail)).limit(1);
+    const [superRole] = await db.select().from(roles).where(eq(roles.name, 'Super Admin')).limit(1);
+    if (admin && superRole) await db.insert(userRoles).values({ userId: admin.id, roleId: superRole.id }).onConflictDoNothing();
+  } else {
+    console.warn('[seed] ADMIN_EMAIL/ADMIN_PASSWORD not set (or password <8 chars) — skipping admin seed. Set them to bootstrap the first Super Admin.');
+  }
 
   // Default funds.
   const fundSeed = [
@@ -154,7 +160,7 @@ async function seed() {
   }
 
   // eslint-disable-next-line no-console
-  console.log(`seed complete. Super Admin: ${email} (change the password!)`);
+  console.log('seed complete.');
   await pool.end();
 }
 

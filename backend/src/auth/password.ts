@@ -1,7 +1,10 @@
 import argon2 from 'argon2';
 
-// Argon2id — modern default, stronger than bcrypt. Passwords are never stored plain.
-export const hashPassword = (plain: string): Promise<string> => argon2.hash(plain, { type: argon2.argon2id });
+// Argon2id with pinned parameters (OWASP-aligned: 64 MiB, 3 passes) so the work
+// factor can't silently drift if the library's defaults change. Verify reads the
+// params from each stored hash, so existing hashes keep working.
+export const hashPassword = (plain: string): Promise<string> =>
+  argon2.hash(plain, { type: argon2.argon2id, memoryCost: 65536, timeCost: 3, parallelism: 1 });
 
 export const verifyPassword = async (hash: string | null | undefined, plain: string): Promise<boolean> => {
   if (!hash) return false;

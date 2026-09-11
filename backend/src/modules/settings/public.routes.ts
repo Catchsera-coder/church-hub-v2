@@ -12,7 +12,9 @@ publicBrandingRouter.get('/logo', async (_req, res) => {
     const org = await currentOrg();
     const lp = (org as { logoPath?: string | null }).logoPath;
     if (!lp) return res.status(404).end();
-    if (/^https?:\/\//i.test(lp)) return res.redirect(302, lp);
+    // Serve ONLY a decoded stored data: URI. We never redirect to an external URL
+    // here (that would be an open redirect via an admin-set value) — the email
+    // renderer already references an external logoPath directly when it has one.
     const m = /^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/i.exec(lp);
     if (!m) return res.status(404).end();
     const buf = Buffer.from(m[2], 'base64');

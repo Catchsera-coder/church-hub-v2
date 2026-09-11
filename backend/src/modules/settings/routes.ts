@@ -8,8 +8,19 @@ import { authenticate, requireRole } from '../../middleware/auth.js';
 import { config } from '../../config.js';
 import { resolveMessaging, verifyEmail } from '../messages/delivery.js';
 import { brandedEmailHtml, renderText, localeName } from '../messages/render.js';
+import { encryptMaybe, decryptMaybe } from '../../auth/mfa.js';
 
 export const settingsRouter = Router();
+
+// Provider secrets in organisations.messaging are encrypted at rest (AES-GCM).
+// currentOrg() decrypts them for all consumers; the /messaging write re-encrypts.
+const MESSAGING_SECRET_FIELDS = ['sendgridApiKey', 'twilioAuthToken', 'acsConnectionString', 'aiApiKey', 'azureOpenaiKey', 'azureMapsKey'] as const;
+function decryptOrgMessaging<T extends { messaging?: MessagingSettings | null }>(org: T): T {
+  if (!org || !org.messaging) return org;
+  const m = { ...(org.messaging as Record<string, unknown>) };
+  for (const f of MESSAGING_SECRET_FIELDS) if (typeof m[f] === 'string') m[f] = decryptMaybe(m[f] as string);
+  return { ...org, messaging: m as MessagingSettings };
+}
 
 // Professional email presentation (non-secret). Empty strings are allowed and
 // treated as "unset" downstream; the whole object replaces the stored value.
@@ -30,12 +41,12 @@ const emailSettingsSchema = z.object({
  *  the login screen; only Admins can write. */
 export async function currentOrg() {
   const [org] = await db.select().from(organisations).where(eq(organisations.id, 1)).limit(1);
-  if (org) return org;
+  if (org) return decryptOrgMessaging(org);
   const [created] = await db
     .insert(organisations)
     .values({ id: 1, currency: config.DEFAULT_CURRENCY, timezone: config.DEFAULT_TIMEZONE, locale: config.DEFAULT_LOCALE })
     .returning();
-  return created!;
+  return decryptOrgMessaging(created!);
 }
 
 settingsRouter.get(
@@ -189,6 +200,11 @@ settingsRouter.put(
     if (body.aiApiKey) next.aiApiKey = body.aiApiKey;
     if (body.azureOpenaiKey) next.azureOpenaiKey = body.azureOpenaiKey;
 
+    // Encrypt provider secrets at rest before persisting (currentOrg decrypts on read).
+    for (const f of MESSAGING_SECRET_FIELDS) {
+      const v = (next as Record<string, unknown>)[f];
+      if (typeof v === 'string') (next as Record<string, unknown>)[f] = encryptMaybe(v);
+    }
     await db.update(organisations).set({ messaging: next, updatedAt: new Date() }).where(eq(organisations.id, 1));
     res.json({ data: { ok: true } });
   }),

@@ -5,7 +5,7 @@ import { and, desc, eq, gt, isNull } from 'drizzle-orm';
 import { db } from '../../db/index.js';
 import { users, refreshTokens, passwordResetTokens } from '../../db/schema.js';
 import { verifyPassword, hashPassword, equalizeVerify } from '../../auth/password.js';
-import { signAccessToken, newRefreshToken, hashRefreshToken } from '../../auth/tokens.js';
+import { signAccessToken, newRefreshToken, hashRefreshToken, signMfaChallenge } from '../../auth/tokens.js';
 import { loadRolesAndPerms } from './service.js';
 import { asyncHandler } from '../../http/asyncHandler.js';
 import { authenticate } from '../../middleware/auth.js';
@@ -28,7 +28,7 @@ function ttlMs(ttl: string): number {
   return n * (unit === 'd' ? 86400000 : unit === 'h' ? 3600000 : 60000);
 }
 
-async function issueSession(user: { id: number; email: string }) {
+export async function issueSession(user: { id: number; email: string }) {
   const { roles, perms } = await loadRolesAndPerms(user.id);
   const accessToken = signAccessToken({ sub: user.id, email: user.email, roles, perms });
   const { token, hash } = newRefreshToken();
@@ -47,6 +47,18 @@ authRouter.post(
     if (user && user.isActive && user.passwordHash) ok = await verifyPassword(user.passwordHash, password);
     else await equalizeVerify(password);
     if (!ok) throw unauthorized('Invalid credentials');
+    // Second factor required: hand back a short-lived challenge, not a session.
+    if (user.mfaEnabled) {
+      return res.json({
+        mfaRequired: true,
+        challengeToken: signMfaChallenge(user.id),
+        methods: {
+          totp: !!user.mfaSecret,
+          email: user.mfaEmailFallback && !!user.email,
+          recovery: (user.mfaRecoveryCodes?.length ?? 0) > 0,
+        },
+      });
+    }
     await db.update(users).set({ lastLoginAt: new Date() }).where(eq(users.id, user.id));
     const session = await issueSession(user);
     res.json({
@@ -66,7 +78,14 @@ authRouter.post(
       .from(refreshTokens)
       .where(and(eq(refreshTokens.tokenHash, hash), isNull(refreshTokens.revokedAt), gt(refreshTokens.expiresAt, new Date())))
       .limit(1);
-    if (!row) throw unauthorized('Invalid refresh token');
+    if (!row) {
+      // Reuse detection: if this exact token exists but is already revoked, it's a
+      // replay of a rotated token (possible theft) — revoke the user's whole token
+      // family so neither the attacker nor the victim can keep refreshing.
+      const [seen] = await db.select({ userId: refreshTokens.userId }).from(refreshTokens).where(eq(refreshTokens.tokenHash, hash)).limit(1);
+      if (seen) await db.update(refreshTokens).set({ revokedAt: new Date() }).where(and(eq(refreshTokens.userId, seen.userId), isNull(refreshTokens.revokedAt)));
+      throw unauthorized('Invalid refresh token');
+    }
 
     const [user] = await db.select().from(users).where(eq(users.id, row.userId)).limit(1);
     if (!user || !user.isActive) throw unauthorized();

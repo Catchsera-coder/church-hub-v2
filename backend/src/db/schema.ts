@@ -143,6 +143,14 @@ export const users = pgTable('users', {
   inviteExpiresAt: timestamp('invite_expires_at', { withTimezone: true }),
   // Force a password change at next login (e.g. after an admin sets a temp one).
   mustChangePassword: boolean('must_change_password').notNull().default(false),
+  // --- Multi-factor auth ---------------------------------------------------
+  mfaEnabled: boolean('mfa_enabled').notNull().default(false),
+  mfaSecret: text('mfa_secret'),                       // AES-GCM encrypted TOTP secret (active)
+  mfaPendingSecret: text('mfa_pending_secret'),        // encrypted secret during enrollment (pre-confirm)
+  mfaRecoveryCodes: jsonb('mfa_recovery_codes').$type<string[]>().notNull().default([]), // sha256 hashes, consumed on use
+  mfaEmailFallback: boolean('mfa_email_fallback').notNull().default(true),  // allow "email me a code" at the challenge
+  mfaEmailCodeHash: text('mfa_email_code_hash'),       // sha256 of the current email OTP
+  mfaEmailCodeExpiresAt: timestamp('mfa_email_code_expires_at', { withTimezone: true }),
   ...timestamps,
 }, (t) => ({
   emailUnique: uniqueIndex('users_email_unique').on(t.email),

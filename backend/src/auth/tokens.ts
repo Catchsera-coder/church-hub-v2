@@ -25,3 +25,17 @@ export const newRefreshToken = (): { token: string; hash: string } => {
 
 export const hashRefreshToken = (token: string): string =>
   crypto.createHash('sha256').update(token).digest('hex');
+
+// Short-lived token proving "password step passed, MFA still pending". Not a
+// session — it only lets the holder complete the second factor.
+export const signMfaChallenge = (userId: number): string =>
+  jwt.sign({ sub: userId, purpose: 'mfa' }, config.JWT_ACCESS_SECRET, { algorithm: 'HS256', expiresIn: '5m' });
+
+export const verifyMfaChallenge = (token: string): number | null => {
+  try {
+    const p = jwt.verify(token, config.JWT_ACCESS_SECRET, { algorithms: ['HS256'] }) as { sub?: number; purpose?: string };
+    return p.purpose === 'mfa' && p.sub ? Number(p.sub) : null;
+  } catch {
+    return null;
+  }
+};
