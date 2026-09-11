@@ -17,7 +17,8 @@
   // Live "needs attention" count → small badge on the nav item so it isn't out of sight.
   let reengageCount = $state(0);
 
-  const groups = [
+  type NavItem = { href: string; label: string; icon: string; perm?: string; role?: string };
+  const groups: { key: string; items: NavItem[] }[] = [
     {
       key: 'group.congregation',
       items: [
@@ -70,6 +71,14 @@
         { href: '/vendors', label: 'nav.vendors', icon: 'vendors', role: 'Admin' },
         { href: '/activity', label: 'nav.activity', icon: 'activity', role: 'Admin' },
         { href: '/settings', label: 'nav.settings', icon: 'settings', role: 'Admin' },
+      ],
+    },
+    {
+      // Personal account settings — visible to every signed-in user (no perm gate).
+      key: 'group.account',
+      items: [
+        { href: '/security', label: 'nav.security', icon: 'shield' },
+        { href: '/change-password', label: 'nav.changePassword', icon: 'key' },
       ],
     },
   ];
@@ -164,7 +173,6 @@
         <div class="flex-1"></div>
         <div class="flex items-center gap-2">
           <button class="btn-ghost" onclick={toggleTheme} aria-label={tr({ en: 'Theme', ar: 'النمط' }, $locale)}>{$theme === 'dark' ? '☀' : '☾'}</button>
-          <a class="btn-ghost" href="/security" title={tr({ en: 'Security & 2FA', ar: 'الأمان والمصادقة الثنائية' }, $locale)} aria-label={tr({ en: 'Security', ar: 'الأمان' }, $locale)}>🔒</a>
           <div class="flex items-center gap-2 ps-2">
             <span class="hidden text-sm text-slate-600 dark:text-slate-300 sm:inline">{$auth.user?.name}</span>
             <button class="btn-ghost" onclick={signOut}>{$t('auth.signout')}</button>
