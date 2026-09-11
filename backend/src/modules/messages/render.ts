@@ -1,4 +1,5 @@
 import type { I18n, EmailSettings } from '../../db/schema.js';
+import { config } from '../../config.js';
 
 /**
  * Template merge fields + branded email rendering. Shared by manual campaign
@@ -126,8 +127,16 @@ export function brandedEmailHtml(
   const btn = validHex(es.buttonColor) ?? brand;
   const name = escapeHtml(localeName(org.name, lang));
 
-  const logo = org.logoPath && /^data:image\//.test(org.logoPath)
-    ? `<img src="${org.logoPath}" alt="${name}" style="height:44px;max-width:200px;object-fit:contain" />`
+  // Email clients block data: URIs and can't send auth, so never embed the logo.
+  // Use an external URL as-is; for a stored data: URI, point at the public logo
+  // endpoint over https (Gmail loads that fine and the email stays small — no
+  // giant data URI to trip the "message clipped" limit). Otherwise show the name.
+  const appUrl = config.PUBLIC_APP_URL?.replace(/\/+$/, '');
+  const logoSrc = org.logoPath
+    ? (/^https?:\/\//i.test(org.logoPath) ? org.logoPath : (appUrl ? `${appUrl}/api/public/branding/logo` : null))
+    : null;
+  const logo = logoSrc
+    ? `<img src="${escapeHtml(logoSrc)}" alt="${name}" style="height:44px;max-width:200px;object-fit:contain" />`
     : `<div style="font-size:20px;font-weight:700;color:#ffffff;margin:0">${name}</div>`;
 
   const preheader = opts.preheader

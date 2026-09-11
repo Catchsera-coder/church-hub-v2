@@ -33,6 +33,7 @@ import { mediaRouter, publicMediaRouter } from './modules/media/routes.js';
 import { publicConsentRouter } from './modules/consent/public.routes.js';
 import { publicMinistriesRouter } from './modules/ministries/public.routes.js';
 import { publicInboundRouter, publicAcsRouter } from './modules/messages/inbound.routes.js';
+import { publicBrandingRouter } from './modules/settings/public.routes.js';
 import { careRouter } from './modules/care/routes.js';
 
 export function createApp() {
@@ -57,6 +58,7 @@ export function createApp() {
   app.use('/api/public/checkin', rateLimit({ windowMs: 60_000, max: 40 }));
   app.use('/api/public/checkin', publicCheckinRouter);
   app.use('/api/public/media', publicMediaRouter);
+  app.use('/api/public/branding', rateLimit({ windowMs: 60_000, max: 120 }), publicBrandingRouter);
   app.use('/api/public/unsubscribe', rateLimit({ windowMs: 60_000, max: 30 }));
   app.use('/api/public/unsubscribe', publicConsentRouter);
   app.use('/api/public/ministries', rateLimit({ windowMs: 60_000, max: 30 }));
