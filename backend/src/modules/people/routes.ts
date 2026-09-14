@@ -47,6 +47,12 @@ const upsertSchema = z.object({
   skills: z.array(z.string().trim().min(1).max(40)).max(40).optional(),
   // Assimilation/follow-up pipeline stage.
   followUpStage: z.string().max(30).nullable().optional(),
+  // Baptism record.
+  baptized: z.boolean().optional(),
+  baptizedOn: z.string().nullable().optional(),
+  baptismType: z.string().max(30).nullable().optional(),
+  // Headshot data: URI (client-resized ≈ up to ~500 KB).
+  photoPath: z.string().max(700000).nullable().optional(),
 });
 
 // GET /api/people — paginated, searchable across both locales of the name.
@@ -60,9 +66,12 @@ peopleRouter.get(
     const [{ count }] = await db.select({ count: sql<number>`count(*)::int` }).from(people).where(where);
     // All people columns PLUS the household name + city, so lists and pickers can
     // disambiguate common names ("Samy Ibrahim · Ibrahim family · Boston").
+    // Exclude the (potentially large) photo data URI from list payloads — it's only
+    // needed on the detail record. Keeps big "Show: All" lists light.
+    const { photoPath: _photoOmitted, ...peopleCols } = getTableColumns(people);
     const rows = await db
       .select({
-        ...getTableColumns(people),
+        ...peopleCols,
         householdName: sql<Record<string, string> | null>`(SELECT h.name FROM ${households} h WHERE h.id = people.household_id)`,
         householdCity: sql<string | null>`(SELECT h.city FROM ${households} h WHERE h.id = people.household_id)`,
       })

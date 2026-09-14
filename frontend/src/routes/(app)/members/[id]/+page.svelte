@@ -11,7 +11,27 @@
   import MemberClearances from '$lib/components/MemberClearances.svelte';
   import MemberCare from '$lib/components/MemberCare.svelte';
   import MemberQrCard from '$lib/components/MemberQrCard.svelte';
+  import PhotoUpload from '$lib/components/PhotoUpload.svelte';
   import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
+
+  // Where the "← back" link returns to. Defaults to Members; when opened from
+  // Attendance (or elsewhere) the caller passes ?back=<url> so you land back there.
+  const back = $derived($page.url.searchParams.get('back') || '/members');
+
+  async function savePhoto(dataUrl: string | null) {
+    try { await api(`/people/${id}`, { method: 'PUT', body: JSON.stringify({ photoPath: dataUrl }) }); if (person) person.photoPath = dataUrl; }
+    catch (err) { alert((err as Error).message); }
+  }
+  const BAPTISM_TYPES = [
+    { v: '', en: '— select —', ar: '— اختر —' },
+    { v: 'adult', en: "Adult / believer's", ar: 'بالغ / معمودية إيمان' },
+    { v: 'child', en: 'Child / infant', ar: 'طفل' },
+    { v: 'other', en: 'Other', ar: 'أخرى' },
+  ];
+  async function saveBaptism(patch: Record<string, unknown>) {
+    try { await api(`/people/${id}`, { method: 'PUT', body: JSON.stringify(patch) }); if (person) Object.assign(person, patch); }
+    catch (err) { alert((err as Error).message); }
+  }
 
   const STAGES = [
     { v: '', en: '— none —', ar: '— بدون —' },
@@ -63,7 +83,7 @@
   }
 </script>
 
-<PageHeader title={`${tr({ en: 'Edit member', ar: 'تعديل العضو' }, $locale)} · #${id}`} back="/members">
+<PageHeader title={`${tr({ en: 'Edit member', ar: 'تعديل العضو' }, $locale)} · #${id}`} {back}>
   {#snippet actions()}
     {#if person?.householdId}
       <a class="btn-ghost border border-slate-300 text-sm dark:border-slate-700" href="/families/{person.householdId}">👪 {tr({ en: 'Open family', ar: 'فتح العائلة' }, $locale)}</a>
@@ -92,7 +112,18 @@
     </div>
   {/if}
   <div class="grid gap-6 lg:grid-cols-5 lg:items-start">
-    <div class="lg:col-span-3"><MemberForm initial={person} {id} /></div>
+    <div class="space-y-6 lg:col-span-3">
+      {#if can('update person')}
+        <div class="card flex items-center gap-4 p-4">
+          <PhotoUpload photo={person.photoPath} name={`${tr(person.givenName, $locale)} ${tr(person.familyName, $locale)}`.trim()} onchange={savePhoto} />
+          <div class="min-w-0">
+            <div class="truncate text-lg font-semibold">{tr(person.givenName, $locale)} {tr(person.familyName, $locale)}</div>
+            <div class="text-sm capitalize text-slate-500 dark:text-slate-400">{person.membershipStatus}{#if person.baptized} · 💧 {tr({ en: 'Baptized', ar: 'معمّد' }, $locale)}{/if}</div>
+          </div>
+        </div>
+      {/if}
+      <MemberForm initial={person} {id} />
+    </div>
     <div class="space-y-6 lg:col-span-2">
       {#if can('update person')}
         <div class="card p-4">
@@ -102,6 +133,27 @@
               {#each STAGES as s}<option value={s.v}>{tr({ en: s.en, ar: s.ar }, $locale)}</option>{/each}
             </select>
           </label>
+        </div>
+        <div class="card space-y-3 p-4">
+          <span class="text-sm font-semibold text-slate-700 dark:text-slate-200">💧 {tr({ en: 'Baptism', ar: 'المعمودية' }, $locale)}</span>
+          <label class="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+            <input type="checkbox" checked={person.baptized} onchange={(e) => saveBaptism({ baptized: (e.currentTarget as HTMLInputElement).checked })} />
+            {tr({ en: 'Baptized', ar: 'معمّد' }, $locale)}
+          </label>
+          {#if person.baptized}
+            <label class="block space-y-1">
+              <span class="text-xs text-slate-500">{tr({ en: 'Baptism date', ar: 'تاريخ المعمودية' }, $locale)}</span>
+              <input class="input force-ltr" type="date" value={person.baptizedOn ?? ''} onchange={(e) => saveBaptism({ baptizedOn: (e.currentTarget as HTMLInputElement).value || null })} />
+            </label>
+            <label class="block space-y-1">
+              <span class="text-xs text-slate-500">{tr({ en: 'Type', ar: 'النوع' }, $locale)}</span>
+              <select class="input" value={person.baptismType ?? ''} onchange={(e) => saveBaptism({ baptismType: (e.currentTarget as HTMLSelectElement).value || null })}>
+                {#each BAPTISM_TYPES as b}<option value={b.v}>{tr({ en: b.en, ar: b.ar }, $locale)}</option>{/each}
+              </select>
+            </label>
+          {:else}
+            <p class="text-xs text-slate-400">{tr({ en: 'Not yet baptized.', ar: 'لم يُعمّد بعد.' }, $locale)}</p>
+          {/if}
         </div>
       {/if}
       <MemberCare personId={id} />

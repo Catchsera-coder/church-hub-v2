@@ -9,8 +9,14 @@
   import PageHint from '$lib/components/PageHint.svelte';
   import FamilyForm from '$lib/components/FamilyForm.svelte';
   import FamilyMembers from '$lib/components/FamilyMembers.svelte';
+  import PhotoUpload from '$lib/components/PhotoUpload.svelte';
 
+  const editable = can('update household');
   const id = Number($page.params.id);
+  async function saveFamilyPhoto(dataUrl: string | null) {
+    try { await api(`/families/${id}`, { method: 'PUT', body: JSON.stringify({ photoPath: dataUrl }) }); if (family) family.photoPath = dataUrl; }
+    catch (err) { alert((err as Error).message); }
+  }
   let family = $state<any>(null);
   let members = $state<any[]>([]);
   let loading = $state(true);
@@ -81,9 +87,16 @@
   <div class="card mb-6 p-5 sm:p-6">
     <div class="flex flex-wrap items-start justify-between gap-4">
       <div class="flex items-center gap-4">
-        <span class="grid h-14 w-14 shrink-0 place-items-center rounded-2xl text-2xl" style="background: color-mix(in srgb, var(--brand) 15%, transparent)">🏠</span>
+        {#if editable}
+          <PhotoUpload photo={family.photoPath} name={tr(family.name, $locale) || 'Family'} shape="square" size={56} onchange={saveFamilyPhoto} />
+        {:else if family.photoPath}
+          <img src={family.photoPath} alt="" class="h-14 w-14 shrink-0 rounded-2xl object-cover ring-2 ring-slate-200 dark:ring-slate-700" />
+        {:else}
+          <span class="grid h-14 w-14 shrink-0 place-items-center rounded-2xl text-2xl" style="background: color-mix(in srgb, var(--brand) 15%, transparent)">🏠</span>
+        {/if}
         <div>
           <h1 class="text-xl font-semibold">{tr(family.name, $locale) || tr({ en: 'Unnamed family', ar: 'عائلة بدون اسم' }, $locale)}</h1>
+          {#if family.status}<span class="mt-1 inline-block rounded-full bg-primary-50 px-2 py-0.5 text-xs font-medium text-primary-700 dark:bg-primary-900/30 dark:text-primary-300">{family.status}</span>{/if}
           {#if addr}<p class="mt-0.5 text-sm text-slate-500 dark:text-slate-400">📍 {addr}</p>{/if}
           {#if familyPhone}<p class="force-ltr mt-0.5 text-sm text-slate-500 dark:text-slate-400"><a href="tel:{familyPhone}" class="hover:underline">📞 {familyPhone}</a></p>{/if}
         </div>

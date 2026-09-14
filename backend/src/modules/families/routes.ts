@@ -22,6 +22,7 @@ const schema = z.object({
   postalCode: z.string().nullable().optional(),
   country: z.string().nullable().optional(),
   status: z.string().max(60).nullable().optional(),
+  photoPath: z.string().max(700000).nullable().optional(),
 });
 
 familiesRouter.get('/', requirePermission('view household'), asyncHandler(async (req, res) => {
@@ -52,7 +53,7 @@ familiesRouter.get('/:id', requirePermission('view household'), asyncHandler(asy
     id: households.id, name: households.name, homePhone: households.homePhone,
     addressLine1: households.addressLine1, addressLine2: households.addressLine2,
     city: households.city, region: households.region, postalCode: households.postalCode, country: households.country,
-    status: households.status,
+    status: households.status, photoPath: households.photoPath,
     memberCount: memberCountExpr, membersPreview: membersPreviewExpr,
     createdAt: households.createdAt, updatedAt: households.updatedAt,
   }).from(households).where(and(eq(households.id, Number(req.params.id)), isNull(households.deletedAt))).limit(1);
@@ -66,7 +67,7 @@ familiesRouter.get('/:id/members', requirePermission('view household'), asyncHan
   const rows = await db
     .select({
       id: people.id, givenName: people.givenName, middleName: people.middleName, familyName: people.familyName,
-      membershipStatus: people.membershipStatus, email: people.email, mobile: people.mobile,
+      membershipStatus: people.membershipStatus, email: people.email, mobile: people.mobile, photoPath: people.photoPath,
       householdRole: people.householdRole, dateOfBirth: people.dateOfBirth, joinedOn: people.joinedOn,
       preferredLanguage: people.preferredLanguage, isActive: people.isActive,
       emailOptOut: people.emailOptOut, smsOptOut: people.smsOptOut, whatsappOptOut: people.whatsappOptOut,

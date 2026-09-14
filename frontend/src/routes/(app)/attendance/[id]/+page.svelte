@@ -159,7 +159,11 @@
 <DataTable {loading} rows={filtered} headers={[tr({ en: 'Name', ar: 'الاسم' }, $locale), tr({ en: 'Status', ar: 'الحالة' }, $locale), tr({ en: 'Checked in', ar: 'وقت التسجيل' }, $locale)]}>
   {#snippet row(r)}
     <td class="p-3 font-medium">
-      {tr(r.givenName, $locale)} {tr(r.familyName, $locale)}
+      {#if r.personId && can('view person')}
+        <a class="text-primary-700 hover:underline dark:text-primary-300" href="/members/{r.personId}?back={encodeURIComponent(`/attendance/${id}`)}">{tr(r.givenName, $locale)} {tr(r.familyName, $locale)}</a>
+      {:else}
+        {tr(r.givenName, $locale)} {tr(r.familyName, $locale)}
+      {/if}
       {#if r.selfRegistered && !r.reviewedAt}<span class="ms-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">{tr({ en: 'new', ar: 'جديد' }, $locale)}</span>{/if}
     </td>
     <td class="p-3 capitalize text-slate-600 dark:text-slate-300">{r.membershipStatus}</td>

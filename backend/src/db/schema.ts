@@ -220,6 +220,8 @@ export const households = pgTable('households', {
   // Other, or any custom value the church types). Free text so churches aren't
   // boxed into a fixed list.
   status: varchar('status', { length: 60 }),
+  // Family photo (client-resized data: URI) — shown on the family header.
+  photoPath: text('photo_path'),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
   ...timestamps,
 }, (t) => ({ cityIdx: index('households_city_idx').on(t.city) }));
@@ -297,6 +299,11 @@ export const people = pgTable('people', {
   // people into ministries ("plays guitar", "good with kids", "speaks Arabic").
   skills: jsonb('skills').$type<string[]>().notNull().default([]),
   notes: text('notes'),
+  // Baptism record (Baptist churches track believer's baptism). baptized=false
+  // means "not yet"; type is free text (e.g. Adult / believer's, Child, Other).
+  baptized: boolean('baptized').notNull().default(false),
+  baptizedOn: date('baptized_on'),
+  baptismType: varchar('baptism_type', { length: 30 }),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
   ...timestamps,
 }, (t) => ({

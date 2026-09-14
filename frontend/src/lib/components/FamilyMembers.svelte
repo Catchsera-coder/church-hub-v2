@@ -270,7 +270,11 @@
           <!-- summary row -->
           <div class="flex items-start gap-3 p-3">
             {#if editable}<input type="checkbox" class="mt-3 shrink-0" checked={selected.has(m.id)} onchange={() => toggleSel(m.id)} aria-label={tr({ en: 'Select', ar: 'تحديد' }, $locale)} />{/if}
-            <span class="mt-0.5 grid h-10 w-10 shrink-0 place-items-center rounded-full text-sm font-semibold text-white" style="background:{av.color}">{av.initials}</span>
+            {#if m.photoPath}
+              <img src={m.photoPath} alt="" class="mt-0.5 h-10 w-10 shrink-0 rounded-full object-cover ring-1 ring-slate-200 dark:ring-slate-700" />
+            {:else}
+              <span class="mt-0.5 grid h-10 w-10 shrink-0 place-items-center rounded-full text-sm font-semibold text-white" style="background:{av.color}">{av.initials}</span>
+            {/if}
             <div class="min-w-0 flex-1">
               <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
                 <a class="font-medium text-primary-700 hover:underline dark:text-primary-300" href="/members/{m.id}">{displayName(m, $nameOrder, $locale)}</a>
