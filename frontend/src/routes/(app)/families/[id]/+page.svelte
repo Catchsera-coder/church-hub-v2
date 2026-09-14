@@ -21,6 +21,7 @@
   let members = $state<any[]>([]);
   let loading = $state(true);
   let editingFamily = $state(false);
+  let lightbox = $state(false);
   const canMessage = can('create message');
 
   async function loadFamily() { family = (await api<{ data: any }>(`/families/${id}`)).data; }
@@ -88,9 +89,11 @@
     <div class="flex flex-wrap items-start justify-between gap-4">
       <div class="flex items-center gap-4">
         {#if editable}
-          <PhotoUpload photo={family.photoPath} name={tr(family.name, $locale) || 'Family'} shape="square" size={56} onchange={saveFamilyPhoto} />
+          <PhotoUpload photo={family.photoPath} name={tr(family.name, $locale) || 'Family'} shape="square" size={56} onchange={saveFamilyPhoto} onexpand={family.photoPath ? () => (lightbox = true) : undefined} />
         {:else if family.photoPath}
-          <img src={family.photoPath} alt="" class="h-14 w-14 shrink-0 rounded-2xl object-cover ring-2 ring-slate-200 dark:ring-slate-700" />
+          <button type="button" class="shrink-0 cursor-zoom-in" onclick={() => (lightbox = true)} aria-label={tr({ en: 'Enlarge photo', ar: 'تكبير الصورة' }, $locale)}>
+            <img src={family.photoPath} alt="" class="h-14 w-14 rounded-2xl object-cover ring-2 ring-slate-200 dark:ring-slate-700" />
+          </button>
         {:else}
           <span class="grid h-14 w-14 shrink-0 place-items-center rounded-2xl text-2xl" style="background: color-mix(in srgb, var(--brand) 15%, transparent)">🏠</span>
         {/if}
@@ -144,4 +147,11 @@
   <FamilyMembers householdId={id} {members} onchanged={loadMembers} />
 {:else}
   <p class="text-slate-400">{tr({ en: 'Family not found.', ar: 'العائلة غير موجودة.' }, $locale)}</p>
+{/if}
+
+{#if lightbox && family?.photoPath}
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" onclick={() => (lightbox = false)} role="presentation">
+    <img src={family.photoPath} alt={tr(family.name, $locale)} class="max-h-[90vh] max-w-[90vw] rounded-2xl object-contain shadow-2xl" />
+    <button type="button" class="absolute end-4 top-4 rounded-full bg-white/10 p-2 text-2xl leading-none text-white hover:bg-white/20" onclick={() => (lightbox = false)} aria-label={tr({ en: 'Close', ar: 'إغلاق' }, $locale)}>✕</button>
+  </div>
 {/if}

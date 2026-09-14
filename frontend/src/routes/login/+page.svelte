@@ -117,6 +117,10 @@
   }
 </script>
 
+<svelte:head>
+  {#if logo}<link rel="icon" href={logo} />{/if}
+</svelte:head>
+
 <div class="flex min-h-full items-center justify-center px-4 py-12">
   <div class="w-full max-w-sm">
     <div class="mb-8 flex flex-col items-center text-center">

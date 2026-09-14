@@ -119,6 +119,12 @@
   const closeSidebar = () => (sidebarOpen = false);
 </script>
 
+<!-- Tab / hub icon follows the church's uploaded logo (falls back to the default
+     favicon.png from app.html when no logo is set). Global across the app. -->
+<svelte:head>
+  {#if logo}<link rel="icon" href={logo} />{/if}
+</svelte:head>
+
 {#if ready}
   <div class="flex h-full">
     <!-- Mobile drawer backdrop -->
