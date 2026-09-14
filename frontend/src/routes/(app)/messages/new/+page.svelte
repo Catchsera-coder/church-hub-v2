@@ -23,6 +23,10 @@
   });
   let error = $state('');
   let saving = $state(false);
+  // Post-action confirmation: after a send/schedule succeeds we keep the user on
+  // the page and show a clear "done" state (instead of a silent redirect), so the
+  // button visibly reflects that it acted. `null` = still composing.
+  let done = $state<{ kind: 'sent' | 'scheduled' | 'recurring'; id?: number; sent?: number; total?: number; to?: string; when?: string; desc?: string } | null>(null);
 
   // Custom variables: {{speaker}}, {{link}} etc. (anything that isn't a per-person
   // field) — filled once for the whole message and substituted before sending.
@@ -124,8 +128,8 @@
         channel: form.channel, toPersonId: onePersonId, toContact: onePersonId ? null : oneContact.trim(),
         subject: f.subject, body: f.body, ctaLabel: f.ctaLabel, ctaUrl: f.ctaUrl, mediaUrl: form.mediaUrl,
       }) });
-      alert(data.ok ? tr({ en: `Sent to ${data.to}.`, ar: `أُرسلت إلى ${data.to}.` }, $locale) : tr({ en: 'Send failed — check messaging settings.', ar: 'فشل الإرسال — تحقق من الإعدادات.' }, $locale));
-      if (data.ok) await goto('/messages');
+      if (data.ok) done = { kind: 'sent', to: data.to, sent: 1, total: 1 };
+      else error = tr({ en: 'Send failed — check messaging settings.', ar: 'فشل الإرسال — تحقق من الإعدادات.' }, $locale);
     } catch (err) { error = (err as Error).message; } finally { saving = false; }
   }
 
@@ -138,8 +142,9 @@
     try {
       const id = await create();
       await api(`/messages/${id}/schedule`, { method: 'POST', body: JSON.stringify({ schedule: sched }) });
-      await goto('/messages');
-    } catch (err) { error = (err as Error).message; saving = false; }
+      showRecurring = false;
+      done = { kind: 'recurring', id, desc: describeSchedule(sched) };
+    } catch (err) { error = (err as Error).message; } finally { saving = false; }
   }
 
   // Image upload (MMS/WhatsApp)
@@ -298,9 +303,8 @@
     try {
       const id = await create();
       const { data } = await api<{ data: { sent: number; total: number } }>(`/messages/${id}/send`, { method: 'POST' });
-      alert(tr({ en: `Sent to ${data.sent} of ${data.total}.`, ar: `أُرسلت إلى ${data.sent} من ${data.total}.` }, $locale));
-      await goto('/messages');
-    } catch (err) { error = (err as Error).message; saving = false; }
+      done = { kind: 'sent', id, sent: data.sent, total: data.total };
+    } catch (err) { error = (err as Error).message; } finally { saving = false; }
   }
   async function schedule() {
     if (!valid()) return;
@@ -309,8 +313,15 @@
     try {
       const id = await create();
       await api(`/messages/${id}/schedule`, { method: 'POST', body: JSON.stringify({ scheduledFor: new Date(scheduleAt).toISOString() }) });
-      await goto('/messages');
-    } catch (err) { error = (err as Error).message; saving = false; }
+      done = { kind: 'scheduled', id, when: new Date(scheduleAt).toLocaleString() };
+    } catch (err) { error = (err as Error).message; } finally { saving = false; }
+  }
+  // Reset everything to compose a fresh message without leaving the page.
+  function composeAnother() {
+    done = null; error = '';
+    form = { name: '', channel: form.channel, subject: {}, body: {}, mediaUrl: null, ctaLabel: {}, ctaUrl: '' };
+    customValues = {}; selectedIds = new Set(); selectedMinistryIds = new Set();
+    onePersonId = null; oneContact = ''; peopleSearch = ''; scheduleAt = ''; templateId = '';
   }
 </script>
 
@@ -318,6 +329,39 @@
 
 <div class="max-w-2xl space-y-6">
   {#if error}<p class="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:bg-rose-900/30 dark:text-rose-300">{error}</p>{/if}
+
+  {#if done}
+    <div class="card border-s-4 p-6" style="border-color: {done.kind === 'sent' ? '#059669' : 'var(--brand)'}">
+      <div class="flex items-start gap-3">
+        <span class="text-3xl">{done.kind === 'sent' ? '✅' : '🕐'}</span>
+        <div class="min-w-0 flex-1">
+          <h2 class="text-lg font-semibold">
+            {#if done.kind === 'sent'}{tr({ en: 'Message sent', ar: 'تم إرسال الرسالة' }, $locale)}
+            {:else if done.kind === 'scheduled'}{tr({ en: 'Message scheduled', ar: 'تمت جدولة الرسالة' }, $locale)}
+            {:else}{tr({ en: 'Recurring send saved', ar: 'تم حفظ الإرسال المتكرر' }, $locale)}{/if}
+          </h2>
+          <p class="mt-1 text-sm text-slate-600 dark:text-slate-300">
+            {#if done.kind === 'sent'}
+              {#if done.to}{tr({ en: `Delivered to ${done.to}.`, ar: `تم التسليم إلى ${done.to}.` }, $locale)}
+              {:else}{tr({ en: `Delivered to ${done.sent} of ${done.total} recipient(s).`, ar: `تم التسليم إلى ${done.sent} من ${done.total}.` }, $locale)}{/if}
+              {#if done.total !== undefined && done.sent !== undefined && done.sent < done.total}
+                <span class="mt-1 block text-amber-600 dark:text-amber-400">⚠ {tr({ en: `${done.total - done.sent} could not be delivered — open the message to see which and why.`, ar: `تعذّر تسليم ${done.total - done.sent} — افتح الرسالة لمعرفة من ولماذا.` }, $locale)}</span>
+              {/if}
+            {:else if done.kind === 'scheduled'}
+              {tr({ en: `It will send automatically on ${done.when}.`, ar: `ستُرسَل تلقائياً في ${done.when}.` }, $locale)}
+            {:else}
+              {tr({ en: 'It will send automatically:', ar: 'ستُرسَل تلقائياً:' }, $locale)} {done.desc}
+            {/if}
+          </p>
+          <div class="mt-4 flex flex-wrap gap-2">
+            {#if done.id}<a class="btn-primary" href={`/messages/${done.id}`}>👁 {tr({ en: 'Review message', ar: 'مراجعة الرسالة' }, $locale)}</a>{/if}
+            <a class="btn-ghost border border-slate-300 text-sm dark:border-slate-700" href="/messages">📋 {tr({ en: 'All messages', ar: 'كل الرسائل' }, $locale)}</a>
+            <button type="button" class="btn-ghost border border-slate-300 text-sm dark:border-slate-700" onclick={composeAnother}>✍️ {tr({ en: 'Compose another', ar: 'إنشاء أخرى' }, $locale)}</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  {:else}
   <div class="card space-y-4 p-6">
     <div class="grid gap-3 sm:grid-cols-2">
       <label class="block space-y-1">
@@ -558,6 +602,7 @@
 
     <a class="text-sm text-slate-500 hover:underline" href="/messages">← {tr({ en: 'Cancel', ar: 'إلغاء' }, $locale)}</a>
   </div>
+  {/if}
 </div>
 
 <!-- Preview modal: the message exactly as a recipient sees it -->

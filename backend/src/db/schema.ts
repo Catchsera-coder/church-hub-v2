@@ -702,6 +702,9 @@ export const messageCampaigns = pgTable('message_campaigns', {
   schedule: jsonb('schedule').$type<Schedule>(),
   lastRunOn: date('last_run_on'),
   createdByUserId: integer('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+  // Who actually triggered the send (distinct from who composed it). Null for a
+  // send fired by the background scheduler — the sent-log shows "Scheduled" then.
+  sentByUserId: integer('sent_by_user_id').references(() => users.id, { onDelete: 'set null' }),
   ...timestamps,
 }, (t) => ({ statusIdx: index('message_campaigns_status_idx').on(t.status) }));
 
@@ -742,9 +745,44 @@ export const messageRecipients = pgTable('message_recipients', {
   messageCampaignId: integer('message_campaign_id').notNull().references(() => messageCampaigns.id, { onDelete: 'cascade' }),
   personId: integer('person_id').notNull().references(() => people.id, { onDelete: 'cascade' }),
   status: recipientStatus('status').notNull().default('pending'),
+  // Per-recipient audit for the sent-log. Snapshotted at send time so history
+  // stays readable even if the person is later edited/renamed: `resolvedName` is
+  // the name as sent, `toContact` the exact address/number used. `sentAt` is when
+  // this recipient was delivered; `error` carries a provider failure reason.
+  sentAt: timestamp('sent_at', { withTimezone: true }),
+  toContact: varchar('to_contact', { length: 190 }),
+  resolvedName: varchar('resolved_name', { length: 190 }),
+  error: text('error'),
 }, (t) => ({
   unique: uniqueIndex('message_recipients_unique').on(t.messageCampaignId, t.personId),
   statusIdx: index('message_recipients_status_idx').on(t.status),
+  campaignIdx: index('message_recipients_campaign_idx').on(t.messageCampaignId),
+}));
+
+// Files attached to a message/campaign (any type: images, PDFs, documents,
+// video). Bytes live in Azure Blob Storage (see lib/storage.ts) — only metadata
+// + the blob name are stored here, so the DB stays lean. On send: email attaches
+// the file inline when it fits the provider cap, else (and for SMS/WhatsApp) a
+// secure time-limited download link is appended. `campaignId` is null while the
+// file is uploaded in the composer before the campaign row is created; it is
+// linked when the campaign is saved.
+export const messageAttachments = pgTable('message_attachments', {
+  id: serial('id').primaryKey(),
+  token: uuid('token').notNull().defaultRandom(),
+  campaignId: integer('campaign_id').references(() => messageCampaigns.id, { onDelete: 'cascade' }),
+  filename: varchar('filename', { length: 255 }).notNull(),
+  contentType: varchar('content_type', { length: 150 }).notNull(),
+  sizeBytes: bigint('size_bytes', { mode: 'number' }).notNull().default(0),
+  // Where the bytes live. 'blob' → Azure Blob (blobName set); 'db' → fallback
+  // bytes in `data` (base64) when Blob isn't configured yet (kept small).
+  storage: varchar('storage', { length: 10 }).notNull().default('blob'),
+  blobName: varchar('blob_name', { length: 400 }),
+  data: text('data'),
+  uploadedByUserId: integer('uploaded_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+  ...timestamps,
+}, (t) => ({
+  tokenIdx: uniqueIndex('message_attachments_token_idx').on(t.token),
+  campaignIdx: index('message_attachments_campaign_idx').on(t.campaignId),
 }));
 
 // ---------------------------------------------------------------------------

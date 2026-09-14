@@ -13,7 +13,7 @@ import { buildContext, renderText, brandedEmailHtml, localeName } from './render
  * merge fields and brands email as HTML. Honest status: 'failed' if there were
  * recipients but none were accepted, else 'sent'.
  */
-export async function sendCampaignNow(campaignId: number): Promise<{ sent: number; total: number }> {
+export async function sendCampaignNow(campaignId: number, sentByUserId?: number): Promise<{ sent: number; total: number }> {
   const [c] = await db.select().from(messageCampaigns).where(eq(messageCampaigns.id, campaignId)).limit(1);
   if (!c) return { sent: 0, total: 0 };
   if (c.status === 'sent' || c.status === 'sending') return { sent: 0, total: 0 };
@@ -44,7 +44,10 @@ export async function sendCampaignNow(campaignId: number): Promise<{ sent: numbe
 
   let sent = 0;
   for (const p of audience) {
-    const [rec] = await db.insert(messageRecipients).values({ messageCampaignId: campaignId, personId: p.id }).onConflictDoNothing().returning();
+    const nm = [localeName(p.givenName, p.lang || 'en'), localeName(p.familyName, p.lang || 'en')].filter(Boolean).join(' ').trim();
+    const [rec] = await db.insert(messageRecipients)
+      .values({ messageCampaignId: campaignId, personId: p.id, toContact: (p.contact as string) ?? null, resolvedName: nm || null })
+      .onConflictDoNothing().returning();
     if (!rec) continue;
     const lang = p.lang || 'en';
     const ctx = buildContext(p, org, now, lang);
@@ -63,7 +66,9 @@ export async function sendCampaignNow(campaignId: number): Promise<{ sent: numbe
       unsubscribeUrl ? `—\nTo stop receiving these emails, unsubscribe: ${unsubscribeUrl}` : '',
     ].filter(Boolean).join('\n\n');
     const ok = await sendMessage(messaging, c.channel, p.contact as string, subject, plain, html, c.mediaUrl ?? undefined);
-    await db.update(messageRecipients).set({ status: ok ? 'sent' : 'failed' }).where(eq(messageRecipients.id, rec.id));
+    await db.update(messageRecipients)
+      .set({ status: ok ? 'sent' : 'failed', sentAt: new Date(), error: ok ? null : 'Provider did not accept the message' })
+      .where(eq(messageRecipients.id, rec.id));
     if (ok) sent++;
     // Gentle pacing to smooth bursts under the provider per-minute caps (SMS
     // toll-free 200/min, ACS custom-domain email 30/min); the delivery layer also
@@ -74,6 +79,8 @@ export async function sendCampaignNow(campaignId: number): Promise<{ sent: numbe
   }
 
   const finalStatus = audience.length > 0 && sent === 0 ? 'failed' : 'sent';
-  await db.update(messageCampaigns).set({ status: finalStatus, sentAt: new Date(), updatedAt: new Date() }).where(eq(messageCampaigns.id, campaignId));
+  await db.update(messageCampaigns)
+    .set({ status: finalStatus, sentAt: new Date(), updatedAt: new Date(), ...(sentByUserId ? { sentByUserId } : {}) })
+    .where(eq(messageCampaigns.id, campaignId));
   return { sent, total: audience.length };
 }

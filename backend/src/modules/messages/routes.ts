@@ -1,9 +1,10 @@
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
-import { and, desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, ilike, isNull, lte, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import { db } from '../../db/index.js';
-import { messageCampaigns, messageRecipients, people, smsMessages } from '../../db/schema.js';
+import { messageCampaigns, messageRecipients, people, smsMessages, users } from '../../db/schema.js';
 import { asyncHandler } from '../../http/asyncHandler.js';
 import { authenticate, requirePermission } from '../../middleware/auth.js';
 import { badRequest, notFound } from '../../http/errors.js';
@@ -40,15 +41,58 @@ const schema = z.object({
   schedule: scheduleZod.nullable().optional(),
 });
 
-messagesRouter.get('/', requirePermission('view message'), asyncHandler(async (_req, res) => {
+// Sent-log list. Every past/scheduled/draft message with who composed it, who
+// sent it, when, the channel/status, and per-recipient tallies (total/sent/
+// failed). Filterable by channel, status, sender, free-text name, and a date
+// range over "when it happened" (sent → scheduled → created).
+const listQuery = z.object({
+  channel: z.enum(['email', 'sms', 'whatsapp']).optional(),
+  status: z.enum(['draft', 'scheduled', 'sending', 'sent', 'failed']).optional(),
+  sender: z.coerce.number().int().positive().optional(),
+  q: z.string().max(190).optional(),
+  from: z.string().max(40).optional(),
+  to: z.string().max(40).optional(),
+});
+messagesRouter.get('/', requirePermission('view message'), asyncHandler(async (req, res) => {
+  const q = listQuery.parse(req.query);
+  const creator = alias(users, 'creator');
+  const sender = alias(users, 'sender');
+  const recCount = (status?: 'sent' | 'failed') =>
+    sql<number>`(select count(*)::int from ${messageRecipients} r where r.message_campaign_id = ${messageCampaigns.id}${status ? sql` and r.status = ${status}` : sql``})`;
+  const whenExpr = sql`coalesce(${messageCampaigns.sentAt}, ${messageCampaigns.scheduledFor}, ${messageCampaigns.createdAt})`;
+
+  const filters = [] as any[];
+  if (q.channel) filters.push(eq(messageCampaigns.channel, q.channel));
+  if (q.status) filters.push(eq(messageCampaigns.status, q.status));
+  if (q.sender) filters.push(eq(messageCampaigns.createdByUserId, q.sender));
+  if (q.q?.trim()) filters.push(ilike(messageCampaigns.name, `%${q.q.trim()}%`));
+  if (q.from) { const d = new Date(q.from); if (!Number.isNaN(d.getTime())) filters.push(gte(whenExpr, d)); }
+  if (q.to) { const d = new Date(q.to); if (!Number.isNaN(d.getTime())) { d.setHours(23, 59, 59, 999); filters.push(lte(whenExpr, d)); } }
+
   const rows = await db
     .select({
       id: messageCampaigns.id, name: messageCampaigns.name, channel: messageCampaigns.channel,
       status: messageCampaigns.status, scheduledFor: messageCampaigns.scheduledFor, sentAt: messageCampaigns.sentAt,
-      recipients: sql<number>`(select count(*)::int from ${messageRecipients} r where r.message_campaign_id = ${messageCampaigns.id})`,
+      createdAt: messageCampaigns.createdAt,
+      createdByUserId: messageCampaigns.createdByUserId, createdByName: creator.name,
+      sentByUserId: messageCampaigns.sentByUserId, sentByName: sender.name,
+      recipients: recCount(), sent: recCount('sent'), failed: recCount('failed'),
     })
     .from(messageCampaigns)
-    .orderBy(desc(messageCampaigns.createdAt));
+    .leftJoin(creator, eq(creator.id, messageCampaigns.createdByUserId))
+    .leftJoin(sender, eq(sender.id, messageCampaigns.sentByUserId))
+    .where(filters.length ? and(...filters) : undefined)
+    .orderBy(desc(whenExpr));
+  res.json({ data: rows });
+}));
+
+// The distinct people who have composed messages — powers the "Sender" filter.
+messagesRouter.get('/senders', requirePermission('view message'), asyncHandler(async (_req, res) => {
+  const rows = await db
+    .selectDistinct({ id: users.id, name: users.name })
+    .from(messageCampaigns)
+    .innerJoin(users, eq(users.id, messageCampaigns.createdByUserId))
+    .orderBy(users.name);
   res.json({ data: rows });
 }));
 
@@ -126,6 +170,76 @@ messagesRouter.post('/audience-count', requirePermission('view message'), asyncH
   res.json({ data: { count } });
 }));
 
+// --- Single message: full detail for review (content + who/when/status) -------
+// Rendered exactly as recipients saw it: branded HTML for email, plain text for
+// SMS/WhatsApp, per available language.
+messagesRouter.get('/:id(\\d+)', requirePermission('view message'), asyncHandler(async (req, res) => {
+  const id = Number(req.params.id);
+  const creator = alias(users, 'creator');
+  const sender = alias(users, 'sender');
+  const [row] = await db
+    .select({
+      id: messageCampaigns.id, name: messageCampaigns.name, channel: messageCampaigns.channel,
+      subject: messageCampaigns.subject, body: messageCampaigns.body, status: messageCampaigns.status,
+      scheduledFor: messageCampaigns.scheduledFor, sentAt: messageCampaigns.sentAt, createdAt: messageCampaigns.createdAt,
+      mediaUrl: messageCampaigns.mediaUrl, ctaLabel: messageCampaigns.ctaLabel, ctaUrl: messageCampaigns.ctaUrl,
+      audience: messageCampaigns.audience, schedule: messageCampaigns.schedule,
+      createdByUserId: messageCampaigns.createdByUserId, createdByName: creator.name,
+      sentByUserId: messageCampaigns.sentByUserId, sentByName: sender.name,
+    })
+    .from(messageCampaigns)
+    .leftJoin(creator, eq(creator.id, messageCampaigns.createdByUserId))
+    .leftJoin(sender, eq(sender.id, messageCampaigns.sentByUserId))
+    .where(eq(messageCampaigns.id, id)).limit(1);
+  if (!row) throw notFound();
+
+  const [counts] = await db
+    .select({
+      total: sql<number>`count(*)::int`,
+      sent: sql<number>`count(*) filter (where ${messageRecipients.status} = 'sent')::int`,
+      failed: sql<number>`count(*) filter (where ${messageRecipients.status} = 'failed')::int`,
+      pending: sql<number>`count(*) filter (where ${messageRecipients.status} = 'pending')::int`,
+    })
+    .from(messageRecipients).where(eq(messageRecipients.messageCampaignId, id));
+
+  // Render the stored content the way a recipient received it, per language.
+  const org = await currentOrg();
+  const langs = Array.from(new Set([...Object.keys(row.body ?? {}), org.locale || 'en'].filter(Boolean)));
+  const sample = { givenName: {}, familyName: {}, preferredLanguage: langs[0] };
+  const rendered = langs.map((lang) => {
+    const ctx = buildContext(sample, org, new Date(), lang);
+    const subject = renderText(row.subject?.[lang] ?? row.subject?.en ?? '', ctx);
+    const bodyText = renderText(row.body?.[lang] ?? row.body?.en ?? '', ctx);
+    const cta = row.ctaLabel && row.ctaUrl ? { label: renderText(localeName(row.ctaLabel, lang), ctx), url: row.ctaUrl } : null;
+    if (row.channel === 'email') {
+      const signature = renderText(localeName(org.emailSettings?.signature, lang), ctx) || undefined;
+      const html = brandedEmailHtml(bodyText, org, { lang, signature, cta, unsubscribeUrl: '#', preheader: subject });
+      return { lang, subject, html, text: bodyText };
+    }
+    return { lang, text: [bodyText, cta ? `${cta.label}: ${cta.url}` : ''].filter(Boolean).join('\n\n') };
+  });
+
+  res.json({ data: { ...row, counts, rendered } });
+}));
+
+// Per-recipient log: who received it, on what contact, delivery status, and when.
+messagesRouter.get('/:id(\\d+)/recipients', requirePermission('view message'), asyncHandler(async (req, res) => {
+  const id = Number(req.params.id);
+  const rows = await db
+    .select({
+      id: messageRecipients.id, personId: messageRecipients.personId, status: messageRecipients.status,
+      sentAt: messageRecipients.sentAt, toContact: messageRecipients.toContact,
+      resolvedName: messageRecipients.resolvedName, error: messageRecipients.error,
+      givenName: people.givenName, familyName: people.familyName,
+      email: people.email, mobile: people.mobile,
+    })
+    .from(messageRecipients)
+    .leftJoin(people, eq(people.id, messageRecipients.personId))
+    .where(eq(messageRecipients.messageCampaignId, id))
+    .orderBy(desc(messageRecipients.sentAt), messageRecipients.id);
+  res.json({ data: rows });
+}));
+
 messagesRouter.post('/', requirePermission('create message'), asyncHandler(async (req, res) => {
   const b = schema.parse(req.body);
   const [row] = await db.insert(messageCampaigns).values({
@@ -161,7 +275,7 @@ messagesRouter.post('/:id/send', sendLimiter, requirePermission('update message'
   const [c] = await db.select({ status: messageCampaigns.status }).from(messageCampaigns).where(eq(messageCampaigns.id, id)).limit(1);
   if (!c) throw notFound();
   if (c.status === 'sent' || c.status === 'sending') throw badRequest('Already sent');
-  const result = await sendCampaignNow(id);
+  const result = await sendCampaignNow(id, req.auth!.sub);
   await logActivity(req, 'updated', 'message', id, `sent: ${result.sent}/${result.total}`);
   res.json({ data: result });
 }));
@@ -258,5 +372,32 @@ messagesRouter.post('/quick-send', sendLimiter, requirePermission('create messag
   const html = b.channel === 'email' ? brandedEmailHtml(bodyText, org, { lang, signature, cta }) : undefined;
   const plain = [bodyText, cta ? `${cta.label}: ${cta.url}` : '', signature].filter(Boolean).join('\n\n');
   const ok = await sendMessage(messaging, b.channel, contact, subject, plain, html, b.mediaUrl ?? undefined);
+
+  // Log the direct send so it appears in the sent-log alongside campaigns: a
+  // lightweight campaign row (marked as a direct send) + one recipient row.
+  const recipientName = person
+    ? [localeName(person.givenName, lang), localeName(person.familyName, lang)].filter(Boolean).join(' ').trim() || contact
+    : contact;
+  const name = `${b.channel === 'email' ? '✉️' : '💬'} ${recipientName}`.slice(0, 190);
+  const now = new Date();
+  try {
+    const [camp] = await db.insert(messageCampaigns).values({
+      name, channel: b.channel, subject: b.subject, body: b.body,
+      status: ok ? 'sent' : 'failed', sentAt: now,
+      ctaLabel: b.ctaLabel ?? null, ctaUrl: b.ctaUrl ?? null, mediaUrl: b.mediaUrl ?? null,
+      audience: person ? { mode: 'people', personIds: [person.id] } : null,
+      createdByUserId: req.auth!.sub, sentByUserId: req.auth!.sub,
+    }).returning();
+    if (camp && person) {
+      await db.insert(messageRecipients).values({
+        messageCampaignId: camp.id, personId: person.id,
+        status: ok ? 'sent' : 'failed', sentAt: now, toContact: contact, resolvedName: recipientName,
+      });
+    }
+    await logActivity(req, 'updated', 'message', camp?.id ?? null, `direct send: ${ok ? 'sent' : 'failed'} → ${contact}`);
+  } catch (err) {
+    // Never fail the user's send just because logging hit a snag.
+    console.error('[quick-send] log failed:', err instanceof Error ? err.message : err);
+  }
   res.json({ data: { ok, to: contact } });
 }));
