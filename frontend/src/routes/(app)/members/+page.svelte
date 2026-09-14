@@ -119,8 +119,35 @@
   let reviewOnly = $state(false);
   let showArchived = $state(false);
   let pendingCount = $state(0);
-  let ministries = $state<{ id: number; name: Record<string, string> }[]>([]);
+  let ministries = $state<{ id: number; name: Record<string, string>; kind?: string }[]>([]);
   let timer: ReturnType<typeof setTimeout>;
+
+  // --- Bulk select → add many people to a ministry/group with a role ----------
+  const canRoster = can('update ministry');
+  const BULK_ROLES = [
+    { v: 'member', en: 'Member', ar: 'عضو' },
+    { v: 'volunteer', en: 'Volunteer', ar: 'متطوّع' },
+    { v: 'coordinator', en: 'Coordinator', ar: 'منسّق' },
+    { v: 'leader', en: 'Leader', ar: 'قائد' },
+  ];
+  let selected = $state<Set<number>>(new Set());
+  let bulkMinistryId = $state<string>('');
+  let bulkRole = $state<string>('member');
+  let bulkBusy = $state(false);
+  function toggleSel(id: number) { const s = new Set(selected); if (s.has(id)) s.delete(id); else s.add(id); selected = s; }
+  function selectAllShown() { const s = new Set(selected); for (const p of rows) s.add(p.id); selected = s; }
+  const allShownSelected = $derived(rows.length > 0 && rows.every((p) => selected.has(p.id)));
+  function toggleAllShown() { if (allShownSelected) { const s = new Set(selected); for (const p of rows) s.delete(p.id); selected = s; } else selectAllShown(); }
+  async function bulkAddToMinistry() {
+    if (!bulkMinistryId || selected.size === 0) return;
+    bulkBusy = true;
+    try {
+      const { data } = await api<{ data: { count: number } }>(`/ministries/${bulkMinistryId}/members/bulk`, { method: 'POST', body: JSON.stringify({ personIds: [...selected], role: bulkRole }) });
+      const m = ministries.find((x) => x.id === Number(bulkMinistryId));
+      alert(tr({ en: `Added ${data.count} to ${m ? tr(m.name, $locale) : 'the ministry'} as ${bulkRole}.`, ar: `تمت إضافة ${data.count} إلى ${m ? tr(m.name, $locale) : 'الخدمة'} كـ ${bulkRole}.` }, $locale));
+      selected = new Set();
+    } catch (err) { alert((err as Error).message); } finally { bulkBusy = false; }
+  }
 
   async function load() {
     loading = true;
@@ -298,6 +325,22 @@
   </label>
 </FilterBar>
 
+{#if canRoster && selected.size > 0}
+  <div class="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-primary-200 bg-primary-50 px-4 py-3 dark:border-primary-800 dark:bg-primary-900/20">
+    <span class="font-medium" style="color: var(--brand)">{selected.size} {tr({ en: 'selected', ar: 'محدد' }, $locale)}</span>
+    <span class="text-sm text-slate-500">{tr({ en: 'Add to ministry / group:', ar: 'أضِف إلى خدمة / مجموعة:' }, $locale)}</span>
+    <select class="input w-52 py-1 text-sm" bind:value={bulkMinistryId}>
+      <option value="">{tr({ en: '— choose —', ar: '— اختر —' }, $locale)}</option>
+      {#each ministries as m}<option value={m.id}>{m.kind === 'group' ? '🏡' : '🙌'} {tr(m.name, $locale)}</option>{/each}
+    </select>
+    <select class="input w-36 py-1 text-sm" bind:value={bulkRole}>
+      {#each BULK_ROLES as r}<option value={r.v}>{tr({ en: r.en, ar: r.ar }, $locale)}</option>{/each}
+    </select>
+    <button class="btn-primary text-sm" disabled={!bulkMinistryId || bulkBusy} onclick={bulkAddToMinistry}>{bulkBusy ? $t('common.loading') : tr({ en: 'Add', ar: 'إضافة' }, $locale)}</button>
+    <button class="ms-auto text-sm text-slate-500 hover:underline" onclick={() => (selected = new Set())}>{tr({ en: 'Clear', ar: 'مسح' }, $locale)}</button>
+  </div>
+{/if}
+
 <div class="card overflow-hidden">
   {#if loading}
     <p class="p-6 text-slate-400">{$t('common.loading')}</p>
@@ -307,6 +350,7 @@
     <table class="w-full text-sm">
       <thead class="border-b border-slate-200 text-start text-slate-500 dark:border-slate-800">
         <tr>
+          {#if canRoster}<th class="w-10 p-3 text-start"><input type="checkbox" checked={allShownSelected} onchange={toggleAllShown} aria-label={tr({ en: 'Select all shown', ar: 'تحديد الكل' }, $locale)} /></th>{/if}
           <th class="w-16 p-3 text-start font-medium text-slate-400">{tr({ en: 'ID', ar: 'المعرّف' }, $locale)}</th>
           <th class="p-3 text-start font-medium">{tr({ en: 'Name', ar: 'الاسم' }, $locale)}</th>
           <th class="p-3 text-start font-medium">{tr({ en: 'Household', ar: 'الأسرة' }, $locale)}</th>
@@ -318,7 +362,8 @@
       </thead>
       <tbody>
         {#each rows as p}
-          <tr class="border-b border-slate-100 last:border-0 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/50">
+          <tr class="border-b border-slate-100 last:border-0 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/50 {selected.has(p.id) ? 'bg-primary-50/40 dark:bg-primary-900/10' : ''}">
+            {#if canRoster}<td class="p-3 align-top"><input type="checkbox" checked={selected.has(p.id)} onchange={() => toggleSel(p.id)} aria-label={tr({ en: 'Select', ar: 'تحديد' }, $locale)} /></td>{/if}
             <td class="p-3 align-top">
               <span class="inline-block rounded-md bg-slate-100 px-2 py-0.5 text-xs font-semibold tabular-nums text-slate-500 dark:bg-slate-800 dark:text-slate-400">{p.id}</span>
             </td>

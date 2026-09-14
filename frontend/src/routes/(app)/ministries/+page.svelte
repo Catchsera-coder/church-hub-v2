@@ -19,7 +19,24 @@
     loading = true;
     try { all = (await api<{ data: any[] }>('/ministries')).data; } finally { loading = false; }
   }
-  onMount(load);
+
+  // Health check: roster problems that are otherwise invisible.
+  let audit = $state<{ orphans: any[]; leadersNotOnRoster: any[]; clearanceGaps: any[] } | null>(null);
+  let auditOpen = $state(false);
+  let auditBusy = $state(false);
+  const auditIssues = $derived(audit ? audit.orphans.length + audit.leadersNotOnRoster.length + audit.clearanceGaps.length : 0);
+  async function loadAudit() { try { audit = (await api<{ data: any }>('/ministries/audit')).data; } catch { audit = null; } }
+  async function repair() {
+    if (!confirm(tr({ en: 'Repair now? This removes roster entries for deleted people and adds any missing leaders to their own team.', ar: 'إصلاح الآن؟ سيزيل سجلات الأشخاص المحذوفين ويضيف القادة الناقصين إلى فرقهم.' }, $locale))) return;
+    auditBusy = true;
+    try {
+      const { data } = await api<{ data: { removedOrphans: number; addedLeaders: number } }>('/ministries/audit/repair', { method: 'POST', body: JSON.stringify({ orphans: true, leaders: true }) });
+      alert(tr({ en: `Repaired: removed ${data.removedOrphans} stale entr${data.removedOrphans === 1 ? 'y' : 'ies'}, added ${data.addedLeaders} leader${data.addedLeaders === 1 ? '' : 's'} to their team.`, ar: `تم الإصلاح: أُزيلت ${data.removedOrphans}، وأُضيف ${data.addedLeaders} قائد.` }, $locale));
+      await Promise.all([loadAudit(), load()]);
+    } catch (err) { alert(err instanceof ApiError ? err.message : (err as Error).message); } finally { auditBusy = false; }
+  }
+
+  onMount(() => { load(); loadAudit(); });
 
   const rows = $derived(all.filter((m) => (m.kind ?? 'ministry') === view));
   const activeIds = $derived(new Set(rows.map((r) => r.id)));
@@ -78,6 +95,36 @@
   <button class="rounded-md px-3 py-1.5 {view === 'group' ? 'text-white' : 'text-slate-500'}" style={view === 'group' ? 'background: var(--brand)' : ''} onclick={() => (view = 'group')}>🏡 {tr({ en: 'Small groups', ar: 'المجموعات' }, $locale)} <span class="opacity-70">· {groupCount}</span></button>
 </div>
 
+{#if auditIssues > 0}
+  <div class="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm dark:border-amber-800 dark:bg-amber-900/20">
+    <div class="flex flex-wrap items-center gap-2">
+      <span class="text-lg">🩺</span>
+      <span class="font-medium text-amber-800 dark:text-amber-200">{tr({ en: 'Roster health check', ar: 'فحص صحة القوائم' }, $locale)} — {auditIssues} {tr({ en: 'issue(s)', ar: 'مشكلة' }, $locale)}</span>
+      <button class="text-amber-700 underline dark:text-amber-300" onclick={() => (auditOpen = !auditOpen)}>{auditOpen ? tr({ en: 'Hide', ar: 'إخفاء' }, $locale) : tr({ en: 'Review', ar: 'مراجعة' }, $locale)}</button>
+      {#if canEdit && (audit?.orphans.length || audit?.leadersNotOnRoster.length)}
+        <button class="btn-primary ms-auto text-sm" onclick={repair} disabled={auditBusy}>{auditBusy ? $t('common.loading') : tr({ en: '🔧 Repair safely', ar: '🔧 إصلاح آمن' }, $locale)}</button>
+      {/if}
+    </div>
+    {#if auditOpen && audit}
+      <div class="mt-3 space-y-2 text-amber-900 dark:text-amber-100">
+        {#if audit.orphans.length}<p>• {audit.orphans.length} {tr({ en: 'roster entr(ies) point to a deleted person — Repair removes them.', ar: 'سجل(ات) تشير إلى شخص محذوف — يزيلها الإصلاح.' }, $locale)}</p>{/if}
+        {#if audit.leadersNotOnRoster.length}
+          <p>• {tr({ en: 'Leader not on their own team:', ar: 'قائد ليس ضمن فريقه:' }, $locale)}
+            {#each audit.leadersNotOnRoster as l, i}<a class="underline" href="/ministries/{l.ministryId}">{tr(l.ministryName, $locale)}</a>{#if i < audit.leadersNotOnRoster.length - 1}, {/if}{/each}
+            — {tr({ en: 'Repair adds them as Leader.', ar: 'يضيفهم الإصلاح كقادة.' }, $locale)}
+          </p>
+        {/if}
+        {#if audit.clearanceGaps.length}
+          <p>• ⚠️ {tr({ en: 'Children/youth teams with members lacking a valid safeguarding clearance:', ar: 'فرق أطفال/شباب بها أعضاء بلا تصريح حماية ساري:' }, $locale)}
+            {#each audit.clearanceGaps as c, i}<a class="underline" href="/ministries/{c.ministryId}">{tr(c.ministryName, $locale)}</a> ({c.count}){#if i < audit.clearanceGaps.length - 1}, {/if}{/each}
+            — {tr({ en: 'review clearances (not auto-fixed).', ar: 'راجع التصاريح (لا يُصلَح تلقائياً).' }, $locale)}
+          </p>
+        {/if}
+      </div>
+    {/if}
+  </div>
+{/if}
+
 <div class="card overflow-x-auto">
   {#if loading}
     <p class="p-6 text-slate-400">{$t('common.loading')}</p>
@@ -105,6 +152,7 @@
 
 {#snippet branch(m: any, depth: number)}
   {@const kids = childrenOf(m.id)}
+  {@const names = (m.memberPreview ?? []).filter(Boolean).slice(0, 5)}
   <tr class="border-b border-slate-100 last:border-0 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/50 {m.isActive ? '' : 'opacity-60'}">
     <td class="p-3 font-medium">
       <span style="padding-inline-start: {depth * 22}px" class="inline-flex items-center gap-2">
@@ -116,7 +164,19 @@
       </span>
     </td>
     <td class="p-3 text-slate-600 dark:text-slate-300">{m.leaderName || '—'}</td>
-    <td class="p-3 text-slate-600 dark:text-slate-300">{m.memberCount ?? 0}</td>
+    <td class="p-3 text-slate-600 dark:text-slate-300">
+      {#if m.memberCount}
+        <div class="flex flex-wrap items-center gap-1">
+          <span class="font-medium">{m.memberCount}</span>
+          {#each names as n}
+            <span class="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300">{n}</span>
+          {/each}
+          {#if m.memberCount > names.length}<span class="text-xs text-slate-400">+{m.memberCount - names.length}</span>{/if}
+        </div>
+      {:else}
+        <span class="text-slate-400">0</span>
+      {/if}
+    </td>
     <td class="p-3 text-slate-600 dark:text-slate-300">{meetingOf(m)}</td>
     <td class="p-3 text-end whitespace-nowrap">
       <a href="/ministries/{m.id}" class="text-xs text-primary-600 hover:underline dark:text-primary-300">{tr({ en: 'Open', ar: 'فتح' }, $locale)}</a>

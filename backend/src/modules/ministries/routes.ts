@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { and, asc, desc, eq, gte, isNull, lte, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, lte, sql } from 'drizzle-orm';
 import { db } from '../../db/index.js';
 import { serviceTypes, personServiceType, people, servingAssignments, personClearances } from '../../db/schema.js';
 import { asyncHandler } from '../../http/asyncHandler.js';
@@ -51,6 +51,15 @@ const clearanceOkExpr = sql<boolean>`EXISTS (SELECT 1 FROM ${personClearances} p
 // FROM-table column unqualified and it would bind to the subquery instead.
 const memberCountExpr = sql<number>`(SELECT count(*)::int FROM ${personServiceType} pst WHERE pst.service_type_id = service_types.id)`;
 
+// A short preview of who is on the roster (leaders first), for the list view.
+// Capped so the list stays light; the count above is the true total.
+const memberPreviewExpr = sql<string[]>`(SELECT COALESCE(json_agg(n ORDER BY ord, pid), '[]'::json) FROM (
+  SELECT trim(COALESCE(p.given_name->>'en', p.given_name->>'ar', '') || ' ' || COALESCE(p.family_name->>'en', p.family_name->>'ar', '')) AS n,
+         CASE pst.role WHEN 'leader' THEN 0 WHEN 'coordinator' THEN 1 WHEN 'volunteer' THEN 2 ELSE 3 END AS ord, p.id AS pid
+  FROM ${personServiceType} pst JOIN ${people} p ON p.id = pst.person_id
+  WHERE pst.service_type_id = service_types.id AND p.deleted_at IS NULL
+  ORDER BY ord, p.id LIMIT 8) s)`;
+
 ministriesRouter.get('/', requirePermission('view ministry'), asyncHandler(async (req, res) => {
   const kind = z.enum(['ministry', 'group']).optional().parse(req.query.kind);
   const rows = await db
@@ -63,12 +72,68 @@ ministriesRouter.get('/', requirePermission('view ministry'), asyncHandler(async
       meetingDay: serviceTypes.meetingDay, meetingTime: serviceTypes.meetingTime, capacity: serviceTypes.capacity,
       openToSignup: serviceTypes.openToSignup, publicToken: serviceTypes.publicToken,
       memberCount: memberCountExpr,
+      memberPreview: memberPreviewExpr,
       leaderName: sql<string | null>`(SELECT trim(COALESCE(p.given_name->>'en','') || ' ' || COALESCE(p.family_name->>'en','')) FROM ${people} p WHERE p.id = service_types.leader_id)`,
     })
     .from(serviceTypes)
     .where(and(isNull(serviceTypes.deletedAt), kind ? eq(serviceTypes.kind, kind) : undefined))
     .orderBy(asc(serviceTypes.sortOrder));
   res.json({ data: rows });
+}));
+
+// --- Health check / audit ----------------------------------------------------
+// Surfaces roster problems that are otherwise invisible: (1) membership rows that
+// point at a deleted person, (2) a ministry whose named leader isn't on its own
+// roster, (3) children/youth ministries with active members lacking a valid
+// safeguarding clearance. Repair fixes (1) and (2) safely; (3) is report-only.
+ministriesRouter.get('/audit', requirePermission('view ministry'), asyncHandler(async (_req, res) => {
+  const orphans = await db
+    .select({ personId: personServiceType.personId, serviceTypeId: personServiceType.serviceTypeId })
+    .from(personServiceType).innerJoin(people, eq(people.id, personServiceType.personId))
+    .where(sql`${people.deletedAt} IS NOT NULL`);
+
+  const leadersNotOnRoster = await db
+    .select({ ministryId: serviceTypes.id, ministryName: serviceTypes.name, leaderId: serviceTypes.leaderId, givenName: people.givenName, familyName: people.familyName })
+    .from(serviceTypes).innerJoin(people, eq(people.id, serviceTypes.leaderId))
+    .where(and(isNull(serviceTypes.deletedAt), isNull(people.deletedAt),
+      sql`NOT EXISTS (SELECT 1 FROM ${personServiceType} pst WHERE pst.service_type_id = service_types.id AND pst.person_id = service_types.leader_id)`));
+
+  const clearanceGaps = await db
+    .select({ ministryId: serviceTypes.id, ministryName: serviceTypes.name, ageGroup: serviceTypes.ageGroup, count: sql<number>`count(*)::int` })
+    .from(personServiceType)
+    .innerJoin(serviceTypes, eq(serviceTypes.id, personServiceType.serviceTypeId))
+    .innerJoin(people, eq(people.id, personServiceType.personId))
+    .where(and(isNull(serviceTypes.deletedAt), isNull(people.deletedAt),
+      sql`${serviceTypes.ageGroup} IN ('children','youth')`, eq(personServiceType.status, 'active'), sql`NOT ${clearanceOkExpr}`))
+    .groupBy(serviceTypes.id, serviceTypes.name, serviceTypes.ageGroup);
+
+  res.json({ data: { orphans, leadersNotOnRoster, clearanceGaps } });
+}));
+
+ministriesRouter.post('/audit/repair', requirePermission('update ministry'), asyncHandler(async (req, res) => {
+  const body = z.object({ orphans: z.boolean().default(true), leaders: z.boolean().default(true) }).parse(req.body ?? {});
+  let removedOrphans = 0; let addedLeaders = 0;
+  if (body.orphans) {
+    const del = await db.delete(personServiceType)
+      .where(sql`${personServiceType.personId} IN (SELECT id FROM ${people} WHERE deleted_at IS NOT NULL)`)
+      .returning({ personId: personServiceType.personId });
+    removedOrphans = del.length;
+  }
+  if (body.leaders) {
+    const missing = await db
+      .select({ ministryId: serviceTypes.id, leaderId: serviceTypes.leaderId })
+      .from(serviceTypes).innerJoin(people, eq(people.id, serviceTypes.leaderId))
+      .where(and(isNull(serviceTypes.deletedAt), isNull(people.deletedAt),
+        sql`NOT EXISTS (SELECT 1 FROM ${personServiceType} pst WHERE pst.service_type_id = service_types.id AND pst.person_id = service_types.leader_id)`));
+    if (missing.length) {
+      await db.insert(personServiceType)
+        .values(missing.map((m) => ({ serviceTypeId: m.ministryId, personId: m.leaderId as number, role: 'leader', status: 'active' })))
+        .onConflictDoUpdate({ target: [personServiceType.personId, personServiceType.serviceTypeId], set: { role: 'leader', updatedAt: new Date() } });
+      addedLeaders = missing.length;
+    }
+  }
+  await logActivity(req, 'updated', 'ministry', null, `audit-repair orphans:${removedOrphans} leaders:${addedLeaders}`);
+  res.json({ data: { removedOrphans, addedLeaders } });
 }));
 
 ministriesRouter.get('/:id', requirePermission('view ministry'), asyncHandler(async (req, res) => {
@@ -153,6 +218,30 @@ ministriesRouter.post('/:id/members', requirePermission('update ministry'), asyn
     .onConflictDoUpdate({ target: [personServiceType.personId, personServiceType.serviceTypeId], set: { role: body.role, status: body.status, updatedAt: new Date() } });
   await logActivity(req, 'updated', 'ministry', id, 'roster-add');
   res.status(201).json({ data: { ok: true } });
+}));
+
+// Bulk add/update many people to a ministry with one role (used by the Members
+// list "add selected to a ministry" and bulk role assignment). Upserts, so it
+// doubles as a bulk role change for people already on the roster. Skips deleted
+// people silently. Idempotent.
+ministriesRouter.post('/:id/members/bulk', requirePermission('update ministry'), asyncHandler(async (req, res) => {
+  const id = Number(req.params.id);
+  const body = z.object({
+    personIds: z.array(z.number().int().positive()).min(1).max(2000),
+    role: z.enum(ROSTER_ROLES).default('member'),
+    status: z.enum(['active', 'paused']).default('active'),
+    servingSince: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  }).parse(req.body);
+  const [m] = await db.select({ id: serviceTypes.id }).from(serviceTypes).where(and(eq(serviceTypes.id, id), isNull(serviceTypes.deletedAt))).limit(1);
+  if (!m) throw notFound();
+  const valid = await db.select({ id: people.id }).from(people).where(and(inArray(people.id, body.personIds), isNull(people.deletedAt)));
+  const ids = valid.map((v) => v.id);
+  if (!ids.length) throw badRequest('No valid people to add.');
+  await db.insert(personServiceType)
+    .values(ids.map((pid) => ({ serviceTypeId: id, personId: pid, role: body.role, status: body.status, servingSince: body.servingSince ?? null })))
+    .onConflictDoUpdate({ target: [personServiceType.personId, personServiceType.serviceTypeId], set: { role: body.role, status: body.status, updatedAt: new Date() } });
+  await logActivity(req, 'updated', 'ministry', id, `roster-bulk-add:${ids.length}`);
+  res.status(201).json({ data: { count: ids.length } });
 }));
 
 ministriesRouter.put('/:id/members/:personId', requirePermission('update ministry'), asyncHandler(async (req, res) => {

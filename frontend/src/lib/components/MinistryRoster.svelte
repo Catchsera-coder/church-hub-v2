@@ -16,10 +16,11 @@
   let loading = $state(true);
   let busy = $state(false);
 
-  // add member
+  // add member(s) — stage several, then add them all with one role
   let showAdd = $state(false);
   let query = $state('');
   let results = $state<any[]>([]);
+  let staged = $state<any[]>([]);
   let addRole = $state('volunteer');
   let timer: ReturnType<typeof setTimeout>;
 
@@ -42,15 +43,22 @@
     timer = setTimeout(async () => {
       if (query.trim().length < 2) { results = []; return; }
       const all = (await api<{ data: any[] }>(`/people?search=${encodeURIComponent(query.trim())}&limit=8`)).data;
-      results = all.filter((p) => !members.some((m) => m.id === p.id));
+      results = all.filter((p) => !members.some((m) => m.id === p.id) && !staged.some((s) => s.id === p.id));
     }, 220);
   }
-  async function add(p: any) {
+  function stage(p: any) {
+    if (!staged.some((s) => s.id === p.id)) staged = [...staged, p];
+    results = results.filter((r) => r.id !== p.id);
+    query = '';
+  }
+  function unstage(id: number) { staged = staged.filter((s) => s.id !== id); }
+  async function addStaged() {
+    if (!staged.length) return;
     busy = true;
     try {
       const today = new Date().toISOString().slice(0, 10);
-      await api(`/ministries/${ministryId}/members`, { method: 'POST', body: JSON.stringify({ personId: p.id, role: addRole, servingSince: today }) });
-      query = ''; results = []; await load();
+      await api(`/ministries/${ministryId}/members/bulk`, { method: 'POST', body: JSON.stringify({ personIds: staged.map((s) => s.id), role: addRole, servingSince: today }) });
+      staged = []; query = ''; results = []; showAdd = false; await load();
     } catch (err) { alert(err instanceof ApiError ? err.message : (err as Error).message); } finally { busy = false; }
   }
   async function setRole(m: any, role: string) {
@@ -92,17 +100,31 @@
   {#if editable && showAdd}
     <div class="relative mb-4 rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800/50">
       <div class="flex flex-wrap gap-2">
-        <input class="input min-w-[10rem] flex-1" bind:value={query} oninput={search} placeholder={tr({ en: 'Search a person to add…', ar: 'ابحث عن شخص لإضافته…' }, $locale)} />
+        <input class="input min-w-[10rem] flex-1" bind:value={query} oninput={search} placeholder={tr({ en: 'Search people to add…', ar: 'ابحث عن أشخاص لإضافتهم…' }, $locale)} />
         <select class="input w-36" bind:value={addRole}>{#each ROLES as r}<option value={r.v}>{tr({ en: r.en, ar: r.ar }, $locale)}</option>{/each}</select>
       </div>
       {#if results.length}
         <div class="absolute z-20 mt-1 w-[calc(100%-2rem)] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-900">
           {#each results as p}
-            <button type="button" class="block w-full px-3 py-2 text-start text-sm hover:bg-slate-100 dark:hover:bg-slate-800" onclick={() => add(p)} disabled={busy}>{displayName(p, $nameOrder, $locale)}</button>
+            <button type="button" class="block w-full px-3 py-2 text-start text-sm hover:bg-slate-100 dark:hover:bg-slate-800" onclick={() => stage(p)} disabled={busy}>+ {displayName(p, $nameOrder, $locale)}</button>
           {/each}
         </div>
       {/if}
-      <p class="mt-2 text-xs text-slate-400">{tr({ en: 'Tip: assign a Leader so the team has a clear contact.', ar: 'نصيحة: عيّن قائداً ليكون للفريق جهة تواصل واضحة.' }, $locale)}</p>
+      {#if staged.length}
+        <div class="mt-3 flex flex-wrap items-center gap-1.5">
+          {#each staged as s (s.id)}
+            <span class="inline-flex items-center gap-1 rounded-full bg-white px-2 py-1 text-xs shadow-sm dark:bg-slate-900">
+              {displayName(s, $nameOrder, $locale)}
+              <button type="button" class="text-slate-400 hover:text-rose-600" onclick={() => unstage(s.id)} aria-label={tr({ en: 'Remove', ar: 'إزالة' }, $locale)}>✕</button>
+            </span>
+          {/each}
+        </div>
+        <div class="mt-3 flex items-center gap-2">
+          <button class="btn-primary text-sm" onclick={addStaged} disabled={busy}>{busy ? $t('common.loading') : tr({ en: `Add ${staged.length} as ${roleLabel(addRole)}`, ar: `أضِف ${staged.length} كـ ${roleLabel(addRole)}` }, $locale)}</button>
+          <button class="text-sm text-slate-500 hover:underline" onclick={() => (staged = [])}>{tr({ en: 'Clear', ar: 'مسح' }, $locale)}</button>
+        </div>
+      {/if}
+      <p class="mt-2 text-xs text-slate-400">{tr({ en: 'Search and click people to stage them, pick a role, then add them all. Tip: assign a Leader so the team has a clear contact.', ar: 'ابحث واضغط على الأشخاص لإضافتهم للقائمة، اختر دوراً، ثم أضِفهم جميعاً. نصيحة: عيّن قائداً ليكون للفريق جهة تواصل واضحة.' }, $locale)}</p>
     </div>
   {/if}
 
