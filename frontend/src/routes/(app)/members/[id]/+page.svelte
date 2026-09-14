@@ -51,6 +51,7 @@
   let busy = $state(false);
   let confirmDel = $state(false);
   let deleting = $state(false);
+  let lightbox = $state(false);
 
   async function reload() { person = (await api<{ data: any }>(`/people/${id}`)).data; }
   onMount(reload);
@@ -114,11 +115,13 @@
   <div class="grid gap-6 lg:grid-cols-5 lg:items-start">
     <div class="space-y-6 lg:col-span-3">
       {#if can('update person')}
-        <div class="card flex items-center gap-4 p-4">
-          <PhotoUpload photo={person.photoPath} name={`${tr(person.givenName, $locale)} ${tr(person.familyName, $locale)}`.trim()} onchange={savePhoto} />
+        <div class="card flex items-center justify-between gap-4 p-4">
           <div class="min-w-0">
             <div class="truncate text-lg font-semibold">{tr(person.givenName, $locale)} {tr(person.familyName, $locale)}</div>
             <div class="text-sm capitalize text-slate-500 dark:text-slate-400">{person.membershipStatus}{#if person.baptized} · 💧 {tr({ en: 'Baptized', ar: 'معمّد' }, $locale)}{/if}</div>
+          </div>
+          <div class="shrink-0">
+            <PhotoUpload photo={person.photoPath} name={`${tr(person.givenName, $locale)} ${tr(person.familyName, $locale)}`.trim()} onchange={savePhoto} onexpand={person.photoPath ? () => (lightbox = true) : undefined} />
           </div>
         </div>
       {/if}
@@ -173,3 +176,10 @@
   message={tr({ en: "This removes them from the directory. Their name is kept only where it must resolve historical giving records. This can't be undone — to hide someone temporarily, use Archive instead.", ar: 'سيؤدي هذا إلى إزالته من الدليل. يُحتفظ باسمه فقط حيث يلزم لسجلات العطاء التاريخية. لا يمكن التراجع — لإخفاء شخص مؤقتاً استخدم الأرشفة.' }, $locale)}
   confirmLabel={tr({ en: 'Delete', ar: 'حذف' }, $locale)} busy={deleting}
   onconfirm={doDelete} oncancel={() => (confirmDel = false)} />
+
+{#if lightbox && person?.photoPath}
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" onclick={() => (lightbox = false)} role="presentation">
+    <img src={person.photoPath} alt={`${tr(person.givenName, $locale)} ${tr(person.familyName, $locale)}`.trim()} class="max-h-[90vh] max-w-[90vw] rounded-2xl object-contain shadow-2xl" />
+    <button type="button" class="absolute end-4 top-4 rounded-full bg-white/10 p-2 text-2xl leading-none text-white hover:bg-white/20" onclick={() => (lightbox = false)} aria-label={tr({ en: 'Close', ar: 'إغلاق' }, $locale)}>✕</button>
+  </div>
+{/if}

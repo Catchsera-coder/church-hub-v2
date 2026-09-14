@@ -4,8 +4,8 @@
   // Reusable photo picker. Reads a file, resizes it client-side to a small JPEG
   // (so the stored data: URI stays light), and hands the data URL to `onchange`.
   // Passing null (Remove) clears it. Shows initials when there's no photo.
-  let { photo = null, name = '', shape = 'circle', size = 96, onchange }:
-    { photo?: string | null; name?: string; shape?: 'circle' | 'square'; size?: number; onchange: (dataUrl: string | null) => void | Promise<void> } = $props();
+  let { photo = null, name = '', shape = 'circle', size = 96, onchange, onexpand }:
+    { photo?: string | null; name?: string; shape?: 'circle' | 'square'; size?: number; onchange: (dataUrl: string | null) => void | Promise<void>; onexpand?: () => void } = $props();
 
   let busy = $state(false);
   let fileInput: HTMLInputElement;
@@ -45,7 +45,11 @@
 </script>
 
 <div class="flex items-center gap-4">
-  {#if photo}
+  {#if photo && onexpand}
+    <button type="button" onclick={onexpand} class="{radius} cursor-zoom-in overflow-hidden ring-2 ring-slate-200 transition hover:ring-primary-400 dark:ring-slate-700" style="width:{size}px;height:{size}px" title={tr({ en: 'Click to enlarge', ar: 'اضغط للتكبير' }, $locale)} aria-label={tr({ en: 'Enlarge photo', ar: 'تكبير الصورة' }, $locale)}>
+      <img src={photo} alt={name} class="h-full w-full object-cover" />
+    </button>
+  {:else if photo}
     <img src={photo} alt={name} class="{radius} object-cover ring-2 ring-slate-200 dark:ring-slate-700" style="width:{size}px;height:{size}px" />
   {:else}
     <div class="grid shrink-0 place-items-center {radius} bg-gradient-to-br from-slate-200 to-slate-300 font-semibold text-slate-500 dark:from-slate-700 dark:to-slate-800 dark:text-slate-300" style="width:{size}px;height:{size}px;font-size:{Math.round(size / 3)}px">{initials}</div>
