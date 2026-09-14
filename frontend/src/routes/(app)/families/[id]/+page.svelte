@@ -79,7 +79,7 @@
   {/snippet}
 </PageHeader>
 
-<PageHint id="family-detail" text={{ en: 'Edit any family member right here — tap the ✏️ on their card. Add members by searching existing people or quick-adding new ones. "Edit details" (top right) changes the family address & phone.', ar: 'عدّل أي فرد من العائلة هنا — اضغط ✏️ على بطاقته. أضف أفراداً بالبحث عن أشخاص موجودين أو إضافة جدد. «تعديل التفاصيل» يغيّر عنوان وهاتف العائلة.' }} />
+<PageHint id="family-detail" text={{ en: 'Edit any family member right here — tap Edit on their card. Add members by searching existing people or quick-adding new ones. "Edit details" (top right) changes the family address & phone.', ar: 'عدّل أي فرد من العائلة هنا — اضغط «تعديل» على بطاقته. أضف أفراداً بالبحث عن أشخاص موجودين أو إضافة جدد. «تعديل التفاصيل» يغيّر عنوان وهاتف العائلة.' }} />
 
 {#if loading}
   <p class="text-slate-400">{$t('common.loading')}</p>
@@ -87,11 +87,11 @@
   <!-- Summary header — name on the left, photo on the right (matches the member
        card); address & phone sit right below the name, with inline "add" links. -->
   <div class="card mb-6 p-5 sm:p-6">
-    <div class="flex items-start justify-between gap-4">
+    <div class="flex items-center justify-between gap-5">
       <div class="min-w-0">
-        <h1 class="text-xl font-semibold">{tr(family.name, $locale) || tr({ en: 'Unnamed family', ar: 'عائلة بدون اسم' }, $locale)}</h1>
-        {#if family.status}<span class="mt-1 inline-block rounded-full bg-primary-50 px-2 py-0.5 text-xs font-medium text-primary-700 dark:bg-primary-900/30 dark:text-primary-300">{family.status}</span>{/if}
-        <div class="mt-1 space-y-0.5">
+        <h1 class="text-xl font-semibold leading-tight">{tr(family.name, $locale) || tr({ en: 'Unnamed family', ar: 'عائلة بدون اسم' }, $locale)}</h1>
+        {#if family.status}<span class="mt-2 inline-block rounded-full bg-primary-50 px-2.5 py-0.5 text-xs font-medium text-primary-700 dark:bg-primary-900/30 dark:text-primary-300">{family.status}</span>{/if}
+        <div class="mt-2 space-y-1">
           {#if addr}
             <p class="text-sm text-slate-500 dark:text-slate-400">📍 {addr}</p>
           {:else if can('update household')}
@@ -109,7 +109,7 @@
           <PhotoUpload photo={family.photoPath} name={tr(family.name, $locale) || 'Family'} shape="square" size={72} onchange={saveFamilyPhoto} onexpand={family.photoPath ? () => (lightbox = true) : undefined} />
         {:else if family.photoPath}
           <button type="button" class="cursor-zoom-in" onclick={() => (lightbox = true)} aria-label={tr({ en: 'Enlarge photo', ar: 'تكبير الصورة' }, $locale)}>
-            <img src={family.photoPath} alt="" class="h-18 w-18 rounded-2xl object-cover ring-2 ring-slate-200 dark:ring-slate-700" style="width:72px;height:72px" />
+            <img src={family.photoPath} alt="" class="rounded-2xl object-cover ring-2 ring-slate-200 dark:ring-slate-700" style="width:72px;height:72px" />
           </button>
         {:else}
           <span class="grid place-items-center rounded-2xl text-3xl" style="width:72px;height:72px;background: color-mix(in srgb, var(--brand) 15%, transparent)">🏠</span>
@@ -118,16 +118,16 @@
     </div>
 
     <!-- family size stats -->
-    <div class="mt-4 flex flex-wrap items-center gap-2">
-      <div class="rounded-xl bg-slate-100 px-3 py-2 text-center dark:bg-slate-800">
+    <div class="mt-5 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-5 dark:border-slate-800">
+      <div class="min-w-[4.5rem] rounded-xl bg-slate-100 px-3 py-2 text-center dark:bg-slate-800">
         <div class="text-lg font-semibold leading-none">{stats.total}</div>
         <div class="mt-1 text-xs text-slate-500">{tr({ en: 'Members', ar: 'أفراد' }, $locale)}</div>
       </div>
-      <div class="rounded-xl bg-slate-100 px-3 py-2 text-center dark:bg-slate-800">
+      <div class="min-w-[4.5rem] rounded-xl bg-slate-100 px-3 py-2 text-center dark:bg-slate-800">
         <div class="text-lg font-semibold leading-none">{stats.adults}</div>
         <div class="mt-1 text-xs text-slate-500">{tr({ en: 'Adults', ar: 'بالغون' }, $locale)}</div>
       </div>
-      <div class="rounded-xl bg-slate-100 px-3 py-2 text-center dark:bg-slate-800">
+      <div class="min-w-[4.5rem] rounded-xl bg-slate-100 px-3 py-2 text-center dark:bg-slate-800">
         <div class="text-lg font-semibold leading-none">{stats.children}</div>
         <div class="mt-1 text-xs text-slate-500">{tr({ en: 'Children', ar: 'أطفال' }, $locale)}</div>
       </div>

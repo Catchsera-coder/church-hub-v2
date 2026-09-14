@@ -130,7 +130,7 @@
                     <option value="">↩ {tr({ en: 'Remove — back to Needs attention', ar: 'إزالة — العودة إلى يحتاج متابعة' }, $locale)}</option>
                   </select>
                 {/if}
-                {#if canMessage}<button class="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-700" title={tr({ en: 'Message', ar: 'رسالة' }, $locale)} onclick={() => messagePerson(p)}>✉️</button>{/if}
+                {#if canMessage}<button class="rounded-md px-2 py-1 text-xs font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200" onclick={() => messagePerson(p)}>{tr({ en: 'Message', ar: 'رسالة' }, $locale)}</button>{/if}
               </div>
             </div>
           {:else}

@@ -150,8 +150,8 @@
                     <select class="input h-8 w-32 py-0 text-xs" value={m.role} onchange={(e) => setRole(m, (e.currentTarget as HTMLSelectElement).value)}>
                       {#each ROLES as r}<option value={r.v}>{tr({ en: r.en, ar: r.ar }, $locale)}</option>{/each}
                     </select>
-                    <button class="rounded p-1 text-xs text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" title={tr({ en: 'Pause / resume', ar: 'إيقاف / استئناف' }, $locale)} onclick={() => toggleStatus(m)}>{m.status === 'active' ? '⏸' : '▶'}</button>
-                    <button class="rounded p-1 text-xs text-slate-400 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-900/30" title={tr({ en: 'Remove', ar: 'إزالة' }, $locale)} onclick={() => remove(m)}>🗑️</button>
+                    <button class="rounded-md px-2 py-1 text-xs font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200" onclick={() => toggleStatus(m)}>{m.status === 'active' ? tr({ en: 'Pause', ar: 'إيقاف' }, $locale) : tr({ en: 'Resume', ar: 'استئناف' }, $locale)}</button>
+                    <button class="rounded-md px-2 py-1 text-xs font-medium text-slate-500 hover:bg-rose-50 hover:text-rose-600 dark:text-slate-400 dark:hover:bg-rose-900/30 dark:hover:text-rose-400" onclick={() => remove(m)}>{tr({ en: 'Remove', ar: 'إزالة' }, $locale)}</button>
                   </div>
                 {/if}
               </li>

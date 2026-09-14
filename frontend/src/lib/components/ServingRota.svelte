@@ -130,7 +130,7 @@
                   <div class="ms-auto flex items-center gap-1">
                     <button class="rounded p-1 text-xs hover:bg-emerald-50 dark:hover:bg-emerald-900/30" title={tr({ en: 'Confirmed', ar: 'مؤكّد' }, $locale)} onclick={() => setStatus(a, 'confirmed')}>✓</button>
                     <button class="rounded p-1 text-xs hover:bg-rose-50 dark:hover:bg-rose-900/30" title={tr({ en: 'Declined', ar: 'اعتذر' }, $locale)} onclick={() => setStatus(a, 'declined')}>✕</button>
-                    <button class="rounded p-1 text-xs text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" title={$t('common.delete')} onclick={() => del(a)}>🗑️</button>
+                    <button class="rounded-md px-2 py-1 text-xs font-medium text-slate-500 hover:bg-rose-50 hover:text-rose-600 dark:text-slate-400 dark:hover:bg-rose-900/30 dark:hover:text-rose-400" onclick={() => del(a)}>{tr({ en: 'Remove', ar: 'إزالة' }, $locale)}</button>
                   </div>
                 {/if}
               </li>

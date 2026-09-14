@@ -260,8 +260,8 @@
                 {#each STATUSES as st}<option value={st.v}>{tr({ en: st.en, ar: st.ar }, $locale)}</option>{/each}
               </select>
               {#if can('create message')}<button class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-slate-500 hover:bg-slate-100 hover:text-primary-600 dark:hover:bg-slate-800 dark:hover:text-primary-300" title={tr({ en: 'Share with others — prayer, help or donation', ar: 'مشاركة مع الآخرين — صلاة أو مساعدة أو تبرع' }, $locale)} onclick={() => openShare(r)}>📣 {tr({ en: 'Share', ar: 'مشاركة' }, $locale)}</button>{/if}
-              <button class="rounded p-1 text-xs text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" onclick={() => startEdit(r)}>✏️</button>
-              {#if can('delete care')}<button class="rounded p-1 text-xs text-slate-400 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-900/30" onclick={() => remove(r)}>🗑️</button>{/if}
+              <button class="rounded-md px-2 py-1 text-xs font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200" onclick={() => startEdit(r)}>{tr({ en: 'Edit', ar: 'تعديل' }, $locale)}</button>
+              {#if can('delete care')}<button class="rounded-md px-2 py-1 text-xs font-medium text-slate-500 hover:bg-rose-50 hover:text-rose-600 dark:text-slate-400 dark:hover:bg-rose-900/30 dark:hover:text-rose-400" onclick={() => remove(r)}>{tr({ en: 'Remove', ar: 'إزالة' }, $locale)}</button>{/if}
             </div>
           {/if}
         </div>
