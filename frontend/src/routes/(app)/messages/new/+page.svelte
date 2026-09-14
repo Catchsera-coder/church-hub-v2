@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
-  import { api } from '$lib/api.js';
+  import { api, ApiError } from '$lib/api.js';
   import { get } from 'svelte/store';
   import { t, locale, tr, enabledLocales, displayName, personContext } from '$lib/i18n.js';
   import { nameOrder } from '$lib/stores/prefs.js';
@@ -49,7 +49,62 @@
     for (const [k, v] of Object.entries(form.ctaLabel)) if (v?.trim()) ctaLabel[k] = fillCustom(v);
     // Only send a CTA on email when both a label and a link are present.
     const hasCta = form.channel === 'email' && Object.keys(ctaLabel).length > 0 && form.ctaUrl.trim();
-    return { ...form, subject, body, ctaLabel: hasCta ? ctaLabel : null, ctaUrl: hasCta ? form.ctaUrl.trim() : null, audience: currentAudience() };
+    return { ...form, subject, body, ctaLabel: hasCta ? ctaLabel : null, ctaUrl: hasCta ? form.ctaUrl.trim() : null, audience: currentAudience(), attachmentTokens: attachments.map((a) => a.token) };
+  }
+
+  // --- Attachments: any file type/size. Large files upload straight to cloud
+  // storage (Azure Blob) when configured; otherwise a smaller file falls back to
+  // an upload through the API. Email attaches them inline (within provider size
+  // limits); SMS/WhatsApp and oversized files are sent as a secure download link.
+  let attachments = $state<{ token: string; filename: string; contentType: string; sizeBytes: number }[]>([]);
+  let attaching = $state(false);
+  let attachError = $state('');
+  function fmtSize(n: number): string { return n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(0)} KB` : `${(n / 1048576).toFixed(1)} MB`; }
+  function fileIcon(ct: string): string { return ct.startsWith('image/') ? '🖼' : ct.startsWith('video/') ? '🎬' : ct.startsWith('audio/') ? '🎵' : ct === 'application/pdf' ? '📄' : ct.includes('word') || ct.includes('document') ? '📝' : ct.includes('sheet') || ct.includes('excel') ? '📊' : '📎'; }
+  function fileToBase64(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result));
+      r.onerror = () => reject(new Error('Could not read file'));
+      r.readAsDataURL(file);
+    });
+  }
+  async function onAttach(e: Event) {
+    const input = e.currentTarget as HTMLInputElement;
+    const files = Array.from(input.files ?? []);
+    input.value = '';
+    for (const file of files) await uploadOne(file);
+  }
+  async function uploadOne(file: File) {
+    attaching = true; attachError = '';
+    try {
+      let token: string | null = null;
+      try {
+        // Preferred: direct-to-cloud upload URL (handles any size).
+        const { data } = await api<{ data: { token: string; uploadUrl: string } }>('/messages/attachments/blob-url', {
+          method: 'POST', body: JSON.stringify({ filename: file.name, contentType: file.type || 'application/octet-stream', size: file.size }),
+        });
+        const put = await fetch(data.uploadUrl, { method: 'PUT', headers: { 'x-ms-blob-type': 'BlockBlob', 'Content-Type': file.type || 'application/octet-stream' }, body: file });
+        if (!put.ok) throw new Error(`Cloud upload failed (${put.status}).`);
+        token = data.token;
+      } catch (err) {
+        // Cloud storage not set up yet → upload through the API (smaller files).
+        if (err instanceof ApiError && err.message === 'blob_not_configured') {
+          const base64 = await fileToBase64(file);
+          const { data } = await api<{ data: { token: string } }>('/messages/attachments', {
+            method: 'POST', body: JSON.stringify({ filename: file.name, contentType: file.type || 'application/octet-stream', base64 }),
+          });
+          token = data.token;
+        } else { throw err; }
+      }
+      if (token) attachments = [...attachments, { token, filename: file.name, contentType: file.type || 'application/octet-stream', sizeBytes: file.size }];
+    } catch (err) {
+      attachError = `${file.name}: ${(err as Error).message}`;
+    } finally { attaching = false; }
+  }
+  async function removeAttachment(token: string) {
+    try { await api(`/messages/attachments/${token}`, { method: 'DELETE' }); } catch { /* ignore */ }
+    attachments = attachments.filter((a) => a.token !== token);
   }
 
   // --- Recipients: everyone opted-in, ministries/groups, a dynamic segment, a
@@ -127,6 +182,7 @@
       const { data } = await api<{ data: { ok: boolean; to: string } }>('/messages/quick-send', { method: 'POST', body: JSON.stringify({
         channel: form.channel, toPersonId: onePersonId, toContact: onePersonId ? null : oneContact.trim(),
         subject: f.subject, body: f.body, ctaLabel: f.ctaLabel, ctaUrl: f.ctaUrl, mediaUrl: form.mediaUrl,
+        attachmentTokens: attachments.map((a) => a.token),
       }) });
       if (data.ok) done = { kind: 'sent', to: data.to, sent: 1, total: 1 };
       else error = tr({ en: 'Send failed — check messaging settings.', ar: 'فشل الإرسال — تحقق من الإعدادات.' }, $locale);
@@ -322,6 +378,7 @@
     form = { name: '', channel: form.channel, subject: {}, body: {}, mediaUrl: null, ctaLabel: {}, ctaUrl: '' };
     customValues = {}; selectedIds = new Set(); selectedMinistryIds = new Set();
     onePersonId = null; oneContact = ''; peopleSearch = ''; scheduleAt = ''; templateId = '';
+    attachments = []; attachError = '';
   }
 </script>
 
@@ -470,6 +527,31 @@
         {/if}
       </div>
     {/if}
+  </div>
+
+  <!-- Attachments (all channels) -->
+  <div class="card space-y-3 p-6">
+    <div>
+      <p class="text-sm font-medium">📎 {tr({ en: 'Attachments', ar: 'المرفقات' }, $locale)}</p>
+      <p class="text-xs text-slate-500 dark:text-slate-400">{tr({ en: 'Attach any file — images, PDFs, documents, video. Email attaches them directly (within size limits); SMS/WhatsApp and large files are sent as a secure download link.', ar: 'أرفق أي ملف — صور، PDF، مستندات، فيديو. البريد يرفقها مباشرة (ضمن حدود الحجم)؛ الرسائل النصية وواتساب والملفات الكبيرة تُرسَل كرابط تنزيل آمن.' }, $locale)}</p>
+    </div>
+    {#if attachError}<p class="text-xs text-rose-600 dark:text-rose-400">{attachError}</p>{/if}
+    {#if attachments.length}
+      <ul class="space-y-1">
+        {#each attachments as a (a.token)}
+          <li class="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm dark:border-slate-700">
+            <span>{fileIcon(a.contentType)}</span>
+            <span class="min-w-0 flex-1 truncate">{a.filename}</span>
+            <span class="force-ltr text-xs text-slate-400">{fmtSize(a.sizeBytes)}</span>
+            <button type="button" class="text-xs text-rose-600 hover:underline" onclick={() => removeAttachment(a.token)}>{tr({ en: 'Remove', ar: 'إزالة' }, $locale)}</button>
+          </li>
+        {/each}
+      </ul>
+    {/if}
+    <label class="btn-ghost inline-block cursor-pointer border border-slate-300 text-sm dark:border-slate-700">
+      {attaching ? $t('common.loading') : `+ ${tr({ en: 'Add files', ar: 'أضف ملفات' }, $locale)}`}
+      <input type="file" multiple class="hidden" onchange={onAttach} disabled={attaching} />
+    </label>
   </div>
 
   <!-- Audience + actions -->

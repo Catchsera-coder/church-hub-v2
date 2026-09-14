@@ -65,6 +65,12 @@ const schema = z.object({
   // WhatsApp (via Azure ACS Advanced Messaging) — the channel registration id.
   ACS_WHATSAPP_CHANNEL_ID: z.string().optional(),
 
+  // Azure Blob Storage for message attachments (any file type/size). When set,
+  // uploads go straight to Blob and downloads are served via short-lived signed
+  // URLs; when unset, attachments fall back to the database (small files only).
+  AZURE_STORAGE_CONNECTION_STRING: z.string().optional(),
+  AZURE_STORAGE_CONTAINER: z.string().default('attachments'),
+
   // AI compose assistant (Anthropic). Env default; a church can also set its own
   // key in Settings. Off entirely when neither is present — the compose button
   // then reports "AI not configured" rather than failing silently.

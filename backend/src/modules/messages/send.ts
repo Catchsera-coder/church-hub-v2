@@ -6,6 +6,7 @@ import { currentOrg } from '../settings/routes.js';
 import { resolveMessaging, sendMessage, sleep } from './delivery.js';
 import { resolveAudienceIds } from './audience.js';
 import { buildContext, renderText, brandedEmailHtml, localeName } from './render.js';
+import { loadCampaignAttachments, prepareDelivery } from './attach.js';
 
 /**
  * Send a campaign to its whole eligible audience now. Shared by the manual send
@@ -42,6 +43,11 @@ export async function sendCampaignNow(campaignId: number, sentByUserId?: number)
   const appUrl = config.PUBLIC_APP_URL?.replace(/\/+$/, '');
   const now = new Date();
 
+  // Attachments: computed once and reused for every recipient. `inline` files are
+  // attached to email (within the provider cap); `linkLines` are secure download
+  // links appended to the body (SMS/WhatsApp, or oversized email).
+  const prepared = await prepareDelivery(await loadCampaignAttachments(campaignId), c.channel, appUrl);
+
   let sent = 0;
   for (const p of audience) {
     const nm = [localeName(p.givenName, p.lang || 'en'), localeName(p.familyName, p.lang || 'en')].filter(Boolean).join(' ').trim();
@@ -56,16 +62,18 @@ export async function sendCampaignNow(campaignId: number, sentByUserId?: number)
     const signature = renderText(localeName(org.emailSettings?.signature, lang), ctx) || undefined;
     const unsubscribeUrl = c.channel === 'email' && appUrl ? `${appUrl}/unsubscribe/${p.unsubToken}` : undefined;
     const cta = c.ctaLabel && c.ctaUrl ? { label: renderText(localeName(c.ctaLabel, lang), ctx), url: c.ctaUrl } : null;
+    // Fold any attachment download links into the body so they appear in-message.
+    const bodyWithLinks = prepared.linkLines.length ? `${body}\n\n${prepared.linkLines.join('\n')}` : body;
     const html = c.channel === 'email'
-      ? brandedEmailHtml(body, org, { lang, signature, unsubscribeUrl, cta })
+      ? brandedEmailHtml(bodyWithLinks, org, { lang, signature, unsubscribeUrl, cta })
       : undefined;
     const plain = [
-      body,
+      bodyWithLinks,
       cta ? `${cta.label}: ${cta.url}` : '',
       signature,
       unsubscribeUrl ? `—\nTo stop receiving these emails, unsubscribe: ${unsubscribeUrl}` : '',
     ].filter(Boolean).join('\n\n');
-    const ok = await sendMessage(messaging, c.channel, p.contact as string, subject, plain, html, c.mediaUrl ?? undefined);
+    const ok = await sendMessage(messaging, c.channel, p.contact as string, subject, plain, html, c.mediaUrl ?? undefined, prepared.inline);
     await db.update(messageRecipients)
       .set({ status: ok ? 'sent' : 'failed', sentAt: new Date(), error: ok ? null : 'Provider did not accept the message' })
       .where(eq(messageRecipients.id, rec.id));

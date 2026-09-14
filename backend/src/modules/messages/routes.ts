@@ -1,10 +1,11 @@
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
-import { and, desc, eq, gte, ilike, isNull, lte, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, ilike, inArray, isNull, lte, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { db } from '../../db/index.js';
-import { messageCampaigns, messageRecipients, people, smsMessages, users } from '../../db/schema.js';
+import { config } from '../../config.js';
+import { messageAttachments, messageCampaigns, messageRecipients, people, smsMessages, users } from '../../db/schema.js';
 import { asyncHandler } from '../../http/asyncHandler.js';
 import { authenticate, requirePermission } from '../../middleware/auth.js';
 import { badRequest, notFound } from '../../http/errors.js';
@@ -13,6 +14,7 @@ import { sendCampaignNow } from './send.js';
 import { resolveAi, draftMessages, type AiChannel } from './ai.js';
 import { resolveMessaging, sendMessage } from './delivery.js';
 import { buildContext, renderText, brandedEmailHtml, localeName } from './render.js';
+import { loadAttachmentsByTokens, prepareDelivery } from './attach.js';
 import { scheduleZod } from '../scheduling/schedule.js';
 import { audienceZod, countReachable } from './audience.js';
 import { currentOrg } from '../settings/routes.js';
@@ -39,7 +41,16 @@ const schema = z.object({
   // rosters, or a dynamic segment (people filters). See messages/audience.ts.
   audience: audienceZod.optional(),
   schedule: scheduleZod.nullable().optional(),
+  // Tokens of files uploaded via /messages/attachments, linked to this campaign.
+  attachmentTokens: z.array(z.string().max(80)).max(50).optional(),
 });
+
+/** Attach previously-uploaded (unlinked) files to a campaign. */
+async function linkAttachments(campaignId: number, tokens?: string[]): Promise<void> {
+  if (!tokens?.length) return;
+  await db.update(messageAttachments).set({ campaignId })
+    .where(and(inArray(messageAttachments.token, tokens), isNull(messageAttachments.campaignId)));
+}
 
 // Sent-log list. Every past/scheduled/draft message with who composed it, who
 // sent it, when, the channel/status, and per-recipient tallies (total/sent/
@@ -219,7 +230,11 @@ messagesRouter.get('/:id(\\d+)', requirePermission('view message'), asyncHandler
     return { lang, text: [bodyText, cta ? `${cta.label}: ${cta.url}` : ''].filter(Boolean).join('\n\n') };
   });
 
-  res.json({ data: { ...row, counts, rendered } });
+  const attachments = await db
+    .select({ token: messageAttachments.token, filename: messageAttachments.filename, contentType: messageAttachments.contentType, sizeBytes: messageAttachments.sizeBytes })
+    .from(messageAttachments).where(eq(messageAttachments.campaignId, id));
+
+  res.json({ data: { ...row, counts, rendered, attachments } });
 }));
 
 // Per-recipient log: who received it, on what contact, delivery status, and when.
@@ -252,6 +267,7 @@ messagesRouter.post('/', requirePermission('create message'), asyncHandler(async
     schedule: b.schedule ?? null,
     createdByUserId: req.auth!.sub,
   }).returning();
+  await linkAttachments(row!.id, b.attachmentTokens);
   await logActivity(req, 'created', 'message', row!.id);
   res.status(201).json({ data: row });
 }));
@@ -261,10 +277,11 @@ messagesRouter.put('/:id', requirePermission('update message'), asyncHandler(asy
   const [existing] = await db.select().from(messageCampaigns).where(eq(messageCampaigns.id, id)).limit(1);
   if (!existing) throw notFound();
   if (existing.status === 'sending' || existing.status === 'sent') throw badRequest('A sent campaign cannot be edited');
-  const b = schema.partial().parse(req.body);
+  const { attachmentTokens, ...b } = schema.partial().parse(req.body);
   const [row] = await db.update(messageCampaigns).set({
     ...b, scheduledFor: b.scheduledFor ? new Date(b.scheduledFor) : existing.scheduledFor, updatedAt: new Date(),
   }).where(eq(messageCampaigns.id, id)).returning();
+  await linkAttachments(id, attachmentTokens);
   res.json({ data: row });
 }));
 
@@ -350,6 +367,7 @@ const quickSendSchema = z.object({
   ctaLabel: z.record(z.string()).nullable().optional(),
   ctaUrl: z.string().nullable().optional(),
   mediaUrl: z.string().nullable().optional(),
+  attachmentTokens: z.array(z.string().max(80)).max(50).optional(),
 });
 messagesRouter.post('/quick-send', sendLimiter, requirePermission('create message'), asyncHandler(async (req, res) => {
   const b = quickSendSchema.parse(req.body);
@@ -369,9 +387,13 @@ messagesRouter.post('/quick-send', sendLimiter, requirePermission('create messag
   const bodyText = renderText(b.body[lang] ?? b.body.en ?? '', ctx);
   const cta = b.ctaLabel && b.ctaUrl ? { label: renderText(localeName(b.ctaLabel, lang), ctx), url: b.ctaUrl } : null;
   const signature = renderText(localeName(org.emailSettings?.signature, lang), ctx) || undefined;
-  const html = b.channel === 'email' ? brandedEmailHtml(bodyText, org, { lang, signature, cta }) : undefined;
-  const plain = [bodyText, cta ? `${cta.label}: ${cta.url}` : '', signature].filter(Boolean).join('\n\n');
-  const ok = await sendMessage(messaging, b.channel, contact, subject, plain, html, b.mediaUrl ?? undefined);
+  // Attachments: inline for email (within cap) or secure links appended to the body.
+  const appUrl = config.PUBLIC_APP_URL?.replace(/\/+$/, '');
+  const prepared = await prepareDelivery(await loadAttachmentsByTokens(b.attachmentTokens ?? []), b.channel, appUrl);
+  const bodyWithLinks = prepared.linkLines.length ? `${bodyText}\n\n${prepared.linkLines.join('\n')}` : bodyText;
+  const html = b.channel === 'email' ? brandedEmailHtml(bodyWithLinks, org, { lang, signature, cta }) : undefined;
+  const plain = [bodyWithLinks, cta ? `${cta.label}: ${cta.url}` : '', signature].filter(Boolean).join('\n\n');
+  const ok = await sendMessage(messaging, b.channel, contact, subject, plain, html, b.mediaUrl ?? undefined, prepared.inline);
 
   // Log the direct send so it appears in the sent-log alongside campaigns: a
   // lightweight campaign row (marked as a direct send) + one recipient row.
@@ -394,6 +416,7 @@ messagesRouter.post('/quick-send', sendLimiter, requirePermission('create messag
         status: ok ? 'sent' : 'failed', sentAt: now, toContact: contact, resolvedName: recipientName,
       });
     }
+    if (camp) await linkAttachments(camp.id, b.attachmentTokens);
     await logActivity(req, 'updated', 'message', camp?.id ?? null, `direct send: ${ok ? 'sent' : 'failed'} → ${contact}`);
   } catch (err) {
     // Never fail the user's send just because logging hit a snag.

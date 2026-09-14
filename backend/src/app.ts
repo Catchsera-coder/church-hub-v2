@@ -17,6 +17,7 @@ import { batchesRouter } from './modules/giving/batches.routes.js';
 import { sermonsRouter } from './modules/sermons/routes.js';
 import { eventsRouter } from './modules/events/routes.js';
 import { messagesRouter } from './modules/messages/routes.js';
+import { attachmentsRouter, publicAttachmentsRouter } from './modules/messages/attachments.routes.js';
 import { messageTemplatesRouter } from './modules/messages/templates.routes.js';
 import { teamRouter } from './modules/team/routes.js';
 import { activityRouter } from './modules/activity/routes.js';
@@ -47,6 +48,8 @@ export function createApp() {
   // before the global limit applies to everything else.
   app.use('/api/import', express.json({ limit: '15mb' }));
   app.use('/api/media', express.json({ limit: '8mb' }));
+  // Base64 attachment fallback (small files) — Blob uploads bypass the API body.
+  app.use('/api/messages/attachments', express.json({ limit: '25mb' }));
   app.use(express.json({ limit: '1mb' }));
   app.use(cookieParser());
 
@@ -59,6 +62,7 @@ export function createApp() {
   app.use('/api/public/checkin', rateLimit({ windowMs: 60_000, max: 40 }));
   app.use('/api/public/checkin', publicCheckinRouter);
   app.use('/api/public/media', publicMediaRouter);
+  app.use('/api/public/attachments', rateLimit({ windowMs: 60_000, max: 120 }), publicAttachmentsRouter);
   app.use('/api/public/branding', rateLimit({ windowMs: 60_000, max: 120 }), publicBrandingRouter);
   app.use('/api/public/unsubscribe', rateLimit({ windowMs: 60_000, max: 30 }));
   app.use('/api/public/unsubscribe', publicConsentRouter);
@@ -93,6 +97,7 @@ export function createApp() {
   app.use('/api/batches', batchesRouter);
   app.use('/api/sermons', sermonsRouter);
   app.use('/api/events', eventsRouter);
+  app.use('/api/messages/attachments', attachmentsRouter);
   app.use('/api/messages', messagesRouter);
   app.use('/api/message-templates', messageTemplatesRouter);
   app.use('/api/team', teamRouter);

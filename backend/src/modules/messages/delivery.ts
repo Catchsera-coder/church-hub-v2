@@ -113,6 +113,8 @@ async function withThrottleRetry(doFetch: () => Promise<Response>, maxRetries = 
   return res;
 }
 
+export interface EmailAttachment { filename: string; contentType: string; base64: string; }
+
 export async function sendMessage(
   m: ResolvedMessaging,
   channel: 'email' | 'sms' | 'whatsapp',
@@ -121,11 +123,12 @@ export async function sendMessage(
   body: string,
   html?: string,      // optional branded HTML for email (plain `body` is the fallback)
   mediaUrl?: string,  // optional image for MMS (SMS) / media (WhatsApp) — Twilio only
+  attachments?: EmailAttachment[], // files attached inline to email (ignored on SMS/WhatsApp)
 ): Promise<boolean> {
   try {
     if (channel === 'email') {
-      if (m.emailProvider === 'sendgrid') return await sendEmailSendgrid(m, to, subject, body, html);
-      if (m.emailProvider === 'acs') return await sendEmailAcs(m, to, subject, body, html);
+      if (m.emailProvider === 'sendgrid') return await sendEmailSendgrid(m, to, subject, body, html, attachments);
+      if (m.emailProvider === 'acs') return await sendEmailAcs(m, to, subject, body, html, attachments);
     } else if (channel === 'whatsapp') {
       if (m.whatsappProvider === 'twilio') return await sendWhatsappTwilio(m, to, body, mediaUrl);
       if (m.whatsappProvider === 'azure') return await sendWhatsappAcs(m, to, body);
@@ -179,7 +182,7 @@ export async function verifyEmail(m: ResolvedMessaging, to: string): Promise<{ o
 }
 
 // --- Email: SendGrid ---------------------------------------------------------
-async function sendEmailSendgrid(m: ResolvedMessaging, to: string, subject: string, body: string, html?: string): Promise<boolean> {
+async function sendEmailSendgrid(m: ResolvedMessaging, to: string, subject: string, body: string, html?: string, attachments?: EmailAttachment[]): Promise<boolean> {
   // SendGrid requires text/plain before text/html; include both when we have HTML.
   const content = html
     ? [{ type: 'text/plain', value: body }, { type: 'text/html', value: html }]
@@ -193,6 +196,7 @@ async function sendEmailSendgrid(m: ResolvedMessaging, to: string, subject: stri
       ...(m.mailReplyTo ? { reply_to: { email: m.mailReplyTo } } : {}),
       subject: subject || '(no subject)',
       content,
+      ...(attachments?.length ? { attachments: attachments.map((a) => ({ content: a.base64, filename: a.filename, type: a.contentType, disposition: 'attachment' })) } : {}),
     }),
   });
   if (res.ok) return true; // 202 Accepted
@@ -201,7 +205,7 @@ async function sendEmailSendgrid(m: ResolvedMessaging, to: string, subject: stri
 }
 
 // --- Email: Azure Communication Services -------------------------------------
-async function sendEmailAcs(m: ResolvedMessaging, to: string, subject: string, body: string, html?: string): Promise<boolean> {
+async function sendEmailAcs(m: ResolvedMessaging, to: string, subject: string, body: string, html?: string, attachments?: EmailAttachment[]): Promise<boolean> {
   const res = await acsSignedFetch(
     m.acsConnectionString!,
     '/emails:send?api-version=2023-03-31',
@@ -210,6 +214,7 @@ async function sendEmailAcs(m: ResolvedMessaging, to: string, subject: string, b
       content: { subject: subject || '(no subject)', plainText: body, ...(html ? { html } : {}) },
       recipients: { to: [{ address: to }] },
       ...(m.mailReplyTo ? { replyTo: [{ address: m.mailReplyTo }] } : {}),
+      ...(attachments?.length ? { attachments: attachments.map((a) => ({ name: a.filename, contentType: a.contentType, contentInBase64: a.base64 })) } : {}),
     },
   );
   if (res.ok) return true; // 202 Accepted (async send queued)

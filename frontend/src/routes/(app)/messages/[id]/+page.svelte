@@ -44,6 +44,8 @@
     sent: { en: 'Sent', ar: 'أُرسلت' }, failed: { en: 'Failed', ar: 'فشلت' }, pending: { en: 'Pending', ar: 'قيد الانتظار' },
   }[s] ?? { en: s, ar: s }, $locale);
   const langNative = (code: string) => $enabledLocales.find((l) => l.code === code)?.native ?? code;
+  const fmtSize = (n: number) => n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(0)} KB` : `${(n / 1048576).toFixed(1)} MB`;
+  const fileIcon = (ct: string) => ct?.startsWith('image/') ? '🖼' : ct?.startsWith('video/') ? '🎬' : ct?.startsWith('audio/') ? '🎵' : ct === 'application/pdf' ? '📄' : ct?.includes('word') || ct?.includes('document') ? '📝' : ct?.includes('sheet') || ct?.includes('excel') ? '📊' : '📎';
 
   async function sendNow() {
     if (!confirm(tr({ en: 'Send this message now to all matching members?', ar: 'إرسال هذه الرسالة الآن لكل الأعضاء المطابقين؟' }, $locale))) return;
@@ -126,6 +128,22 @@
       {/if}
     {/if}
   </div>
+
+  <!-- Attachments -->
+  {#if msg.attachments?.length}
+    <div class="card mb-6 p-5">
+      <h2 class="mb-3 font-semibold">📎 {tr({ en: 'Attachments', ar: 'المرفقات' }, $locale)} ({msg.attachments.length})</h2>
+      <ul class="space-y-1">
+        {#each msg.attachments as a (a.token)}
+          <li class="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm dark:border-slate-700">
+            <span>{fileIcon(a.contentType)}</span>
+            <a class="min-w-0 flex-1 truncate text-primary-700 hover:underline dark:text-primary-300" href={`/api/public/attachments/${a.token}`} target="_blank" rel="noopener">{a.filename}</a>
+            <span class="force-ltr text-xs text-slate-400">{fmtSize(a.sizeBytes)}</span>
+          </li>
+        {/each}
+      </ul>
+    </div>
+  {/if}
 
   <!-- Per-recipient delivery log -->
   <div class="mb-3 flex flex-wrap items-center gap-2">
