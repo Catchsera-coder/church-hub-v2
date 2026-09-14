@@ -84,56 +84,55 @@
 {#if loading}
   <p class="text-slate-400">{$t('common.loading')}</p>
 {:else if family}
-  <!-- Summary header -->
+  <!-- Summary header — name on the left, photo on the right (matches the member
+       card); address & phone sit right below the name, with inline "add" links. -->
   <div class="card mb-6 p-5 sm:p-6">
-    <div class="flex flex-wrap items-start justify-between gap-4">
-      <div class="flex items-center gap-4">
-        {#if editable}
-          <PhotoUpload photo={family.photoPath} name={tr(family.name, $locale) || 'Family'} shape="square" size={56} onchange={saveFamilyPhoto} onexpand={family.photoPath ? () => (lightbox = true) : undefined} />
-        {:else if family.photoPath}
-          <button type="button" class="shrink-0 cursor-zoom-in" onclick={() => (lightbox = true)} aria-label={tr({ en: 'Enlarge photo', ar: 'تكبير الصورة' }, $locale)}>
-            <img src={family.photoPath} alt="" class="h-14 w-14 rounded-2xl object-cover ring-2 ring-slate-200 dark:ring-slate-700" />
-          </button>
-        {:else}
-          <span class="grid h-14 w-14 shrink-0 place-items-center rounded-2xl text-2xl" style="background: color-mix(in srgb, var(--brand) 15%, transparent)">🏠</span>
-        {/if}
-        <div>
-          <h1 class="text-xl font-semibold">{tr(family.name, $locale) || tr({ en: 'Unnamed family', ar: 'عائلة بدون اسم' }, $locale)}</h1>
-          {#if family.status}<span class="mt-1 inline-block rounded-full bg-primary-50 px-2 py-0.5 text-xs font-medium text-primary-700 dark:bg-primary-900/30 dark:text-primary-300">{family.status}</span>{/if}
-          {#if addr}<p class="mt-0.5 text-sm text-slate-500 dark:text-slate-400">📍 {addr}</p>{/if}
-          {#if familyPhone}<p class="force-ltr mt-0.5 text-sm text-slate-500 dark:text-slate-400"><a href="tel:{familyPhone}" class="hover:underline">📞 {familyPhone}</a></p>{/if}
+    <div class="flex items-start justify-between gap-4">
+      <div class="min-w-0">
+        <h1 class="text-xl font-semibold">{tr(family.name, $locale) || tr({ en: 'Unnamed family', ar: 'عائلة بدون اسم' }, $locale)}</h1>
+        {#if family.status}<span class="mt-1 inline-block rounded-full bg-primary-50 px-2 py-0.5 text-xs font-medium text-primary-700 dark:bg-primary-900/30 dark:text-primary-300">{family.status}</span>{/if}
+        <div class="mt-1 space-y-0.5">
+          {#if addr}
+            <p class="text-sm text-slate-500 dark:text-slate-400">📍 {addr}</p>
+          {:else if can('update household')}
+            <button type="button" class="text-sm text-amber-600 hover:underline dark:text-amber-400" onclick={() => (editingFamily = true)}>＋ {tr({ en: 'Add address', ar: 'أضف العنوان' }, $locale)}</button>
+          {/if}
+          {#if familyPhone}
+            <p class="force-ltr text-sm text-slate-500 dark:text-slate-400"><a href="tel:{familyPhone}" class="hover:underline">📞 {familyPhone}</a></p>
+          {:else if can('update household')}
+            <button type="button" class="text-sm text-amber-600 hover:underline dark:text-amber-400" onclick={() => (editingFamily = true)}>＋ {tr({ en: 'Add phone', ar: 'أضف الهاتف' }, $locale)}</button>
+          {/if}
         </div>
       </div>
-      <!-- stat chips -->
-      <div class="flex flex-wrap gap-2">
-        <div class="rounded-xl bg-slate-100 px-3 py-2 text-center dark:bg-slate-800">
-          <div class="text-lg font-semibold leading-none">{stats.total}</div>
-          <div class="mt-1 text-xs text-slate-500">{tr({ en: 'Members', ar: 'أفراد' }, $locale)}</div>
-        </div>
-        <div class="rounded-xl bg-slate-100 px-3 py-2 text-center dark:bg-slate-800">
-          <div class="text-lg font-semibold leading-none">{stats.adults}</div>
-          <div class="mt-1 text-xs text-slate-500">{tr({ en: 'Adults', ar: 'بالغون' }, $locale)}</div>
-        </div>
-        <div class="rounded-xl bg-slate-100 px-3 py-2 text-center dark:bg-slate-800">
-          <div class="text-lg font-semibold leading-none">{stats.children}</div>
-          <div class="mt-1 text-xs text-slate-500">{tr({ en: 'Children', ar: 'أطفال' }, $locale)}</div>
-        </div>
+      <div class="shrink-0">
+        {#if editable}
+          <PhotoUpload photo={family.photoPath} name={tr(family.name, $locale) || 'Family'} shape="square" size={72} onchange={saveFamilyPhoto} onexpand={family.photoPath ? () => (lightbox = true) : undefined} />
+        {:else if family.photoPath}
+          <button type="button" class="cursor-zoom-in" onclick={() => (lightbox = true)} aria-label={tr({ en: 'Enlarge photo', ar: 'تكبير الصورة' }, $locale)}>
+            <img src={family.photoPath} alt="" class="h-18 w-18 rounded-2xl object-cover ring-2 ring-slate-200 dark:ring-slate-700" style="width:72px;height:72px" />
+          </button>
+        {:else}
+          <span class="grid place-items-center rounded-2xl text-3xl" style="width:72px;height:72px;background: color-mix(in srgb, var(--brand) 15%, transparent)">🏠</span>
+        {/if}
       </div>
     </div>
 
-    <!-- gentle completeness nudges — click to add the missing field right here -->
-    {#if !addr || !familyPhone || stats.total === 0}
-      <div class="mt-4 flex flex-wrap items-center gap-2 text-xs">
-        {#if stats.total === 0}<span class="rounded-full bg-amber-50 px-2.5 py-1 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">{tr({ en: 'No members yet', ar: 'لا أفراد بعد' }, $locale)}</span>{/if}
-        {#if can('update household') && (!addr || !familyPhone)}
-          {#if !addr}<button type="button" class="rounded-full bg-amber-50 px-2.5 py-1 text-amber-700 hover:bg-amber-100 dark:bg-amber-900/20 dark:text-amber-300 dark:hover:bg-amber-900/40" onclick={() => (editingFamily = true)}>+ {tr({ en: 'Add address', ar: 'أضف العنوان' }, $locale)}</button>{/if}
-          {#if !familyPhone}<button type="button" class="rounded-full bg-amber-50 px-2.5 py-1 text-amber-700 hover:bg-amber-100 dark:bg-amber-900/20 dark:text-amber-300 dark:hover:bg-amber-900/40" onclick={() => (editingFamily = true)}>+ {tr({ en: 'Add phone', ar: 'أضف الهاتف' }, $locale)}</button>{/if}
-        {:else}
-          {#if !addr}<span class="rounded-full bg-amber-50 px-2.5 py-1 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">{tr({ en: 'Missing address', ar: 'العنوان ناقص' }, $locale)}</span>{/if}
-          {#if !familyPhone}<span class="rounded-full bg-amber-50 px-2.5 py-1 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">{tr({ en: 'No phone on file', ar: 'لا يوجد هاتف' }, $locale)}</span>{/if}
-        {/if}
+    <!-- family size stats -->
+    <div class="mt-4 flex flex-wrap items-center gap-2">
+      <div class="rounded-xl bg-slate-100 px-3 py-2 text-center dark:bg-slate-800">
+        <div class="text-lg font-semibold leading-none">{stats.total}</div>
+        <div class="mt-1 text-xs text-slate-500">{tr({ en: 'Members', ar: 'أفراد' }, $locale)}</div>
       </div>
-    {/if}
+      <div class="rounded-xl bg-slate-100 px-3 py-2 text-center dark:bg-slate-800">
+        <div class="text-lg font-semibold leading-none">{stats.adults}</div>
+        <div class="mt-1 text-xs text-slate-500">{tr({ en: 'Adults', ar: 'بالغون' }, $locale)}</div>
+      </div>
+      <div class="rounded-xl bg-slate-100 px-3 py-2 text-center dark:bg-slate-800">
+        <div class="text-lg font-semibold leading-none">{stats.children}</div>
+        <div class="mt-1 text-xs text-slate-500">{tr({ en: 'Children', ar: 'أطفال' }, $locale)}</div>
+      </div>
+      {#if stats.total === 0}<span class="rounded-full bg-amber-50 px-2.5 py-1 text-xs text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">{tr({ en: 'No members yet', ar: 'لا أفراد بعد' }, $locale)}</span>{/if}
+    </div>
   </div>
 
   <!-- Collapsible family-details editor -->
