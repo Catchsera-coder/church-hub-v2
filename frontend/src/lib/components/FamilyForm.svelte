@@ -27,7 +27,15 @@
     region: initial?.region ?? '',
     postalCode: initial?.postalCode ?? '',
     country: initial?.country ?? '',
+    status: initial?.status ?? '',
   });
+  // Suggested family classifications — free text, so a church can type its own too.
+  const STATUS_SUGGESTIONS = [
+    { en: 'Member', ar: 'عضو' },
+    { en: 'Conference attender', ar: 'حضور المؤتمر' },
+    { en: 'Contributor', ar: 'مساهم' },
+    { en: 'Other', ar: 'أخرى' },
+  ];
   let error = $state('');
   let saving = $state(false);
 
@@ -65,7 +73,15 @@
       <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Home phone', ar: 'هاتف المنزل' }, $locale)}</span>
       <input class="input force-ltr" bind:value={form.homePhone} />
     </label>
+    <label class="block space-y-1">
+      <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Family status', ar: 'حالة العائلة' }, $locale)}</span>
+      <input class="input" list="fam-status" bind:value={form.status} maxlength="60" placeholder={tr({ en: 'e.g. Member, Conference attender, Contributor…', ar: 'مثال: عضو، حضور مؤتمر، مساهم…' }, $locale)} />
+      <span class="text-xs text-slate-400">{tr({ en: 'Pick one or type your own.', ar: 'اختر واحدة أو اكتب ما تريد.' }, $locale)}</span>
+    </label>
   </div>
+  <datalist id="fam-status">
+    {#each STATUS_SUGGESTIONS as s}<option value={tr(s, $locale)}></option>{/each}
+  </datalist>
 
   <div class="card grid gap-4 p-6 sm:grid-cols-2">
     <div class="sm:col-span-2"><AddressAutocomplete onpick={fillAddr} /></div>

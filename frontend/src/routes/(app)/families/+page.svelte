@@ -121,6 +121,7 @@
       {#if (f.memberCount ?? 0) === 0 && can('delete household')}
         <button type="button" class="ms-2 text-xs font-normal text-rose-500 hover:underline disabled:opacity-50" disabled={deleting === f.id} onclick={() => deleteEmpty(f)}>{deleting === f.id ? '…' : `🗑 ${tr({ en: 'Delete empty', ar: 'حذف الفارغة' }, $locale)}`}</button>
       {/if}
+      {#if f.status}<div class="mt-1"><span class="rounded-full bg-primary-50 px-2 py-0.5 text-xs font-normal text-primary-700 dark:bg-primary-900/30 dark:text-primary-300">{f.status}</span></div>{/if}
     </td>
     <td class="p-3 align-top text-slate-600 dark:text-slate-300">
       {#if (f.memberCount ?? 0) > 0}

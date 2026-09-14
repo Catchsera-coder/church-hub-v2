@@ -216,6 +216,10 @@ export const households = pgTable('households', {
   region: varchar('region', { length: 120 }),
   postalCode: varchar('postal_code', { length: 20 }),
   country: varchar('country', { length: 120 }),
+  // Free-form family classification (e.g. Member, Conference attender, Contributor,
+  // Other, or any custom value the church types). Free text so churches aren't
+  // boxed into a fixed list.
+  status: varchar('status', { length: 60 }),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
   ...timestamps,
 }, (t) => ({ cityIdx: index('households_city_idx').on(t.city) }));

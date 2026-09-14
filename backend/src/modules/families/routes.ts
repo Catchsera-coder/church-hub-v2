@@ -21,6 +21,7 @@ const schema = z.object({
   region: z.string().nullable().optional(),
   postalCode: z.string().nullable().optional(),
   country: z.string().nullable().optional(),
+  status: z.string().max(60).nullable().optional(),
 });
 
 familiesRouter.get('/', requirePermission('view household'), asyncHandler(async (req, res) => {
@@ -34,7 +35,7 @@ familiesRouter.get('/', requirePermission('view household'), asyncHandler(async 
     .select({
       id: households.id, name: households.name,
       homePhone: familyPhoneExpr, // household phone, else a member's mobile
-      city: households.city, region: households.region,
+      city: households.city, region: households.region, status: households.status,
       memberCount, childCount, membersPreview: membersPreviewExpr,
       createdAt: households.createdAt, updatedAt: households.updatedAt,
     })
@@ -51,6 +52,7 @@ familiesRouter.get('/:id', requirePermission('view household'), asyncHandler(asy
     id: households.id, name: households.name, homePhone: households.homePhone,
     addressLine1: households.addressLine1, addressLine2: households.addressLine2,
     city: households.city, region: households.region, postalCode: households.postalCode, country: households.country,
+    status: households.status,
     memberCount: memberCountExpr, membersPreview: membersPreviewExpr,
     createdAt: households.createdAt, updatedAt: households.updatedAt,
   }).from(households).where(and(eq(households.id, Number(req.params.id)), isNull(households.deletedAt))).limit(1);

@@ -6,6 +6,7 @@ export const familyListQuery = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(1000).default(25),
   search: z.string().trim().optional(),
+  status: z.string().trim().max(60).optional(),
   city: z.string().trim().optional(),
   hasChildren: z.enum(['true']).optional(),
   missingContact: z.enum(['true']).optional(),
@@ -46,9 +47,24 @@ export function familyFilters(q: FamilyQuery): SQL[] {
   if (q.empty === 'only') filters.push(sql`${memberCountExpr} = 0`);
   else if (q.empty !== 'include') filters.push(sql`${memberCountExpr} > 0`);
   if (q.search) {
-    const like = `%${q.search}%`;
-    filters.push(sql`(${households.name}->>'en' ILIKE ${like} OR ${households.name}->>'ar' ILIKE ${like} OR ${households.city} ILIKE ${like})`);
+    // Match the family by its own name/city/status OR by ANY member's name — and
+    // multi-word member search works in any order (each word must match a member
+    // name field). So searching a person's first, last, or full name finds their family.
+    const raw = q.search.trim();
+    const like = `%${raw}%`;
+    const memberTok = (t: string) => {
+      const l = `%${t}%`;
+      return sql`(p.given_name->>'en' ILIKE ${l} OR p.family_name->>'en' ILIKE ${l}
+        OR p.given_name->>'ar' ILIKE ${l} OR p.family_name->>'ar' ILIKE ${l}
+        OR p.middle_name->>'en' ILIKE ${l} OR p.nick_name->>'en' ILIKE ${l})`;
+    };
+    const tokens = raw.split(/\s+/).filter(Boolean).slice(0, 6);
+    const memberAll = tokens.length ? sql`(${sql.join(tokens.map(memberTok), sql` AND `)})` : sql`false`;
+    filters.push(sql`(${households.name}->>'en' ILIKE ${like} OR ${households.name}->>'ar' ILIKE ${like}
+      OR ${households.city} ILIKE ${like} OR ${households.status} ILIKE ${like}
+      OR EXISTS (SELECT 1 FROM ${people} p WHERE p.household_id = households.id AND p.deleted_at IS NULL AND ${memberAll}))`);
   }
+  if (q.status) filters.push(sql`${households.status} = ${q.status}`);
   if (q.city) filters.push(sql`${households.city} ILIKE ${`%${q.city}%`}`);
   if (q.hasChildren === 'true') filters.push(sql`${childCountExpr} > 0`);
   if (q.minSize) filters.push(sql`${memberCountExpr} >= ${q.minSize}`);
