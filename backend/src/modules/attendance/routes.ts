@@ -1,8 +1,8 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq, gte, lte, sql } from 'drizzle-orm';
 import { db } from '../../db/index.js';
-import { attendanceEvents, attendanceRecords, people } from '../../db/schema.js';
+import { attendanceEvents, attendanceRecords, people, serviceTypes } from '../../db/schema.js';
 import { asyncHandler } from '../../http/asyncHandler.js';
 import { authenticate, requirePermission, requireRole } from '../../middleware/auth.js';
 import { badRequest, notFound } from '../../http/errors.js';
@@ -17,8 +17,45 @@ const eventSchema = z.object({
   startsAt: z.string(),
 });
 
-attendanceRouter.get('/events', requirePermission('view attendance'), asyncHandler(async (_req, res) => {
-  const rows = await db.select().from(attendanceEvents).orderBy(desc(attendanceEvents.startsAt)).limit(200);
+// List gatherings for the attendance page: each with its attendee count and its
+// linked service/ministry name, filterable by title, year, month, day-of-week
+// (0=Sun … so the UI can isolate Sundays), service, and a date range. The page
+// groups these by gathering client-side. Times are the stored (UTC) timestamps.
+const listQuery = z.object({
+  q: z.string().max(190).optional(),
+  year: z.coerce.number().int().min(2000).max(2100).optional(),
+  month: z.coerce.number().int().min(1).max(12).optional(),
+  dow: z.coerce.number().int().min(0).max(6).optional(),
+  serviceTypeId: z.coerce.number().int().positive().optional(),
+  from: z.string().max(40).optional(),
+  to: z.string().max(40).optional(),
+});
+attendanceRouter.get('/events', requirePermission('view attendance'), asyncHandler(async (req, res) => {
+  const q = listQuery.parse(req.query);
+  const countExpr = sql<number>`(SELECT count(*)::int FROM ${attendanceRecords} r WHERE r.attendance_event_id = attendance_events.id)`;
+  const filters = [] as any[];
+  if (q.q?.trim()) {
+    const like = `%${q.q.trim().toLowerCase()}%`;
+    filters.push(sql`(lower(coalesce(${attendanceEvents.title}->>'en','')) LIKE ${like} OR lower(coalesce(${attendanceEvents.title}->>'ar','')) LIKE ${like})`);
+  }
+  if (q.year) filters.push(sql`extract(year from ${attendanceEvents.startsAt}) = ${q.year}`);
+  if (q.month) filters.push(sql`extract(month from ${attendanceEvents.startsAt}) = ${q.month}`);
+  if (q.dow !== undefined) filters.push(sql`extract(dow from ${attendanceEvents.startsAt}) = ${q.dow}`);
+  if (q.serviceTypeId) filters.push(eq(attendanceEvents.serviceTypeId, q.serviceTypeId));
+  if (q.from) { const d = new Date(q.from); if (!Number.isNaN(d.getTime())) filters.push(gte(attendanceEvents.startsAt, d)); }
+  if (q.to) { const d = new Date(q.to); if (!Number.isNaN(d.getTime())) { d.setHours(23, 59, 59, 999); filters.push(lte(attendanceEvents.startsAt, d)); } }
+
+  const rows = await db
+    .select({
+      id: attendanceEvents.id, title: attendanceEvents.title, serviceTypeId: attendanceEvents.serviceTypeId,
+      startsAt: attendanceEvents.startsAt, selfCheckinOpen: attendanceEvents.selfCheckinOpen,
+      serviceTypeName: serviceTypes.name, count: countExpr,
+    })
+    .from(attendanceEvents)
+    .leftJoin(serviceTypes, eq(serviceTypes.id, attendanceEvents.serviceTypeId))
+    .where(filters.length ? and(...filters) : undefined)
+    .orderBy(desc(attendanceEvents.startsAt))
+    .limit(1000);
   res.json({ data: rows });
 }));
 
