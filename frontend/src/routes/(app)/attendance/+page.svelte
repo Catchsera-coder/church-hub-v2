@@ -17,6 +17,9 @@
   // How to categorize: by gathering (default — "Sunday Worship" etc.), by weekday
   // (a "Sunday" category with all its dates), or by month.
   let groupBy = $state<'gathering' | 'weekday' | 'month'>('gathering');
+  // Date order within each category, and how the categories themselves are ordered.
+  let dateSort = $state<'newest' | 'oldest'>('newest');
+  let groupSort = $state<'recent' | 'name' | 'size'>('recent');
 
   const EMPTY = { q: '', year: '', month: '', dow: '', serviceTypeId: '', from: '', to: '' };
   let f = $state({ ...EMPTY });
@@ -78,7 +81,17 @@
       g.latest = Math.max(g.latest, new Date(e.startsAt).getTime());
     }
     const arr = [...map.values()];
-    arr.sort((a, b) => groupBy === 'gathering' ? (b.latest - a.latest) : (a.sort - b.sort));
+    // Date order inside each category (Sunday's dates newest→oldest or oldest→newest).
+    const dir = dateSort === 'newest' ? -1 : 1;
+    for (const g of arr) g.events.sort((a, b) => dir * (new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime()));
+    // Category order. Weekday/month keep their natural order; gatherings are sortable.
+    if (groupBy === 'gathering') {
+      if (groupSort === 'name') arr.sort((a, b) => a.label.localeCompare(b.label));
+      else if (groupSort === 'size') arr.sort((a, b) => b.total - a.total);
+      else arr.sort((a, b) => b.latest - a.latest);
+    } else {
+      arr.sort((a, b) => a.sort - b.sort);
+    }
     return arr;
   });
   const totals = $derived({ sessions: rows.length, attendance: rows.reduce((s, e) => s + (e.count ?? 0), 0) });
@@ -122,6 +135,25 @@
       <button class="px-3 py-1.5 {i > 0 ? 'border-s border-slate-300 dark:border-slate-700' : ''} {groupBy === val ? 'text-white' : 'text-slate-600 dark:text-slate-300'}" style={groupBy === val ? 'background: var(--brand)' : ''} onclick={() => { groupBy = val as any; touched = false; }}>{tr(lbl as any, $locale)}</button>
     {/each}
   </div>
+
+  <!-- Date order within each category (e.g. Sunday's dates newest→oldest or oldest→newest) -->
+  <div class="inline-flex overflow-hidden rounded-lg border border-slate-300 text-sm dark:border-slate-700">
+    {#each [['newest', { en: 'Newest first', ar: 'الأحدث أولاً' }], ['oldest', { en: 'Oldest first', ar: 'الأقدم أولاً' }]] as [val, lbl], i}
+      <button class="px-3 py-1.5 {i > 0 ? 'border-s border-slate-300 dark:border-slate-700' : ''} {dateSort === val ? 'text-white' : 'text-slate-600 dark:text-slate-300'}" style={dateSort === val ? 'background: var(--brand)' : ''} onclick={() => (dateSort = val as any)}>{tr(lbl as any, $locale)}</button>
+    {/each}
+  </div>
+
+  {#if groupBy === 'gathering'}
+    <label class="flex items-center gap-1.5 text-sm text-slate-500 dark:text-slate-400">
+      {tr({ en: 'Order', ar: 'ترتيب' }, $locale)}
+      <select class="input w-auto py-1 text-sm" bind:value={groupSort}>
+        <option value="recent">{tr({ en: 'Most recent', ar: 'الأحدث نشاطاً' }, $locale)}</option>
+        <option value="name">{tr({ en: 'Name (A–Z)', ar: 'الاسم (أ–ي)' }, $locale)}</option>
+        <option value="size">{tr({ en: 'Most dates', ar: 'الأكثر تواريخ' }, $locale)}</option>
+      </select>
+    </label>
+  {/if}
+
   <span class="text-sm text-slate-500 dark:text-slate-400">{totals.sessions} {tr({ en: 'sessions', ar: 'جلسة' }, $locale)} · {totals.attendance} {tr({ en: 'check-ins', ar: 'تسجيل' }, $locale)}</span>
   {#if groups.length > 1}
     <button class="ms-auto text-xs text-slate-500 hover:underline" onclick={expandAll}>{tr({ en: 'Expand all', ar: 'توسيع الكل' }, $locale)}</button>
