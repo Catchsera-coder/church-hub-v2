@@ -10,6 +10,7 @@
   import ScheduleEditor from '$lib/components/ScheduleEditor.svelte';
   import { type Schedule, defaultSchedule, describeSchedule } from '$lib/schedule.js';
   import { resolveStreamLink } from '$lib/stream.js';
+  import { clickOutside } from '$lib/actions/clickOutside.js';
 
   let form = $state({
     name: '',
@@ -165,6 +166,21 @@
     || tr(form.channel === 'email' ? { en: 'no email on file', ar: 'لا يوجد بريد' } : { en: 'no number on file', ar: 'لا يوجد رقم' }, $locale);
   function toggleId(id: number) { const s = new Set(selectedIds); if (s.has(id)) s.delete(id); else s.add(id); selectedIds = s; }
   function selectAllShown() { const s = new Set(selectedIds); for (const p of peopleList) s.add(p.id); selectedIds = s; }
+  // Select EVERYONE in the directory who has a contact on this channel (an email
+  // for email, a number for SMS/WhatsApp) — not only opted-in. Opted-out people
+  // are still skipped at send time.
+  let selectingAll = $state(false);
+  async function selectAllWithContact() {
+    selectingAll = true;
+    try {
+      const filter = form.channel === 'email' ? 'hasEmail=true' : 'hasPhone=true';
+      const r = await api<{ data: any[] }>(`/people?${filter}&limit=5000`);
+      const s = new Set(selectedIds);
+      for (const p of r.data) s.add(p.id);
+      selectedIds = s;
+      if (!peopleList.length) peopleList = r.data.slice(0, 50);
+    } catch (err) { error = (err as Error).message; } finally { selectingAll = false; }
+  }
   const personName = (p: any) => displayName(p, $nameOrder, $locale);
 
   // --- Preview (all channels)
@@ -571,6 +587,9 @@
           <option value="both">{tr({ en: 'Both', ar: 'كلاهما' }, $locale)}</option>
         </select>
       </label>
+      {#if imagePlacement !== 'attach'}
+        <p class="text-xs text-slate-400">{tr({ en: 'Tip: type [image] in your message where you want the picture to appear — otherwise it shows at the end. Images are embedded so recipients always see them.', ar: 'نصيحة: اكتب [image] في رسالتك حيث تريد ظهور الصورة — وإلا ستظهر في النهاية. تُضمَّن الصور ليراها المستلمون دائماً.' }, $locale)}</p>
+      {/if}
     {/if}
   </div>
 
@@ -624,7 +643,7 @@
         <p class="text-xs text-slate-400">{tr({ en: 'Build a live audience from filters — anyone matching is included at send time.', ar: 'ابنِ جمهوراً حياً من عوامل التصفية — يُضمَّن كل مطابق وقت الإرسال.' }, $locale)}</p>
         <div class="grid gap-2 sm:grid-cols-2">
           <label class="text-sm"><span class="mb-1 block text-xs text-slate-500">{tr({ en: 'Status', ar: 'الحالة' }, $locale)}</span>
-            <select class="input" bind:value={seg.status}><option value="">{tr({ en: 'Any', ar: 'الكل' }, $locale)}</option><option value="visitor">{tr({ en: 'Visitor', ar: 'زائر' }, $locale)}</option><option value="regular">{tr({ en: 'Regular', ar: 'منتظم' }, $locale)}</option><option value="member">{tr({ en: 'Member', ar: 'عضو' }, $locale)}</option></select>
+            <select class="input" bind:value={seg.status}><option value="">{tr({ en: 'Any', ar: 'الكل' }, $locale)}</option><option value="visitor">{tr({ en: 'Visitor', ar: 'زائر' }, $locale)}</option><option value="regular">{tr({ en: 'Regular', ar: 'منتظم' }, $locale)}</option><option value="member">{tr({ en: 'Member', ar: 'عضو' }, $locale)}</option><option value="conference_attendee">{tr({ en: 'Conference attendee', ar: 'حضور مؤتمر' }, $locale)}</option></select>
           </label>
           <label class="text-sm"><span class="mb-1 block text-xs text-slate-500">{tr({ en: 'Age group', ar: 'الفئة العمرية' }, $locale)}</span>
             <select class="input" bind:value={seg.ageGroup}><option value="">{tr({ en: 'Any', ar: 'الكل' }, $locale)}</option><option value="child">{tr({ en: 'Children', ar: 'أطفال' }, $locale)}</option><option value="youth">{tr({ en: 'Youth', ar: 'شباب' }, $locale)}</option><option value="adult">{tr({ en: 'Adults', ar: 'بالغون' }, $locale)}</option></select>
@@ -642,7 +661,8 @@
       {:else if recipMode === 'people'}
         <div class="flex flex-wrap items-center gap-2">
           <input class="input max-w-xs" placeholder={tr({ en: 'Search members…', ar: 'ابحث عن أعضاء…' }, $locale)} bind:value={peopleSearch} oninput={searchPeople} />
-          <button type="button" class="text-xs text-slate-500 hover:underline" onclick={selectAllShown}>{tr({ en: 'Select all shown', ar: 'تحديد الكل' }, $locale)}</button>
+          <button type="button" class="text-xs text-slate-500 hover:underline" onclick={selectAllShown}>{tr({ en: 'Select all shown', ar: 'تحديد الظاهر' }, $locale)}</button>
+          <button type="button" class="text-xs font-medium hover:underline disabled:opacity-50" style="color: var(--brand)" disabled={selectingAll} onclick={selectAllWithContact}>{selectingAll ? $t('common.loading') : (form.channel === 'email' ? tr({ en: 'Select everyone with an email', ar: 'تحديد كل من له بريد' }, $locale) : tr({ en: 'Select everyone with a number', ar: 'تحديد كل من له رقم' }, $locale))}</button>
           <button type="button" class="text-xs text-slate-500 hover:underline" onclick={() => (selectedIds = new Set())}>{tr({ en: 'Clear', ar: 'مسح' }, $locale)}</button>
           <span class="text-xs font-medium" style="color: var(--brand)">{selectedIds.size} {tr({ en: 'selected', ar: 'محدد' }, $locale)}</span>
         </div>
@@ -659,7 +679,7 @@
           {/each}
         </div>
       {:else}
-        <div class="space-y-2">
+        <div class="space-y-2" use:clickOutside={() => { if (!onePersonId) peopleList = []; }}>
           <input class="input max-w-sm" placeholder={tr({ en: 'Search a member…', ar: 'ابحث عن عضو…' }, $locale)} bind:value={peopleSearch} oninput={searchPeople} />
           {#if peopleList.length && !onePersonId}
             <div class="max-h-40 space-y-1 overflow-y-auto rounded-lg border border-slate-200 p-2 dark:border-slate-700">

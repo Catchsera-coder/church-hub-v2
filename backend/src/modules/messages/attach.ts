@@ -11,8 +11,17 @@ import { getBytes } from '../../lib/storage.js';
  */
 
 export type AttachmentRow = typeof messageAttachments.$inferSelect;
-export interface OutAttachment { filename: string; contentType: string; base64: string; }
+export interface OutAttachment { filename: string; contentType: string; base64: string; contentId?: string }
 export type ImagePlacement = 'body' | 'attach' | 'both';
+
+/** Turn a stored data: URI (logo / header photo) into an inline CID attachment so
+ * it's embedded in the email and always renders in the recipient's client. */
+export function dataUriAttachment(dataUri: string | null | undefined, filename: string, contentId: string): OutAttachment | null {
+  if (!dataUri) return null;
+  const m = /^data:([^;]+);base64,(.+)$/i.exec(dataUri);
+  if (!m) return null;
+  return { filename, contentType: m[1], base64: m[2], contentId };
+}
 
 // Keep total inline email attachments comfortably under the ACS ~10 MB cap
 // (attachments + body). Larger sets switch to links automatically.
@@ -48,30 +57,39 @@ export async function prepareDelivery(
   if (channel === 'email') {
     const images = atts.filter(isImage);
     const files = atts.filter((a) => !isImage(a));
-    const wantBody = imagePlacement === 'body' || imagePlacement === 'both';
-    const wantAttach = imagePlacement === 'attach' || imagePlacement === 'both';
+    // 'body'/'both' → embed images inline (CID) so they render in the recipient's
+    // client without fetching an external URL. 'attach' → attach as files.
+    const embedInBody = imagePlacement === 'body' || imagePlacement === 'both';
+    const imgTag = (src: string, name: string) => `<img src="${src}" alt="${escapeAttr(name)}" style="max-width:100%;height:auto;border-radius:12px;margin:12px 0;display:block" />`;
 
-    // Images shown inline in the body (needs a public URL email clients can fetch).
-    const imagesHtml = wantBody && appUrl
-      ? images.map((a) => `<img src="${appUrl}/api/public/attachments/${a.token}" alt="${escapeAttr(a.filename)}" style="max-width:100%;height:auto;border-radius:12px;margin:12px 0;display:block" />`).join('')
-      : '';
-
-    // What to attach as files: non-image files always; images when "attach"/"both",
-    // or as a fallback when we wanted them in the body but have no public URL.
-    const attachImages = wantAttach || (wantBody && !appUrl);
-    const toAttach = [...files, ...(attachImages ? images : [])];
     const inline: OutAttachment[] = [];
     const linkLines: string[] = [];
-    const total = toAttach.reduce((s, a) => s + (a.sizeBytes || 0), 0);
-    if (total <= EMAIL_INLINE_CAP) {
-      for (const a of toAttach) {
-        const buf = await getBytes(a);
-        if (buf) inline.push({ filename: a.filename, contentType: a.contentType, base64: buf.toString('base64') });
-        else { const l = link(a); if (l) linkLines.push(l); }
+    let imagesHtml = '';
+    let used = 0; // running total of embedded/attached bytes (keep under provider cap)
+
+    // Fetch bytes once per attachment.
+    const bytesOf = new Map<number, Buffer | null>();
+    for (const a of atts) bytesOf.set(a.id, await getBytes(a));
+
+    const attach = (a: AttachmentRow, cid?: string): boolean => {
+      const buf = bytesOf.get(a.id);
+      if (!buf || used + buf.length > EMAIL_INLINE_CAP) { const l = link(a); if (l) linkLines.push(l); return false; }
+      inline.push({ filename: a.filename, contentType: a.contentType, base64: buf.toString('base64'), ...(cid ? { contentId: cid } : {}) });
+      used += buf.length;
+      return true;
+    };
+
+    if (embedInBody) {
+      for (const a of images) {
+        const cid = `img-${a.token}`;
+        if (attach(a, cid)) imagesHtml += imgTag(`cid:${cid}`, a.filename);
+        else if (appUrl) imagesHtml += imgTag(`${appUrl}/api/public/attachments/${a.token}`, a.filename); // too big to embed → link fallback
       }
     } else {
-      for (const a of toAttach) { const l = link(a); if (l) linkLines.push(l); }
+      for (const a of images) attach(a); // as a normal attachment
     }
+    for (const a of files) attach(a);
+
     return { inline, linkLines, imagesHtml };
   }
   // SMS/WhatsApp → links only.

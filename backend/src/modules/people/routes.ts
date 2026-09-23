@@ -30,7 +30,7 @@ const upsertSchema = z.object({
   postalCode: z.string().max(20).nullable().optional(),
   country: addr(),
   householdRole: z.string().max(20).nullable().optional(),
-  membershipStatus: z.enum(['visitor', 'regular', 'member', 'inactive']).default('visitor'),
+  membershipStatus: z.enum(['visitor', 'regular', 'member', 'inactive', 'conference_attendee']).default('visitor'),
   category: z.enum(['congregation', 'contact']).optional(),
   email: z.string().email().nullable().optional(),
   mobile: z.string().max(40).nullable().optional(),
@@ -410,7 +410,7 @@ peopleRouter.post(
     const id = Number(req.params.id);
     const { membershipStatus, sendWelcome } = z
       .object({
-        membershipStatus: z.enum(['visitor', 'regular', 'member', 'inactive']).optional(),
+        membershipStatus: z.enum(['visitor', 'regular', 'member', 'inactive', 'conference_attendee']).optional(),
         sendWelcome: z.boolean().optional(),
       })
       .parse(req.body ?? {});

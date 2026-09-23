@@ -113,7 +113,10 @@ async function withThrottleRetry(doFetch: () => Promise<Response>, maxRetries = 
   return res;
 }
 
-export interface EmailAttachment { filename: string; contentType: string; base64: string; }
+// `contentId` marks an INLINE image embedded in the HTML via <img src="cid:...">.
+// Embedding (vs an external URL) means the logo/images are part of the email and
+// always render in the recipient's client — no "display images" prompt, no proxy.
+export interface EmailAttachment { filename: string; contentType: string; base64: string; contentId?: string }
 
 export async function sendMessage(
   m: ResolvedMessaging,
@@ -196,7 +199,7 @@ async function sendEmailSendgrid(m: ResolvedMessaging, to: string, subject: stri
       ...(m.mailReplyTo ? { reply_to: { email: m.mailReplyTo } } : {}),
       subject: subject || '(no subject)',
       content,
-      ...(attachments?.length ? { attachments: attachments.map((a) => ({ content: a.base64, filename: a.filename, type: a.contentType, disposition: 'attachment' })) } : {}),
+      ...(attachments?.length ? { attachments: attachments.map((a) => ({ content: a.base64, filename: a.filename, type: a.contentType, disposition: a.contentId ? 'inline' : 'attachment', ...(a.contentId ? { content_id: a.contentId } : {}) })) } : {}),
     }),
   });
   if (res.ok) return true; // 202 Accepted
@@ -214,7 +217,7 @@ async function sendEmailAcs(m: ResolvedMessaging, to: string, subject: string, b
       content: { subject: subject || '(no subject)', plainText: body, ...(html ? { html } : {}) },
       recipients: { to: [{ address: to }] },
       ...(m.mailReplyTo ? { replyTo: [{ address: m.mailReplyTo }] } : {}),
-      ...(attachments?.length ? { attachments: attachments.map((a) => ({ name: a.filename, contentType: a.contentType, contentInBase64: a.base64 })) } : {}),
+      ...(attachments?.length ? { attachments: attachments.map((a) => ({ name: a.filename, contentType: a.contentType, contentInBase64: a.base64, ...(a.contentId ? { contentId: a.contentId } : {}) })) } : {}),
     },
   );
   if (res.ok) return true; // 202 Accepted (async send queued)

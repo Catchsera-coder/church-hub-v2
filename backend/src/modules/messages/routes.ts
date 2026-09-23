@@ -14,7 +14,7 @@ import { sendCampaignNow } from './send.js';
 import { resolveAi, draftMessages, type AiChannel } from './ai.js';
 import { resolveMessaging, sendMessage } from './delivery.js';
 import { buildContext, renderText, brandedEmailHtml, localeName } from './render.js';
-import { loadAttachmentsByTokens, prepareDelivery } from './attach.js';
+import { loadAttachmentsByTokens, prepareDelivery, dataUriAttachment, type OutAttachment } from './attach.js';
 import { scheduleZod } from '../scheduling/schedule.js';
 import { audienceZod, countReachable } from './audience.js';
 import { currentOrg } from '../settings/routes.js';
@@ -395,10 +395,13 @@ messagesRouter.post('/quick-send', sendLimiter, requirePermission('create messag
   // Attachments: inline for email (within cap) or secure links appended to the body.
   const appUrl = config.PUBLIC_APP_URL?.replace(/\/+$/, '');
   const prepared = await prepareDelivery(await loadAttachmentsByTokens(b.attachmentTokens ?? []), b.channel, appUrl, b.imagePlacement);
+  const logoAtt = b.channel === 'email' ? dataUriAttachment(org.logoPath, 'logo', 'logo') : null;
+  const headerAtt = b.channel === 'email' ? dataUriAttachment(org.emailSettings?.headerImage, 'header', 'headerimg') : null;
+  const brandAtts: OutAttachment[] = [logoAtt, headerAtt].filter((x): x is OutAttachment => Boolean(x));
   const bodyWithLinks = prepared.linkLines.length ? `${bodyText}\n\n${prepared.linkLines.join('\n')}` : bodyText;
-  const html = b.channel === 'email' ? brandedEmailHtml(bodyWithLinks, org, { lang, signature, cta, attachmentsHtml: prepared.imagesHtml }) : undefined;
+  const html = b.channel === 'email' ? brandedEmailHtml(bodyWithLinks, org, { lang, signature, cta, attachmentsHtml: prepared.imagesHtml, logoCid: logoAtt ? 'logo' : undefined, headerImageCid: headerAtt ? 'headerimg' : undefined }) : undefined;
   const plain = [bodyWithLinks, cta ? `${cta.label}: ${cta.url}` : '', signature].filter(Boolean).join('\n\n');
-  const ok = await sendMessage(messaging, b.channel, contact, subject, plain, html, b.mediaUrl ?? undefined, prepared.inline);
+  const ok = await sendMessage(messaging, b.channel, contact, subject, plain, html, b.mediaUrl ?? undefined, [...brandAtts, ...prepared.inline]);
 
   // Log the direct send so it appears in the sent-log alongside campaigns: a
   // lightweight campaign row (marked as a direct send) + one recipient row.

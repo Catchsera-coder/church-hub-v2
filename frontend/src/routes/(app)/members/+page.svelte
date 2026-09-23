@@ -292,6 +292,7 @@
       <option value="visitor">{tr({ en: 'Visitor', ar: 'زائر' }, $locale)}</option>
       <option value="regular">{tr({ en: 'Regular', ar: 'منتظم' }, $locale)}</option>
       <option value="member">{tr({ en: 'Member', ar: 'عضو' }, $locale)}</option>
+      <option value="conference_attendee">{tr({ en: 'Conference attendee', ar: 'حضور مؤتمر' }, $locale)}</option>
       <option value="inactive">{tr({ en: 'Inactive', ar: 'غير نشط' }, $locale)}</option>
     </select>
   </label>
@@ -457,7 +458,7 @@
                 <a class="inline-flex items-center gap-1 text-xs text-amber-600 hover:underline dark:text-amber-400" href="/members/{p.id}">＋ {tr({ en: 'Assign family', ar: 'تعيين عائلة' }, $locale)}</a>
               {/if}
             </td>
-            <td class="p-3 capitalize text-slate-600 dark:text-slate-300">{p.membershipStatus}</td>
+            <td class="p-3 capitalize text-slate-600 dark:text-slate-300">{(p.membershipStatus || '').replace(/_/g, ' ')}</td>
             <td class="p-3 force-ltr text-slate-600 dark:text-slate-300">{p.email ?? '—'}</td>
             <td class="p-3 force-ltr text-slate-600 dark:text-slate-300">{p.mobile ?? '—'}</td>
             {#if reviewOnly}

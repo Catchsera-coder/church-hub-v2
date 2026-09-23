@@ -73,7 +73,9 @@ export type EmailSettings = {
 // ---------------------------------------------------------------------------
 // Enums
 // ---------------------------------------------------------------------------
-export const membershipStatus = pgEnum('membership_status', ['visitor', 'regular', 'member', 'inactive']);
+// 'conference_attendee' is APPENDED (end position) so it can be added to the live
+// enum with `ALTER TYPE ... ADD VALUE` via pre-push.ts (never a drop/recreate).
+export const membershipStatus = pgEnum('membership_status', ['visitor', 'regular', 'member', 'inactive', 'conference_attendee']);
 export const ageGroup = pgEnum('age_group', ['children', 'youth', 'adult']);
 export const contributionMethod = pgEnum('contribution_method', ['cash', 'cheque', 'card', 'bank', 'other']);
 // 'whatsapp' is APPENDED (end position) so the value can be added to the live

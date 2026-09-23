@@ -9,6 +9,7 @@
   import DataTable from '$lib/components/DataTable.svelte';
   import PageHeader from '$lib/components/PageHeader.svelte';
   import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
+  import { clickOutside } from '$lib/actions/clickOutside.js';
 
   const id = Number($page.params.id);
   let event = $state<any>(null);
@@ -25,12 +26,14 @@
     { v: 'visitor', en: 'Visitor', ar: 'زائر' },
     { v: 'regular', en: 'Regular', ar: 'منتظم' },
     { v: 'member', en: 'Member', ar: 'عضو' },
+    { v: 'conference_attendee', en: 'Conference attendee', ar: 'حضور مؤتمر' },
     { v: 'inactive', en: 'Inactive', ar: 'غير نشط' },
   ];
   function statusClasses(s: string): string {
     return s === 'member' ? 'text-emerald-700 dark:text-emerald-300'
       : s === 'inactive' ? 'text-slate-500 dark:text-slate-400'
       : s === 'regular' ? 'text-sky-700 dark:text-sky-300'
+      : s === 'conference_attendee' ? 'text-violet-700 dark:text-violet-300'
       : 'text-amber-700 dark:text-amber-300';
   }
   let savingStatus = $state<number | null>(null);
@@ -131,6 +134,48 @@
       alert(err instanceof ApiError ? err.message : (err as Error).message);
     } finally { adding = false; }
   }
+
+  // --- Family check-in: pick a name → show their whole family with checkboxes,
+  // check in all or a selected few at once. Already checked-in members are shown
+  // as done. Works for a single person too (no household).
+  const checkedInIds = $derived(new Set(records.map((r) => r.personId)));
+  let checkinAnchor = $state<any | null>(null);
+  let familyMembers = $state<any[]>([]);
+  let familySel = $state<Set<number>>(new Set());
+  let loadingFamily = $state(false);
+  let checkingIn = $state(false);
+  const personName = (p: any) => `${tr(p.givenName, $locale)} ${tr(p.familyName, $locale)}`.trim();
+
+  async function pickForCheckin(p: any) {
+    personResults = []; personQuery = '';
+    checkinAnchor = p; familyMembers = []; familySel = new Set();
+    loadingFamily = true;
+    try {
+      const full = (await api<{ data: any }>(`/people/${p.id}`)).data;
+      let fam = [full];
+      if (full?.householdId) {
+        const r = await api<{ data: any[] }>(`/families/${full.householdId}/members`);
+        if (r.data?.length) fam = r.data;
+      }
+      familyMembers = fam;
+      familySel = new Set(checkedInIds.has(p.id) ? [] : [p.id]); // pre-check the searched person if not already in
+    } catch (err) { alert(err instanceof ApiError ? err.message : (err as Error).message); checkinAnchor = null; }
+    finally { loadingFamily = false; }
+  }
+  function toggleFam(id: number) { const s = new Set(familySel); s.has(id) ? s.delete(id) : s.add(id); familySel = s; }
+  function selectAllFam() { familySel = new Set(familyMembers.filter((m) => !checkedInIds.has(m.id)).map((m) => m.id)); }
+  function cancelCheckin() { checkinAnchor = null; familyMembers = []; familySel = new Set(); }
+  async function checkInSelected() {
+    const ids = [...familySel].filter((pid) => !checkedInIds.has(pid));
+    if (!ids.length) { cancelCheckin(); return; }
+    checkingIn = true;
+    try {
+      for (const pid of ids) await api(`/attendance/events/${id}/records`, { method: 'POST', body: JSON.stringify({ personId: pid }) });
+      cancelCheckin();
+      await load();
+    } catch (err) { alert(err instanceof ApiError ? err.message : (err as Error).message); }
+    finally { checkingIn = false; }
+  }
 </script>
 
 <PageHeader title={event ? tr(event.title, $locale) || tr({ en: 'Attendance', ar: 'الحضور' }, $locale) : tr({ en: 'Attendance', ar: 'الحضور' }, $locale)} back="/attendance">
@@ -164,16 +209,53 @@
 {/if}
 
 {#if manage}
-  <div class="relative mb-4 max-w-sm">
-    <input class="input" bind:value={personQuery} oninput={searchPeople} disabled={adding}
-      placeholder={tr({ en: 'Check someone in…', ar: 'تسجيل حضور شخص…' }, $locale)} />
-    {#if personResults.length}
-      <div class="absolute z-10 mt-1 w-full rounded-lg border border-slate-200 bg-white shadow dark:border-slate-700 dark:bg-slate-900">
-        {#each personResults as p}
-          <button type="button" class="block w-full px-3 py-2 text-start text-sm hover:bg-slate-100 dark:hover:bg-slate-800" onclick={() => checkIn(p)}>
-            {tr(p.givenName, $locale)} {tr(p.familyName, $locale)}
-          </button>
-        {/each}
+  <div class="card mb-4 p-4">
+    <p class="mb-2 text-sm font-medium">✅ {tr({ en: 'Check in', ar: 'تسجيل الحضور' }, $locale)}</p>
+    <div class="relative max-w-md" use:clickOutside={() => (personResults = [])}>
+      <input class="input" bind:value={personQuery} oninput={searchPeople} disabled={adding || checkingIn}
+        placeholder={tr({ en: 'Search a name to check in…', ar: 'ابحث عن اسم لتسجيل حضوره…' }, $locale)} />
+      {#if personResults.length}
+        <div class="absolute z-20 mt-1 w-full overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-900">
+          {#each personResults as p}
+            <button type="button" class="flex w-full items-center justify-between gap-2 px-3 py-2 text-start text-sm hover:bg-slate-100 dark:hover:bg-slate-800" onclick={() => pickForCheckin(p)}>
+              <span>{tr(p.givenName, $locale)} {tr(p.familyName, $locale)}</span>
+              {#if checkedInIds.has(p.id)}<span class="text-xs text-emerald-600 dark:text-emerald-400">✓ {tr({ en: 'in', ar: 'حاضر' }, $locale)}</span>{:else}<span class="text-xs" style="color: var(--brand)">{tr({ en: 'check in →', ar: 'تسجيل →' }, $locale)}</span>{/if}
+            </button>
+          {/each}
+        </div>
+      {/if}
+    </div>
+
+    <!-- Family check-in panel: whole household with checkboxes -->
+    {#if checkinAnchor}
+      <div class="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800/50">
+        {#if loadingFamily}
+          <p class="text-sm text-slate-400">{$t('common.loading')}</p>
+        {:else}
+          <div class="mb-2 flex flex-wrap items-center gap-2">
+            <span class="text-sm font-medium">{tr({ en: 'Check in family', ar: 'تسجيل حضور العائلة' }, $locale)}{#if familyMembers.length > 1} <span class="text-slate-400">({familyMembers.length})</span>{/if}</span>
+            {#if familyMembers.length > 1}
+              <button type="button" class="text-xs hover:underline" style="color: var(--brand)" onclick={selectAllFam}>{tr({ en: 'Select all', ar: 'تحديد الكل' }, $locale)}</button>
+              <button type="button" class="text-xs text-slate-500 hover:underline" onclick={() => (familySel = new Set())}>{tr({ en: 'Clear', ar: 'مسح' }, $locale)}</button>
+            {/if}
+            <button type="button" class="ms-auto text-xs text-slate-500 hover:underline" onclick={cancelCheckin}>{$t('common.cancel')}</button>
+          </div>
+          <ul class="space-y-1">
+            {#each familyMembers as m (m.id)}
+              {@const done = checkedInIds.has(m.id)}
+              <li class="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm {done ? 'opacity-70' : 'hover:bg-white dark:hover:bg-slate-800'}">
+                <input type="checkbox" checked={done || familySel.has(m.id)} disabled={done} onchange={() => toggleFam(m.id)} />
+                <span class="flex-1">{personName(m)}{#if m.householdRole} <span class="text-xs text-slate-400 capitalize">· {(m.householdRole || '').replace(/_/g, ' ')}</span>{/if}</span>
+                {#if done}<span class="text-xs text-emerald-600 dark:text-emerald-400">✓ {tr({ en: 'checked in', ar: 'مسجّل' }, $locale)}</span>{/if}
+              </li>
+            {/each}
+          </ul>
+          <div class="mt-3">
+            <button class="btn-primary" disabled={checkingIn || [...familySel].filter((x) => !checkedInIds.has(x)).length === 0} onclick={checkInSelected}>
+              {checkingIn ? $t('common.loading') : tr({ en: `Check in ${[...familySel].filter((x) => !checkedInIds.has(x)).length}`, ar: `تسجيل ${[...familySel].filter((x) => !checkedInIds.has(x)).length}` }, $locale)}
+            </button>
+          </div>
+        {/if}
       </div>
     {/if}
   </div>

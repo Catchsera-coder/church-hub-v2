@@ -6,7 +6,7 @@ import { currentOrg } from '../settings/routes.js';
 import { resolveMessaging, sendMessage, sleep } from './delivery.js';
 import { resolveAudienceIds } from './audience.js';
 import { buildContext, renderText, brandedEmailHtml, localeName } from './render.js';
-import { loadCampaignAttachments, prepareDelivery } from './attach.js';
+import { loadCampaignAttachments, prepareDelivery, dataUriAttachment, type OutAttachment } from './attach.js';
 
 /**
  * Send a campaign to its whole eligible audience now. Shared by the manual send
@@ -47,6 +47,11 @@ export async function sendCampaignNow(campaignId: number, sentByUserId?: number)
   // attached to email (within the provider cap); `linkLines` are secure download
   // links appended to the body (SMS/WhatsApp, or oversized email).
   const prepared = await prepareDelivery(await loadCampaignAttachments(campaignId), c.channel, appUrl, (c.imagePlacement as 'body' | 'attach' | 'both') ?? 'body');
+  // Embed the church logo + header photo as inline CID images so they always show
+  // in the recipient's email (not just in the in-app preview).
+  const logoAtt = c.channel === 'email' ? dataUriAttachment(org.logoPath, 'logo', 'logo') : null;
+  const headerAtt = c.channel === 'email' ? dataUriAttachment(org.emailSettings?.headerImage, 'header', 'headerimg') : null;
+  const brandAtts: OutAttachment[] = [logoAtt, headerAtt].filter((x): x is OutAttachment => Boolean(x));
 
   let sent = 0;
   for (const p of audience) {
@@ -65,7 +70,7 @@ export async function sendCampaignNow(campaignId: number, sentByUserId?: number)
     // Fold any attachment download links into the body so they appear in-message.
     const bodyWithLinks = prepared.linkLines.length ? `${body}\n\n${prepared.linkLines.join('\n')}` : body;
     const html = c.channel === 'email'
-      ? brandedEmailHtml(bodyWithLinks, org, { lang, signature, unsubscribeUrl, cta, attachmentsHtml: prepared.imagesHtml })
+      ? brandedEmailHtml(bodyWithLinks, org, { lang, signature, unsubscribeUrl, cta, attachmentsHtml: prepared.imagesHtml, logoCid: logoAtt ? 'logo' : undefined, headerImageCid: headerAtt ? 'headerimg' : undefined })
       : undefined;
     const plain = [
       bodyWithLinks,
@@ -73,7 +78,8 @@ export async function sendCampaignNow(campaignId: number, sentByUserId?: number)
       signature,
       unsubscribeUrl ? `—\nTo stop receiving these emails, unsubscribe: ${unsubscribeUrl}` : '',
     ].filter(Boolean).join('\n\n');
-    const ok = await sendMessage(messaging, c.channel, p.contact as string, subject, plain, html, c.mediaUrl ?? undefined, prepared.inline);
+    const emailAtts = c.channel === 'email' ? [...brandAtts, ...prepared.inline] : prepared.inline;
+    const ok = await sendMessage(messaging, c.channel, p.contact as string, subject, plain, html, c.mediaUrl ?? undefined, emailAtts);
     await db.update(messageRecipients)
       .set({ status: ok ? 'sent' : 'failed', sentAt: new Date(), error: ok ? null : 'Provider did not accept the message' })
       .where(eq(messageRecipients.id, rec.id));

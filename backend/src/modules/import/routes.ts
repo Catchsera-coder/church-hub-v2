@@ -64,7 +64,7 @@ const ALIASES: Record<string, string> = {
   source: 'sourceList', sourcelist: 'sourceList', sources: 'sourceList',
   notes: 'notes', note: 'notes', comment: 'notes', comments: 'notes',
 };
-const STATUSES = new Set(['visitor', 'regular', 'member', 'inactive']);
+const STATUSES = new Set(['visitor', 'regular', 'member', 'inactive', 'conference_attendee']);
 
 // Fuzzy fallback: if a header isn't an exact alias, match on contained tokens so
 // odd spreadsheet headers ("Mobile No.", "Member Since", "E-mail Address") still
@@ -251,7 +251,7 @@ importRouter.post('/members', requirePermission('create person'), asyncHandler(a
       joinedOn: toDate(v.joinedOn),
       firstVisitOn: toDate(v.firstVisitOn),
       householdId,
-      membershipStatus: STATUSES.has(status) ? (status as 'visitor' | 'regular' | 'member' | 'inactive') : 'visitor',
+      membershipStatus: STATUSES.has(status) ? (status as 'visitor' | 'regular' | 'member' | 'inactive' | 'conference_attendee') : 'visitor',
       category,
       customFields: custom,
       notes: v.notes?.trim() || null,

@@ -41,7 +41,8 @@
     { en: 'Daughter', ar: 'ابنة' }, { en: 'Brother', ar: 'أخ' }, { en: 'Sister', ar: 'أخت' },
     { en: 'Guardian', ar: 'وصي' }, { en: 'Grandparent', ar: 'جد/جدة' },
   ];
-  const STATUSES = ['visitor', 'regular', 'member', 'inactive'];
+  const STATUSES = ['visitor', 'regular', 'member', 'conference_attendee', 'inactive'];
+  const statusLabel = (s: string) => (s || '').replace(/_/g, ' ');
 
   // ---- helpers ----------------------------------------------------------------
   function ageOf(dob: string | null | undefined): number | null {
@@ -310,7 +311,8 @@
                 <span class="rounded-full px-2 py-0.5 text-xs capitalize
                   {m.membershipStatus === 'member' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
                   : m.membershipStatus === 'inactive' ? 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
-                  : 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300'}">{m.membershipStatus}</span>
+                  : m.membershipStatus === 'conference_attendee' ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300'
+                  : 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300'}">{statusLabel(m.membershipStatus)}</span>
                 {#if m.selfRegistered && !m.reviewedAt}<span class="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">{tr({ en: 'new', ar: 'جديد' }, $locale)}</span>{/if}
                 {#if age != null}<span class="text-xs text-slate-400">· {age} {tr({ en: 'yrs', ar: 'سنة' }, $locale)}</span>{/if}
                 {#if birthdayThisMonth(m.dateOfBirth)}<span title={tr({ en: 'Birthday this month', ar: 'عيد ميلاد هذا الشهر' }, $locale)}>🎂</span>{/if}
@@ -380,7 +382,7 @@
                 </label>
                 <label class="block space-y-1">
                   <span class="text-xs text-slate-500">{tr({ en: 'Status', ar: 'الحالة' }, $locale)}</span>
-                  <select class="input capitalize" bind:value={draft.membershipStatus}>{#each STATUSES as s}<option value={s}>{s}</option>{/each}</select>
+                  <select class="input capitalize" bind:value={draft.membershipStatus}>{#each STATUSES as s}<option value={s}>{statusLabel(s)}</option>{/each}</select>
                 </label>
                 <label class="block space-y-1">
                   <span class="text-xs text-slate-500">{tr({ en: 'Mobile', ar: 'الجوال' }, $locale)}</span>

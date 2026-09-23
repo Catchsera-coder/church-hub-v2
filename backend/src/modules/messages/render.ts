@@ -141,7 +141,9 @@ export function brandedEmailHtml(
     unsubscribeUrl?: string;                  // broadcasts → shows an unsubscribe line
     bodyFooterNote?: string;                  // small note under the body (e.g. template footer)
     preheader?: string;                       // hidden inbox-preview text
-    attachmentsHtml?: string;                 // pre-built inline image HTML shown under the body
+    attachmentsHtml?: string;                 // pre-built inline image HTML (placed at [image] marker, else under the body)
+    logoCid?: string;                         // when set, the logo is an embedded cid: image (real sends)
+    headerImageCid?: string;                  // when set, the header photo is an embedded cid: image
   } = {},
 ): string {
   const lang = opts.lang ?? 'en';
@@ -155,9 +157,9 @@ export function brandedEmailHtml(
   // endpoint over https (Gmail loads that fine and the email stays small — no
   // giant data URI to trip the "message clipped" limit). Otherwise show the name.
   const appUrl = config.PUBLIC_APP_URL?.replace(/\/+$/, '');
-  const logoSrc = org.logoPath
-    ? (/^https?:\/\//i.test(org.logoPath) ? org.logoPath : (appUrl ? `${appUrl}/api/public/branding/logo` : null))
-    : null;
+  const logoSrc = opts.logoCid
+    ? `cid:${opts.logoCid}`
+    : (org.logoPath ? (/^https?:\/\//i.test(org.logoPath) ? org.logoPath : (appUrl ? `${appUrl}/api/public/branding/logo` : null)) : null);
   // Header layout: logo on the LEFT with the church name beside it (once), and an
   // optional church header photo/banner on the RIGHT (set in Settings → email
   // branding). Data: URIs go through the public branding endpoints (email clients
@@ -167,9 +169,9 @@ export function brandedEmailHtml(
     : '';
   const headerName = `<div style="font-size:${logoSrc ? '16px' : '22px'};font-weight:700;color:#ffffff;margin:${logoSrc ? '8px 0 0' : '0'}">${name}</div>`;
   const headerImgVal = es.headerImage;
-  const headerImgSrc = headerImgVal
-    ? (/^https?:\/\//i.test(headerImgVal) ? headerImgVal : (appUrl ? `${appUrl}/api/public/branding/header-image` : null))
-    : null;
+  const headerImgSrc = opts.headerImageCid
+    ? `cid:${opts.headerImageCid}`
+    : (headerImgVal ? (/^https?:\/\//i.test(headerImgVal) ? headerImgVal : (appUrl ? `${appUrl}/api/public/branding/header-image` : null)) : null);
   const headerPhoto = headerImgSrc
     ? `<img src="${escapeHtml(headerImgSrc)}" alt="" style="height:58px;max-width:150px;object-fit:contain;border-radius:8px;display:block" />`
     : '';
@@ -182,8 +184,12 @@ export function brandedEmailHtml(
     ? `<h1 style="margin:0 0 16px;font-family:Georgia,'Times New Roman',serif;font-size:23px;line-height:1.3;font-weight:700;color:#0f172a">${escapeHtml(opts.heading)}</h1>`
     : '';
   const highlight = opts.highlight ? highlightBox(opts.highlight, brand) : '';
-  const body = paragraphs(bodyText);
-  const inlineImages = opts.attachmentsHtml ?? '';
+  // Images go where the sender put an [image] marker in the text; otherwise under
+  // the body. (renderText leaves [image] untouched — unlike {{tokens}}.)
+  const imagesBlock = opts.attachmentsHtml ?? '';
+  const body = imagesBlock && /\[images?\]/i.test(bodyText)
+    ? bodyText.split(/\[images?\]/i).map(paragraphs).join(imagesBlock)
+    : paragraphs(bodyText) + imagesBlock;
   const cta = opts.cta && opts.cta.url && opts.cta.label ? ctaButton(opts.cta, btn) : '';
   const signature = opts.signature
     ? `<div style="margin:20px 0 0;font-size:15px;line-height:1.6;color:#0f172a">${escapeHtml(opts.signature).replace(/\n/g, '<br/>')}</div>`
@@ -225,7 +231,7 @@ export function brandedEmailHtml(
       + `</tr></table>`
     + `</td></tr>`
     + `<tr><td style="height:4px;background:${brandDark};font-size:0;line-height:0">&nbsp;</td></tr>`
-    + `<tr><td style="padding:34px 36px">${heading}${body}${inlineImages}${highlight}${cta}${signature}${bodyNote}</td></tr>`
+    + `<tr><td style="padding:34px 36px">${heading}${body}${highlight}${cta}${signature}${bodyNote}</td></tr>`
     + footer
     + `</table>`
     + `</body></html>`;

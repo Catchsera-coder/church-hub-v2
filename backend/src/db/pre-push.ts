@@ -17,6 +17,8 @@ import { pool } from './index.js';
 const STATEMENTS = [
   // #20a: WhatsApp as a campaign channel.
   `ALTER TYPE "campaign_channel" ADD VALUE IF NOT EXISTS 'whatsapp'`,
+  // Conference attendee as a membership status.
+  `ALTER TYPE "membership_status" ADD VALUE IF NOT EXISTS 'conference_attendee'`,
 ];
 
 async function main() {

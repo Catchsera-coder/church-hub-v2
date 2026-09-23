@@ -7,7 +7,7 @@ export const peopleListQuery = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(1000).default(25),
   search: z.string().trim().optional(),
-  status: z.enum(['visitor', 'regular', 'member', 'inactive']).optional(),
+  status: z.enum(['visitor', 'regular', 'member', 'inactive', 'conference_attendee']).optional(),
   review: z.enum(['pending']).optional(),
   ageGroup: z.enum(['child', 'youth', 'adult']).optional(),
   birthdayMonth: z.coerce.number().int().min(1).max(12).optional(),

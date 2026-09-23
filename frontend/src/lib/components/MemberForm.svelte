@@ -90,7 +90,7 @@
   let familySaved = $state(false);
   function flashSaved() { familySaved = true; setTimeout(() => (familySaved = false), 1600); }
 
-  const statuses = ['visitor', 'regular', 'member', 'inactive'];
+  const statuses = ['visitor', 'regular', 'member', 'conference_attendee', 'inactive'];
   const ROLE_OPTIONS = [
     { v: 'head', en: 'Head', ar: 'رب الأسرة' }, { v: 'husband', en: 'Husband', ar: 'زوج' }, { v: 'wife', en: 'Wife', ar: 'زوجة' },
     { v: 'father', en: 'Father', ar: 'أب' }, { v: 'mother', en: 'Mother', ar: 'أم' }, { v: 'son', en: 'Son', ar: 'ابن' },
@@ -263,7 +263,7 @@
   <div class="card grid gap-4 p-6 sm:grid-cols-2">
     <label class="block space-y-1">
       <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Status', ar: 'الحالة' }, $locale)}</span>
-      <select class="input capitalize" bind:value={form.membershipStatus}>{#each statuses as s}<option value={s}>{s}</option>{/each}</select>
+      <select class="input capitalize" bind:value={form.membershipStatus}>{#each statuses as s}<option value={s}>{s.replace(/_/g, ' ')}</option>{/each}</select>
     </label>
     <label class="block space-y-1">
       <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Preferred language', ar: 'اللغة المفضلة' }, $locale)}</span>
