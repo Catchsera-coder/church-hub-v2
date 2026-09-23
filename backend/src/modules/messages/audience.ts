@@ -11,7 +11,17 @@ export const audienceZod = z.object({
   ministryIds: z.array(z.number().int().positive()).max(500).optional(),
   // Free-form filter map validated against the people filters below.
   segment: z.record(z.union([z.string(), z.number()])).optional(),
+  // Email only: reach people who have an email on file even if they haven't
+  // opted in (the sender takes responsibility). SMS/WhatsApp still honour
+  // opt-out because STOP is a hard/legal opt-out; the flag is ignored there.
+  ignoreOptIn: z.boolean().optional(),
 }).nullable();
+
+/** Whether to bypass the opt-out filter for this send. Email only — SMS/WhatsApp
+ * always honour opt-out (STOP is a legal opt-out we must not override). */
+export function bypassOptIn(channel: 'email' | 'sms' | 'whatsapp', audience: Audience | undefined): boolean {
+  return channel === 'email' && Boolean(audience?.ignoreOptIn);
+}
 
 export type Audience = z.infer<typeof audienceZod>;
 
@@ -59,7 +69,8 @@ export async function countReachable(channel: 'email' | 'sms' | 'whatsapp', audi
     .from(people)
     .where(and(
       eq(people.isActive, true), isNull(people.deletedAt),
-      isNotNull(contactCol), ne(contactCol, ''), eq(optOutCol, false),
+      isNotNull(contactCol), ne(contactCol, ''),
+      ...(bypassOptIn(channel, audience) ? [] : [eq(optOutCol, false)]),
       ...(ids ? [inArray(people.id, ids)] : []),
     ));
   return count;

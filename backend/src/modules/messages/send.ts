@@ -4,7 +4,7 @@ import { messageCampaigns, messageRecipients, people } from '../../db/schema.js'
 import { config } from '../../config.js';
 import { currentOrg } from '../settings/routes.js';
 import { resolveMessaging, sendMessage, sleep } from './delivery.js';
-import { resolveAudienceIds } from './audience.js';
+import { resolveAudienceIds, bypassOptIn } from './audience.js';
 import { buildContext, renderText, brandedEmailHtml, localeName } from './render.js';
 import { loadCampaignAttachments, prepareDelivery, dataUriAttachment, type OutAttachment } from './attach.js';
 
@@ -32,7 +32,8 @@ export async function sendCampaignNow(campaignId: number, sentByUserId?: number)
     })
     .from(people)
     .where(and(
-      eq(people.isActive, true), isNull(people.deletedAt), isNotNull(contactCol), ne(contactCol, ''), eq(optOutCol, false),
+      eq(people.isActive, true), isNull(people.deletedAt), isNotNull(contactCol), ne(contactCol, ''),
+      ...(bypassOptIn(c.channel, c.audience) ? [] : [eq(optOutCol, false)]),
       ...(targetIds ? [inArray(people.id, targetIds)] : []),
     ));
 

@@ -149,12 +149,18 @@
     return o;
   });
 
+  // Email only: send to people who have an email even if they never opted in.
+  // Ignored on SMS/WhatsApp (STOP is a hard opt-out we must honour).
+  let ignoreOptIn = $state(false);
+  const optInBypass = $derived(ignoreOptIn && form.channel === 'email');
   // The audience spec for the current mode (null = everyone opted-in).
   function currentAudience(): any {
-    if (recipMode === 'people') return { mode: 'people', personIds: [...selectedIds] };
-    if (recipMode === 'ministries') return { mode: 'ministries', ministryIds: [...selectedMinistryIds] };
-    if (recipMode === 'segment') return { mode: 'segment', segment: segmentObj };
-    return null; // 'all'
+    const extra = optInBypass ? { ignoreOptIn: true } : {};
+    if (recipMode === 'people') return { mode: 'people', personIds: [...selectedIds], ...extra };
+    if (recipMode === 'ministries') return { mode: 'ministries', ministryIds: [...selectedMinistryIds], ...extra };
+    if (recipMode === 'segment') return { mode: 'segment', segment: segmentObj, ...extra };
+    if (optInBypass) return { mode: 'all', ignoreOptIn: true };
+    return null; // 'all', opted-in only
   }
   async function searchPeople() {
     const q = peopleSearch.trim();
@@ -170,6 +176,21 @@
   const reachable = (p: any) => Boolean(form.channel === 'email' ? p.email : p.mobile);
   const contactOf = (p: any) => (form.channel === 'email' ? p.email : p.mobile)
     || tr(form.channel === 'email' ? { en: 'no email on file', ar: 'لا يوجد بريد' } : { en: 'no number on file', ar: 'لا يوجد رقم' }, $locale);
+  // Full reachability for a picked person on the current channel + settings —
+  // powers the per-chip amber marker and the "who won't receive it" breakdown.
+  function reachOf(p: any): { ok: boolean; reason: string } {
+    if (p?.isActive === false || p?.archivedAt) return { ok: false, reason: tr({ en: 'archived', ar: 'مؤرشف' }, $locale) };
+    const contact = form.channel === 'email' ? p?.email : p?.mobile;
+    if (!contact) return { ok: false, reason: form.channel === 'email' ? tr({ en: 'no email', ar: 'لا بريد' }, $locale) : tr({ en: 'no number', ar: 'لا رقم' }, $locale) };
+    const optedOut = form.channel === 'email' ? p?.emailOptOut : form.channel === 'whatsapp' ? p?.whatsappOptOut : p?.smsOptOut;
+    if (optedOut && !optInBypass) return { ok: false, reason: tr({ en: 'not opted in', ar: 'غير موافق' }, $locale) };
+    return { ok: true, reason: '' };
+  }
+  const peopleReach = $derived.by(() => {
+    const vals = [...selectedPeople.values()];
+    const excluded = vals.filter((p) => !reachOf(p).ok);
+    return { total: vals.length, reach: vals.length - excluded.length, excluded };
+  });
   // Toggle a person in/out of the selection. Accepts the full person so we can
   // keep the id set AND the id→person map (for chips) in sync.
   function toggleId(p: any) {
@@ -645,7 +666,22 @@
 
       <!-- Live reach for every audience mode except the ad-hoc single send -->
       {#if recipMode !== 'one'}
-        <p class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Will reach', ar: 'ستصل إلى' }, $locale)} <b style="color: var(--brand)">{reachCount === null ? '…' : reachCount}</b> {tr({ en: 'people opted-in on this channel.', ar: 'شخص موافق على هذه القناة.' }, $locale)}</p>
+        <div class="space-y-1.5">
+          <p class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Will reach', ar: 'ستصل إلى' }, $locale)} <b style="color: var(--brand)">{reachCount === null ? '…' : reachCount}</b> {optInBypass ? tr({ en: 'people with an email on this channel.', ar: 'شخص لديه بريد على هذه القناة.' }, $locale) : tr({ en: 'people opted-in on this channel.', ar: 'شخص موافق على هذه القناة.' }, $locale)}</p>
+          <!-- People mode: name exactly who among the picked people is excluded and
+               why, so "2 selected → reaches 1" is never a mystery. -->
+          {#if recipMode === 'people' && peopleReach.excluded.length}
+            <p class="text-xs text-amber-600 dark:text-amber-400">{peopleReach.excluded.length} {tr({ en: 'of', ar: 'من' }, $locale)} {peopleReach.total} {tr({ en: 'selected won’t receive it —', ar: 'من المحددين لن يستلموا —' }, $locale)} {peopleReach.excluded.map((p) => `${personName(p) || '#' + p.id} (${reachOf(p).reason})`).join('، ')}</p>
+          {/if}
+          <!-- Email only: reach people who never opted in (they have an email).
+               SMS/WhatsApp always honour opt-out (STOP), so it's hidden there. -->
+          {#if form.channel === 'email'}
+            <label class="flex items-start gap-2 text-xs text-slate-600 dark:text-slate-300">
+              <input type="checkbox" class="mt-0.5" bind:checked={ignoreOptIn} />
+              <span>{tr({ en: 'Send even to people who haven’t opted in (anyone with an email on file).', ar: 'أرسل حتى لغير الموافقين (كل من له بريد مسجّل).' }, $locale)}</span>
+            </label>
+          {/if}
+        </div>
       {/if}
 
       {#if recipMode === 'all'}
@@ -689,9 +725,10 @@
         {#if selectedPeople.size}
           <div class="flex flex-wrap items-center gap-1.5">
             {#each [...selectedPeople.values()] as p (p.id)}
-              <span class="inline-flex items-center gap-1 rounded-full bg-slate-100 py-0.5 ps-2.5 pe-1 text-xs dark:bg-slate-800">
-                <span>{personName(p) || `#${p.id}`}</span>
-                <button type="button" class="grid h-4 w-4 place-items-center rounded-full text-slate-400 hover:bg-slate-300 hover:text-slate-700 dark:hover:bg-slate-600 dark:hover:text-slate-100" aria-label={tr({ en: 'Remove', ar: 'إزالة' }, $locale)} onclick={() => toggleId(p)}>✕</button>
+              {@const r = reachOf(p)}
+              <span class="inline-flex items-center gap-1 rounded-full py-0.5 ps-2.5 pe-1 text-xs {r.ok ? 'bg-slate-100 dark:bg-slate-800' : 'bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300'}" title={r.ok ? '' : r.reason}>
+                <span>{personName(p) || `#${p.id}`}{r.ok ? '' : ` · ${r.reason}`}</span>
+                <button type="button" class="grid h-4 w-4 place-items-center rounded-full text-current opacity-60 hover:opacity-100" aria-label={tr({ en: 'Remove', ar: 'إزالة' }, $locale)} onclick={() => toggleId(p)}>✕</button>
               </span>
             {/each}
             <button type="button" class="ms-1 text-xs text-slate-500 hover:underline" onclick={clearPeople}>{tr({ en: 'Clear all', ar: 'مسح الكل' }, $locale)}</button>
