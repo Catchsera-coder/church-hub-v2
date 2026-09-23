@@ -318,7 +318,7 @@
                   <div class="text-slate-500 dark:text-slate-400"><span class="text-slate-400">{tr({ en: 'From', ar: 'من' }, $locale)}:</span> {churchName || tr({ en: 'Your church', ar: 'كنيستك' }, $locale)}</div>
                   <div class="font-medium text-slate-800 dark:text-slate-100"><span class="font-normal text-slate-400">{tr({ en: 'Subject', ar: 'الموضوع' }, $locale)}:</span> {previewData.subject}</div>
                 </div>
-                <iframe title="email preview" srcdoc={previewData.html} sandbox="" class="h-64 w-full bg-white"></iframe>
+                <iframe title="email preview" srcdoc={previewData.html} sandbox="allow-same-origin" class="h-64 w-full bg-white"></iframe>
               {:else}
                 <!-- Phone-style chat bubble with the church as sender -->
                 <div class="bg-slate-100 p-4 dark:bg-slate-800/40">

@@ -25,3 +25,21 @@ publicBrandingRouter.get('/logo', async (_req, res) => {
     return res.status(404).end();
   }
 });
+
+// Optional email header photo/banner (Settings → email branding), served the same
+// way as the logo so email clients can load it over plain https.
+publicBrandingRouter.get('/header-image', async (_req, res) => {
+  try {
+    const org = await currentOrg();
+    const hi = (org as { emailSettings?: { headerImage?: string | null } }).emailSettings?.headerImage;
+    if (!hi) return res.status(404).end();
+    const m = /^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/i.exec(hi);
+    if (!m) return res.status(404).end();
+    const buf = Buffer.from(m[2], 'base64');
+    res.setHeader('Content-Type', m[1]);
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    return res.end(buf);
+  } catch {
+    return res.status(404).end();
+  }
+});

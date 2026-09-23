@@ -49,7 +49,7 @@
     for (const [k, v] of Object.entries(form.ctaLabel)) if (v?.trim()) ctaLabel[k] = fillCustom(v);
     // Only send a CTA on email when both a label and a link are present.
     const hasCta = form.channel === 'email' && Object.keys(ctaLabel).length > 0 && form.ctaUrl.trim();
-    return { ...form, subject, body, ctaLabel: hasCta ? ctaLabel : null, ctaUrl: hasCta ? form.ctaUrl.trim() : null, audience: currentAudience(), attachmentTokens: attachments.map((a) => a.token) };
+    return { ...form, subject, body, ctaLabel: hasCta ? ctaLabel : null, ctaUrl: hasCta ? form.ctaUrl.trim() : null, audience: currentAudience(), attachmentTokens: attachments.map((a) => a.token), imagePlacement };
   }
 
   // --- Attachments: any file type/size. Large files upload straight to cloud
@@ -59,6 +59,9 @@
   let attachments = $state<{ token: string; filename: string; contentType: string; sizeBytes: number }[]>([]);
   let attaching = $state(false);
   let attachError = $state('');
+  // Where image attachments appear in an email: in the body, attached, or both.
+  let imagePlacement = $state<'body' | 'attach' | 'both'>('body');
+  const hasImageAttachment = $derived(attachments.some((a) => (a.contentType || '').startsWith('image/')));
   function fmtSize(n: number): string { return n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(0)} KB` : `${(n / 1048576).toFixed(1)} MB`; }
   function fileIcon(ct: string): string { return ct.startsWith('image/') ? '🖼' : ct.startsWith('video/') ? '🎬' : ct.startsWith('audio/') ? '🎵' : ct === 'application/pdf' ? '📄' : ct.includes('word') || ct.includes('document') ? '📝' : ct.includes('sheet') || ct.includes('excel') ? '📊' : '📎'; }
   function fileToBase64(file: File): Promise<string> {
@@ -149,10 +152,17 @@
   async function searchPeople() {
     const q = peopleSearch.trim();
     try {
-      const r = await api<{ data: any[] }>(`/people?optedIn=${form.channel}&limit=50${q ? `&search=${encodeURIComponent(q)}` : ''}`);
+      // Search ALL people by name so anyone in the directory shows as you type;
+      // we mark who is actually reachable on the chosen channel (below) instead of
+      // hiding people without an email/number. Reach count stays honest.
+      const r = await api<{ data: any[] }>(`/people?limit=50${q ? `&search=${encodeURIComponent(q)}` : ''}`);
       peopleList = r.data;
     } catch { peopleList = []; }
   }
+  // Is this person reachable on the current channel, and a label for their contact.
+  const reachable = (p: any) => Boolean(form.channel === 'email' ? p.email : p.mobile);
+  const contactOf = (p: any) => (form.channel === 'email' ? p.email : p.mobile)
+    || tr(form.channel === 'email' ? { en: 'no email on file', ar: 'لا يوجد بريد' } : { en: 'no number on file', ar: 'لا يوجد رقم' }, $locale);
   function toggleId(id: number) { const s = new Set(selectedIds); if (s.has(id)) s.delete(id); else s.add(id); selectedIds = s; }
   function selectAllShown() { const s = new Set(selectedIds); for (const p of peopleList) s.add(p.id); selectedIds = s; }
   const personName = (p: any) => displayName(p, $nameOrder, $locale);
@@ -182,7 +192,7 @@
       const { data } = await api<{ data: { ok: boolean; to: string } }>('/messages/quick-send', { method: 'POST', body: JSON.stringify({
         channel: form.channel, toPersonId: onePersonId, toContact: onePersonId ? null : oneContact.trim(),
         subject: f.subject, body: f.body, ctaLabel: f.ctaLabel, ctaUrl: f.ctaUrl, mediaUrl: form.mediaUrl,
-        attachmentTokens: attachments.map((a) => a.token),
+        attachmentTokens: attachments.map((a) => a.token), imagePlacement,
       }) });
       if (data.ok) done = { kind: 'sent', to: data.to, sent: 1, total: 1 };
       else error = tr({ en: 'Send failed — check messaging settings.', ar: 'فشل الإرسال — تحقق من الإعدادات.' }, $locale);
@@ -378,7 +388,7 @@
     form = { name: '', channel: form.channel, subject: {}, body: {}, mediaUrl: null, ctaLabel: {}, ctaUrl: '' };
     customValues = {}; selectedIds = new Set(); selectedMinistryIds = new Set();
     onePersonId = null; oneContact = ''; peopleSearch = ''; scheduleAt = ''; templateId = '';
-    attachments = []; attachError = '';
+    attachments = []; attachError = ''; imagePlacement = 'body';
   }
 </script>
 
@@ -552,6 +562,16 @@
       {attaching ? $t('common.loading') : `+ ${tr({ en: 'Add files', ar: 'أضف ملفات' }, $locale)}`}
       <input type="file" multiple class="hidden" onchange={onAttach} disabled={attaching} />
     </label>
+    {#if form.channel === 'email' && hasImageAttachment}
+      <label class="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+        <span>🖼 {tr({ en: 'Show images:', ar: 'عرض الصور:' }, $locale)}</span>
+        <select class="input w-auto py-1 text-sm" bind:value={imagePlacement}>
+          <option value="body">{tr({ en: 'Inside the email body', ar: 'داخل نص البريد' }, $locale)}</option>
+          <option value="attach">{tr({ en: 'As attachments', ar: 'كمرفقات' }, $locale)}</option>
+          <option value="both">{tr({ en: 'Both', ar: 'كلاهما' }, $locale)}</option>
+        </select>
+      </label>
+    {/if}
   </div>
 
   <!-- Audience + actions -->
@@ -632,7 +652,7 @@
               <input type="checkbox" checked={selectedIds.has(p.id)} onchange={() => toggleId(p.id)} />
               <span>{personName(p)}</span>
               {#if personContext(p, $locale)}<span class="text-xs text-slate-400">{personContext(p, $locale)}</span>{/if}
-              <span class="ms-auto force-ltr text-xs text-slate-400">{form.channel === 'email' ? (p.email ?? '') : (p.mobile ?? '')}</span>
+              <span class="ms-auto force-ltr text-xs {reachable(p) ? 'text-slate-400' : 'text-amber-500 dark:text-amber-400'}">{contactOf(p)}</span>
             </label>
           {:else}
             <p class="px-2 py-1 text-xs text-slate-400">{tr({ en: 'No matching opted-in members.', ar: 'لا يوجد أعضاء موافقون مطابقون.' }, $locale)}</p>
@@ -644,7 +664,7 @@
           {#if peopleList.length && !onePersonId}
             <div class="max-h-40 space-y-1 overflow-y-auto rounded-lg border border-slate-200 p-2 dark:border-slate-700">
               {#each peopleList as p (p.id)}
-                <button type="button" class="block w-full rounded px-2 py-1 text-start text-sm hover:bg-slate-50 dark:hover:bg-slate-800" onclick={() => { onePersonId = p.id; oneContact = ''; peopleSearch = personName(p); }}>{personName(p)} <span class="force-ltr text-xs text-slate-400">{form.channel === 'email' ? (p.email ?? '') : (p.mobile ?? '')}</span></button>
+                <button type="button" class="block w-full rounded px-2 py-1 text-start text-sm hover:bg-slate-50 dark:hover:bg-slate-800" onclick={() => { onePersonId = p.id; oneContact = ''; peopleSearch = personName(p); }}>{personName(p)} <span class="force-ltr text-xs {reachable(p) ? 'text-slate-400' : 'text-amber-500 dark:text-amber-400'}">{contactOf(p)}</span></button>
               {/each}
             </div>
           {/if}
@@ -701,7 +721,7 @@
         <p class="text-sm text-rose-600">{previewData.error}</p>
       {:else if previewData?.channel === 'email'}
         {#if previewData.subject}<p class="mb-2 text-sm"><span class="text-slate-400">{tr({ en: 'Subject:', ar: 'الموضوع:' }, $locale)}</span> <b>{previewData.subject}</b></p>{/if}
-        <iframe title="preview" srcdoc={previewData.html} sandbox="" class="h-[460px] w-full rounded-md border border-slate-200 bg-white dark:border-slate-700"></iframe>
+        <iframe title="preview" srcdoc={previewData.html} sandbox="allow-same-origin" class="h-[460px] w-full rounded-md border border-slate-200 bg-white dark:border-slate-700"></iframe>
       {:else if previewData}
         <div class="rounded-2xl bg-emerald-100 p-3 text-sm text-slate-800 dark:bg-emerald-900/40 dark:text-slate-100" style="white-space:pre-wrap">{previewData.text}</div>
         <p class="mt-2 text-xs text-slate-400">{form.channel === 'whatsapp' ? 'WhatsApp' : 'SMS'} {tr({ en: 'message preview', ar: 'معاينة الرسالة' }, $locale)}</p>

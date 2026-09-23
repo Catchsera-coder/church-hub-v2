@@ -35,6 +35,8 @@ const emailSettingsSchema = z.object({
   }).optional(),
   showContactFooter: z.boolean().optional(),
   buttonColor: z.string().regex(/^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/).or(z.literal('')).optional(),
+  // Optional email header photo/banner: a data: URI (client-resized) or https URL.
+  headerImage: z.string().max(1_500_000).optional(),
 });
 
 /** The single organisation row (white-label). Public read so the SPA can brand

@@ -149,6 +149,34 @@
     } catch (err) { alert((err as Error).message); } finally { bulkBusy = false; }
   }
 
+  // --- Bulk select → add to an EXISTING family (reassign householdId) ----------
+  const canAssignFamily = can('update person');
+  const canBulk = canRoster || canAssignFamily;
+  let bulkTarget = $state<'ministry' | 'family'>(canRoster ? 'ministry' : 'family');
+  let famQuery = $state('');
+  let famResults = $state<any[]>([]);
+  let famTimer: ReturnType<typeof setTimeout>;
+  let bulkFamily = $state<{ id: number; name: Record<string, string> } | null>(null);
+  function searchBulkFamilies() {
+    clearTimeout(famTimer);
+    famTimer = setTimeout(async () => {
+      const q = famQuery.trim();
+      if (q.length < 2) { famResults = []; return; }
+      try { famResults = (await api<{ data: any[] }>(`/families?search=${encodeURIComponent(q)}&limit=10`)).data; } catch { famResults = []; }
+    }, 250);
+  }
+  function pickBulkFamily(fam: any) { bulkFamily = fam; famQuery = tr(fam.name, $locale); famResults = []; }
+  async function bulkAddToFamily() {
+    if (!bulkFamily || selected.size === 0) return;
+    bulkBusy = true;
+    try {
+      const ids = [...selected];
+      for (const pid of ids) await api(`/people/${pid}`, { method: 'PUT', body: JSON.stringify({ householdId: bulkFamily.id }) });
+      alert(tr({ en: `Added ${ids.length} to ${tr(bulkFamily.name, $locale)}.`, ar: `تمت إضافة ${ids.length} إلى ${tr(bulkFamily.name, $locale)}.` }, $locale));
+      selected = new Set(); bulkFamily = null; famQuery = ''; famResults = [];
+    } catch (err) { alert((err as Error).message); } finally { bulkBusy = false; }
+  }
+
   async function load() {
     loading = true;
     try {
@@ -325,19 +353,46 @@
   </label>
 </FilterBar>
 
-{#if canRoster && selected.size > 0}
-  <div class="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-primary-200 bg-primary-50 px-4 py-3 dark:border-primary-800 dark:bg-primary-900/20">
-    <span class="font-medium" style="color: var(--brand)">{selected.size} {tr({ en: 'selected', ar: 'محدد' }, $locale)}</span>
-    <span class="text-sm text-slate-500">{tr({ en: 'Add to ministry / group:', ar: 'أضِف إلى خدمة / مجموعة:' }, $locale)}</span>
-    <select class="input w-52 py-1 text-sm" bind:value={bulkMinistryId}>
-      <option value="">{tr({ en: '— choose —', ar: '— اختر —' }, $locale)}</option>
-      {#each ministries as m}<option value={m.id}>{m.kind === 'group' ? '🏡' : '🙌'} {tr(m.name, $locale)}</option>{/each}
-    </select>
-    <select class="input w-36 py-1 text-sm" bind:value={bulkRole}>
-      {#each BULK_ROLES as r}<option value={r.v}>{tr({ en: r.en, ar: r.ar }, $locale)}</option>{/each}
-    </select>
-    <button class="btn-primary text-sm" disabled={!bulkMinistryId || bulkBusy} onclick={bulkAddToMinistry}>{bulkBusy ? $t('common.loading') : tr({ en: 'Add', ar: 'إضافة' }, $locale)}</button>
-    <button class="ms-auto text-sm text-slate-500 hover:underline" onclick={() => (selected = new Set())}>{tr({ en: 'Clear', ar: 'مسح' }, $locale)}</button>
+{#if canBulk && selected.size > 0}
+  <div class="mb-3 rounded-xl border border-primary-200 bg-primary-50 px-4 py-3 dark:border-primary-800 dark:bg-primary-900/20">
+    <div class="flex flex-wrap items-center gap-2">
+      <span class="font-medium" style="color: var(--brand)">{selected.size} {tr({ en: 'selected', ar: 'محدد' }, $locale)}</span>
+      {#if canRoster && canAssignFamily}
+        <div class="inline-flex overflow-hidden rounded-lg border border-primary-300 text-sm dark:border-primary-700">
+          <button class="px-3 py-1 {bulkTarget === 'ministry' ? 'text-white' : 'text-slate-600 dark:text-slate-300'}" style={bulkTarget === 'ministry' ? 'background: var(--brand)' : ''} onclick={() => (bulkTarget = 'ministry')}>{tr({ en: 'Ministry / group', ar: 'خدمة / مجموعة' }, $locale)}</button>
+          <button class="border-s border-primary-300 px-3 py-1 dark:border-primary-700 {bulkTarget === 'family' ? 'text-white' : 'text-slate-600 dark:text-slate-300'}" style={bulkTarget === 'family' ? 'background: var(--brand)' : ''} onclick={() => (bulkTarget = 'family')}>{tr({ en: 'Family', ar: 'عائلة' }, $locale)}</button>
+        </div>
+      {/if}
+      <button class="ms-auto text-sm text-slate-500 hover:underline" onclick={() => (selected = new Set())}>{tr({ en: 'Clear', ar: 'مسح' }, $locale)}</button>
+    </div>
+
+    {#if canRoster && bulkTarget === 'ministry'}
+      <div class="mt-2 flex flex-wrap items-center gap-2">
+        <span class="text-sm text-slate-500">{tr({ en: 'Add to ministry / group:', ar: 'أضِف إلى خدمة / مجموعة:' }, $locale)}</span>
+        <select class="input w-52 py-1 text-sm" bind:value={bulkMinistryId}>
+          <option value="">{tr({ en: '— choose —', ar: '— اختر —' }, $locale)}</option>
+          {#each ministries as m}<option value={m.id}>{m.kind === 'group' ? '🏡' : '🙌'} {tr(m.name, $locale)}</option>{/each}
+        </select>
+        <select class="input w-36 py-1 text-sm" bind:value={bulkRole}>
+          {#each BULK_ROLES as r}<option value={r.v}>{tr({ en: r.en, ar: r.ar }, $locale)}</option>{/each}
+        </select>
+        <button class="btn-primary text-sm" disabled={!bulkMinistryId || bulkBusy} onclick={bulkAddToMinistry}>{bulkBusy ? $t('common.loading') : tr({ en: 'Add', ar: 'إضافة' }, $locale)}</button>
+      </div>
+    {:else if canAssignFamily}
+      <div class="relative mt-2 flex flex-wrap items-center gap-2">
+        <span class="text-sm text-slate-500">{tr({ en: 'Add to family:', ar: 'أضِف إلى عائلة:' }, $locale)}</span>
+        <input class="input w-64 py-1 text-sm" bind:value={famQuery} oninput={() => { bulkFamily = null; searchBulkFamilies(); }} placeholder={tr({ en: 'Search families by name…', ar: 'ابحث عن عائلة بالاسم…' }, $locale)} />
+        <button class="btn-primary text-sm" disabled={!bulkFamily || bulkBusy} onclick={bulkAddToFamily}>{bulkBusy ? $t('common.loading') : tr({ en: 'Add', ar: 'إضافة' }, $locale)}</button>
+        {#if bulkFamily}<span class="text-xs text-emerald-600 dark:text-emerald-400">✓ {tr(bulkFamily.name, $locale)}</span>{/if}
+        {#if famResults.length && !bulkFamily}
+          <div class="absolute top-full z-20 mt-1 max-h-56 w-64 overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-900" style="inset-inline-start: 6.5rem">
+            {#each famResults as fam}
+              <button type="button" class="block w-full px-3 py-2 text-start text-sm hover:bg-slate-100 dark:hover:bg-slate-800" onclick={() => pickBulkFamily(fam)}>{tr(fam.name, $locale) || tr({ en: 'Unnamed family', ar: 'عائلة بدون اسم' }, $locale)}</button>
+            {/each}
+          </div>
+        {/if}
+      </div>
+    {/if}
   </div>
 {/if}
 
@@ -350,7 +405,7 @@
     <table class="w-full text-sm">
       <thead class="border-b border-slate-200 text-start text-slate-500 dark:border-slate-800">
         <tr>
-          {#if canRoster}<th class="w-10 p-3 text-start"><input type="checkbox" checked={allShownSelected} onchange={toggleAllShown} aria-label={tr({ en: 'Select all shown', ar: 'تحديد الكل' }, $locale)} /></th>{/if}
+          {#if canBulk}<th class="w-10 p-3 text-start"><input type="checkbox" checked={allShownSelected} onchange={toggleAllShown} aria-label={tr({ en: 'Select all shown', ar: 'تحديد الكل' }, $locale)} /></th>{/if}
           <th class="w-16 p-3 text-start font-medium text-slate-400">{tr({ en: 'ID', ar: 'المعرّف' }, $locale)}</th>
           <th class="p-3 text-start font-medium">{tr({ en: 'Name', ar: 'الاسم' }, $locale)}</th>
           <th class="p-3 text-start font-medium">{tr({ en: 'Household', ar: 'الأسرة' }, $locale)}</th>
@@ -363,7 +418,7 @@
       <tbody>
         {#each rows as p}
           <tr class="border-b border-slate-100 last:border-0 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/50 {selected.has(p.id) ? 'bg-primary-50/40 dark:bg-primary-900/10' : ''}">
-            {#if canRoster}<td class="p-3 align-top"><input type="checkbox" checked={selected.has(p.id)} onchange={() => toggleSel(p.id)} aria-label={tr({ en: 'Select', ar: 'تحديد' }, $locale)} /></td>{/if}
+            {#if canBulk}<td class="p-3 align-top"><input type="checkbox" checked={selected.has(p.id)} onchange={() => toggleSel(p.id)} aria-label={tr({ en: 'Select', ar: 'تحديد' }, $locale)} /></td>{/if}
             <td class="p-3 align-top">
               <span class="inline-block rounded-md bg-slate-100 px-2 py-0.5 text-xs font-semibold tabular-nums text-slate-500 dark:bg-slate-800 dark:text-slate-400">{p.id}</span>
             </td>

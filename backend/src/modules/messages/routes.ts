@@ -43,6 +43,8 @@ const schema = z.object({
   schedule: scheduleZod.nullable().optional(),
   // Tokens of files uploaded via /messages/attachments, linked to this campaign.
   attachmentTokens: z.array(z.string().max(80)).max(50).optional(),
+  // Where image attachments appear in email: in the body, attached, or both.
+  imagePlacement: z.enum(['body', 'attach', 'both']).default('body'),
 });
 
 /** Attach previously-uploaded (unlinked) files to a campaign. */
@@ -194,6 +196,7 @@ messagesRouter.get('/:id(\\d+)', requirePermission('view message'), asyncHandler
       subject: messageCampaigns.subject, body: messageCampaigns.body, status: messageCampaigns.status,
       scheduledFor: messageCampaigns.scheduledFor, sentAt: messageCampaigns.sentAt, createdAt: messageCampaigns.createdAt,
       mediaUrl: messageCampaigns.mediaUrl, ctaLabel: messageCampaigns.ctaLabel, ctaUrl: messageCampaigns.ctaUrl,
+      imagePlacement: messageCampaigns.imagePlacement,
       audience: messageCampaigns.audience, schedule: messageCampaigns.schedule,
       createdByUserId: messageCampaigns.createdByUserId, createdByName: creator.name,
       sentByUserId: messageCampaigns.sentByUserId, sentByName: sender.name,
@@ -263,6 +266,7 @@ messagesRouter.post('/', requirePermission('create message'), asyncHandler(async
     mediaUrl: b.mediaUrl ?? null,
     ctaLabel: b.ctaLabel ?? null,
     ctaUrl: b.ctaUrl ?? null,
+    imagePlacement: b.imagePlacement,
     audience: b.audience ?? null,
     schedule: b.schedule ?? null,
     createdByUserId: req.auth!.sub,
@@ -368,6 +372,7 @@ const quickSendSchema = z.object({
   ctaUrl: z.string().nullable().optional(),
   mediaUrl: z.string().nullable().optional(),
   attachmentTokens: z.array(z.string().max(80)).max(50).optional(),
+  imagePlacement: z.enum(['body', 'attach', 'both']).default('body'),
 });
 messagesRouter.post('/quick-send', sendLimiter, requirePermission('create message'), asyncHandler(async (req, res) => {
   const b = quickSendSchema.parse(req.body);
@@ -389,9 +394,9 @@ messagesRouter.post('/quick-send', sendLimiter, requirePermission('create messag
   const signature = renderText(localeName(org.emailSettings?.signature, lang), ctx) || undefined;
   // Attachments: inline for email (within cap) or secure links appended to the body.
   const appUrl = config.PUBLIC_APP_URL?.replace(/\/+$/, '');
-  const prepared = await prepareDelivery(await loadAttachmentsByTokens(b.attachmentTokens ?? []), b.channel, appUrl);
+  const prepared = await prepareDelivery(await loadAttachmentsByTokens(b.attachmentTokens ?? []), b.channel, appUrl, b.imagePlacement);
   const bodyWithLinks = prepared.linkLines.length ? `${bodyText}\n\n${prepared.linkLines.join('\n')}` : bodyText;
-  const html = b.channel === 'email' ? brandedEmailHtml(bodyWithLinks, org, { lang, signature, cta }) : undefined;
+  const html = b.channel === 'email' ? brandedEmailHtml(bodyWithLinks, org, { lang, signature, cta, attachmentsHtml: prepared.imagesHtml }) : undefined;
   const plain = [bodyWithLinks, cta ? `${cta.label}: ${cta.url}` : '', signature].filter(Boolean).join('\n\n');
   const ok = await sendMessage(messaging, b.channel, contact, subject, plain, html, b.mediaUrl ?? undefined, prepared.inline);
 

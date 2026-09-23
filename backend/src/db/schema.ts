@@ -67,6 +67,7 @@ export type EmailSettings = {
   social?: { facebook?: string; instagram?: string; youtube?: string };
   showContactFooter?: boolean; // include address/phone/website footer (default true)
   buttonColor?: string;        // CTA button colour; falls back to brandColor
+  headerImage?: string;        // optional email header photo/banner (data: URI or https URL), shown on the right of the header
 };
 
 // ---------------------------------------------------------------------------
@@ -684,6 +685,9 @@ export const messageCampaigns = pgTable('message_campaigns', {
   // Optional call-to-action button (email): localized label + a link URL.
   ctaLabel: jsonb('cta_label').$type<I18n>(),
   ctaUrl: text('cta_url'),
+  // How image attachments appear in email: inline in the body, as attached files,
+  // or both. Non-image files are always attached (or linked when oversized).
+  imagePlacement: varchar('image_placement', { length: 10 }).notNull().default('body'),
   // Who receives it, resolved against opted-in people on the channel at SEND time:
   //  - 'all'        → everyone opted-in (null is the legacy equivalent)
   //  - 'people'     → an explicit person list (select-all / unchecked in composer)

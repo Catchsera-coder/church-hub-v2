@@ -141,6 +141,7 @@ export function brandedEmailHtml(
     unsubscribeUrl?: string;                  // broadcasts → shows an unsubscribe line
     bodyFooterNote?: string;                  // small note under the body (e.g. template footer)
     preheader?: string;                       // hidden inbox-preview text
+    attachmentsHtml?: string;                 // pre-built inline image HTML shown under the body
   } = {},
 ): string {
   const lang = opts.lang ?? 'en';
@@ -157,13 +158,21 @@ export function brandedEmailHtml(
   const logoSrc = org.logoPath
     ? (/^https?:\/\//i.test(org.logoPath) ? org.logoPath : (appUrl ? `${appUrl}/api/public/branding/logo` : null))
     : null;
-  // Centered logo with the church name beneath it (name only, larger, when no logo).
+  // Header layout: logo on the LEFT with the church name beside it (once), and an
+  // optional church header photo/banner on the RIGHT (set in Settings → email
+  // branding). Data: URIs go through the public branding endpoints (email clients
+  // block data: URIs); external https URLs are used as-is.
   const logoImg = logoSrc
-    ? `<img src="${escapeHtml(logoSrc)}" alt="${name}" style="height:54px;max-width:220px;object-fit:contain;display:block;margin:0 auto 10px" />`
+    ? `<img src="${escapeHtml(logoSrc)}" alt="${name}" style="height:46px;max-width:180px;object-fit:contain;display:block" />`
     : '';
-  const headerName = logoSrc
-    ? `<div style="font-size:14px;font-weight:600;letter-spacing:.5px;color:rgba(255,255,255,0.9);margin:0">${name}</div>`
-    : `<div style="font-size:22px;font-weight:700;color:#ffffff;margin:0">${name}</div>`;
+  const headerName = `<div style="font-size:${logoSrc ? '16px' : '22px'};font-weight:700;color:#ffffff;margin:${logoSrc ? '8px 0 0' : '0'}">${name}</div>`;
+  const headerImgVal = es.headerImage;
+  const headerImgSrc = headerImgVal
+    ? (/^https?:\/\//i.test(headerImgVal) ? headerImgVal : (appUrl ? `${appUrl}/api/public/branding/header-image` : null))
+    : null;
+  const headerPhoto = headerImgSrc
+    ? `<img src="${escapeHtml(headerImgSrc)}" alt="" style="height:58px;max-width:150px;object-fit:contain;border-radius:8px;display:block" />`
+    : '';
 
   const preheader = opts.preheader
     ? `<div style="display:none;max-height:0;overflow:hidden;opacity:0">${escapeHtml(opts.preheader)}</div>`
@@ -174,6 +183,7 @@ export function brandedEmailHtml(
     : '';
   const highlight = opts.highlight ? highlightBox(opts.highlight, brand) : '';
   const body = paragraphs(bodyText);
+  const inlineImages = opts.attachmentsHtml ?? '';
   const cta = opts.cta && opts.cta.url && opts.cta.label ? ctaButton(opts.cta, btn) : '';
   const signature = opts.signature
     ? `<div style="margin:20px 0 0;font-size:15px;line-height:1.6;color:#0f172a">${escapeHtml(opts.signature).replace(/\n/g, '<br/>')}</div>`
@@ -208,11 +218,15 @@ export function brandedEmailHtml(
     + `<body style="margin:0;background:#eef1f5;padding:28px 16px;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#0f172a">`
     + preheader
     + `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 6px 24px rgba(15,23,42,0.10)">`
-    + `<tr><td style="background:${brand};padding:32px 28px 26px;text-align:center">${logoImg}${headerName}</td></tr>`
+    + `<tr><td style="background:${brand};padding:24px 28px">`
+      + `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>`
+        + `<td style="vertical-align:middle;text-align:left">${logoImg}${headerName}</td>`
+        + (headerPhoto ? `<td style="vertical-align:middle;text-align:right;white-space:nowrap">${headerPhoto}</td>` : '')
+      + `</tr></table>`
+    + `</td></tr>`
     + `<tr><td style="height:4px;background:${brandDark};font-size:0;line-height:0">&nbsp;</td></tr>`
-    + `<tr><td style="padding:34px 36px">${heading}${body}${highlight}${cta}${signature}${bodyNote}</td></tr>`
+    + `<tr><td style="padding:34px 36px">${heading}${body}${inlineImages}${highlight}${cta}${signature}${bodyNote}</td></tr>`
     + footer
     + `</table>`
-    + `<div style="max-width:600px;margin:14px auto 0;text-align:center;color:#94a3b8;font-size:11px;line-height:1.5">${name}</div>`
     + `</body></html>`;
 }

@@ -36,8 +36,10 @@
   let editError = $state('');
 
   const ROLES = [
+    { en: 'Head', ar: 'رب الأسرة' }, { en: 'Husband', ar: 'زوج' }, { en: 'Wife', ar: 'زوجة' },
     { en: 'Father', ar: 'أب' }, { en: 'Mother', ar: 'أم' }, { en: 'Son', ar: 'ابن' },
-    { en: 'Daughter', ar: 'ابنة' }, { en: 'Guardian', ar: 'وصي' }, { en: 'Grandparent', ar: 'جد/جدة' },
+    { en: 'Daughter', ar: 'ابنة' }, { en: 'Brother', ar: 'أخ' }, { en: 'Sister', ar: 'أخت' },
+    { en: 'Guardian', ar: 'وصي' }, { en: 'Grandparent', ar: 'جد/جدة' },
   ];
   const STATUSES = ['visitor', 'regular', 'member', 'inactive'];
 

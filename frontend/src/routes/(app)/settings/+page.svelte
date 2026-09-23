@@ -93,6 +93,7 @@
           social: form.emailSettings?.social ?? {},
           showContactFooter: form.emailSettings?.showContactFooter !== false,
           buttonColor: form.emailSettings?.buttonColor || '',
+          headerImage: form.emailSettings?.headerImage || '',
         },
       }) });
       saved = true;
@@ -112,6 +113,17 @@
     if (file.size > 512 * 1024) { alert(tr({ en: 'Logo must be under 512 KB.', ar: 'يجب أن يكون الشعار أقل من 512 كيلوبايت.' }, $locale)); return; }
     const reader = new FileReader();
     reader.onload = () => { form.logoPath = reader.result as string; };
+    reader.readAsDataURL(file);
+  }
+
+  // Optional email header photo/banner (shown on the right of the email header).
+  function onHeaderImageFile(e: Event) {
+    const file = (e.currentTarget as HTMLInputElement).files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) { alert(tr({ en: 'Please choose an image file.', ar: 'اختر ملف صورة.' }, $locale)); return; }
+    if (file.size > 512 * 1024) { alert(tr({ en: 'Header photo must be under 512 KB.', ar: 'يجب أن تكون الصورة أقل من 512 كيلوبايت.' }, $locale)); return; }
+    const reader = new FileReader();
+    reader.onload = () => { if (form.emailSettings) form.emailSettings.headerImage = reader.result as string; };
     reader.readAsDataURL(file);
   }
 
@@ -367,6 +379,19 @@
         </label>
       </div>
 
+      <!-- Optional header photo/banner: shown on the RIGHT of the email header (logo stays on the left). -->
+      <div class="space-y-1">
+        <span class="block text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Email header photo (optional)', ar: 'صورة رأس البريد (اختياري)' }, $locale)}</span>
+        <p class="text-xs text-slate-400">{tr({ en: 'Appears on the right of the email header, next to your logo. Under 512 KB. Save to apply.', ar: 'تظهر على يمين رأس البريد بجانب الشعار. أقل من 512 كيلوبايت. احفظ للتطبيق.' }, $locale)}</p>
+        <div class="mt-1 flex flex-wrap items-center gap-3">
+          {#if form.emailSettings?.headerImage}
+            <img src={form.emailSettings.headerImage} alt="" class="h-12 max-w-[160px] rounded-lg object-contain ring-1 ring-slate-200 dark:ring-slate-700" />
+          {/if}
+          <input type="file" accept="image/*" onchange={onHeaderImageFile} class="text-sm" />
+          {#if form.emailSettings?.headerImage}<button type="button" class="text-xs text-rose-600 hover:underline" onclick={() => (form.emailSettings.headerImage = '')}>{$t('common.delete')}</button>{/if}
+        </div>
+      </div>
+
       <!-- Live preview: the real branded email rendered from these settings -->
       <div class="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
         <div class="mb-2 flex items-center gap-2">
@@ -374,7 +399,7 @@
           <span class="text-xs text-slate-400">{tr({ en: 'See exactly what members receive.', ar: 'شاهد بالضبط ما يستلمه الأعضاء.' }, $locale)}</span>
         </div>
         {#if previewHtml}
-          <iframe title="Email preview" srcdoc={previewHtml} sandbox="" class="h-[520px] w-full rounded-md border border-slate-200 bg-white dark:border-slate-700"></iframe>
+          <iframe title="Email preview" srcdoc={previewHtml} sandbox="allow-same-origin" class="h-[520px] w-full rounded-md border border-slate-200 bg-white dark:border-slate-700"></iframe>
         {/if}
       </div>
     </div>

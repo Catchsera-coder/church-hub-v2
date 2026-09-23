@@ -48,6 +48,8 @@ export function createApp() {
   // before the global limit applies to everything else.
   app.use('/api/import', express.json({ limit: '15mb' }));
   app.use('/api/media', express.json({ limit: '8mb' }));
+  // Settings carries branding images (logo + email header photo) as data: URIs.
+  app.use('/api/settings', express.json({ limit: '4mb' }));
   // Base64 attachment fallback (small files) — Blob uploads bypass the API body.
   app.use('/api/messages/attachments', express.json({ limit: '25mb' }));
   app.use(express.json({ limit: '1mb' }));

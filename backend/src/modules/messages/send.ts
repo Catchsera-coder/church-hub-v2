@@ -46,7 +46,7 @@ export async function sendCampaignNow(campaignId: number, sentByUserId?: number)
   // Attachments: computed once and reused for every recipient. `inline` files are
   // attached to email (within the provider cap); `linkLines` are secure download
   // links appended to the body (SMS/WhatsApp, or oversized email).
-  const prepared = await prepareDelivery(await loadCampaignAttachments(campaignId), c.channel, appUrl);
+  const prepared = await prepareDelivery(await loadCampaignAttachments(campaignId), c.channel, appUrl, (c.imagePlacement as 'body' | 'attach' | 'both') ?? 'body');
 
   let sent = 0;
   for (const p of audience) {
@@ -65,7 +65,7 @@ export async function sendCampaignNow(campaignId: number, sentByUserId?: number)
     // Fold any attachment download links into the body so they appear in-message.
     const bodyWithLinks = prepared.linkLines.length ? `${body}\n\n${prepared.linkLines.join('\n')}` : body;
     const html = c.channel === 'email'
-      ? brandedEmailHtml(bodyWithLinks, org, { lang, signature, unsubscribeUrl, cta })
+      ? brandedEmailHtml(bodyWithLinks, org, { lang, signature, unsubscribeUrl, cta, attachmentsHtml: prepared.imagesHtml })
       : undefined;
     const plain = [
       bodyWithLinks,

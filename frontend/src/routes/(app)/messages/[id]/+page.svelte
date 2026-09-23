@@ -121,7 +121,7 @@
     {#if current}
       {#if msg.channel === 'email'}
         {#if current.subject}<p class="mb-2 text-sm"><span class="text-slate-400">{tr({ en: 'Subject:', ar: 'الموضوع:' }, $locale)}</span> <b>{current.subject}</b></p>{/if}
-        <iframe title="message" srcdoc={current.html} sandbox="" class="h-[520px] w-full rounded-md border border-slate-200 bg-white dark:border-slate-700"></iframe>
+        <iframe title="message" srcdoc={current.html} sandbox="allow-same-origin" class="h-[520px] w-full rounded-md border border-slate-200 bg-white dark:border-slate-700"></iframe>
       {:else}
         <div class="rounded-2xl bg-emerald-100 p-4 text-sm text-slate-800 dark:bg-emerald-900/40 dark:text-slate-100" style="white-space:pre-wrap">{current.text}</div>
         {#if msg.mediaUrl}<img src={msg.mediaUrl} alt="" class="mt-3 max-h-64 rounded-lg" />{/if}
