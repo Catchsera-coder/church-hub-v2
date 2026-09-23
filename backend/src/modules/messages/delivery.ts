@@ -173,7 +173,7 @@ export async function verifyEmail(m: ResolvedMessaging, to: string): Promise<{ o
         body: JSON.stringify({ personalizations: [{ to: [{ email: to }] }], from: { email: m.mailFrom }, subject, content: [{ type: 'text/plain', value: body }] }),
       });
     } else {
-      res = await acsSignedFetch(m.acsConnectionString!, '/emails:send?api-version=2023-03-31', {
+      res = await acsSignedFetch(m.acsConnectionString!, '/emails:send?api-version=2025-09-01', {
         senderAddress: m.acsMailFrom, content: { subject, plainText: body }, recipients: { to: [{ address: to }] },
       });
     }
@@ -211,7 +211,7 @@ async function sendEmailSendgrid(m: ResolvedMessaging, to: string, subject: stri
 async function sendEmailAcs(m: ResolvedMessaging, to: string, subject: string, body: string, html?: string, attachments?: EmailAttachment[]): Promise<boolean> {
   const res = await acsSignedFetch(
     m.acsConnectionString!,
-    '/emails:send?api-version=2023-03-31',
+    '/emails:send?api-version=2025-09-01',
     {
       senderAddress: m.acsMailFrom,
       content: { subject: subject || '(no subject)', plainText: body, ...(html ? { html } : {}) },
