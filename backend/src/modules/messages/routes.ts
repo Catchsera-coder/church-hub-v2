@@ -13,7 +13,7 @@ import { logActivity } from '../activity/service.js';
 import { sendCampaignNow } from './send.js';
 import { resolveAi, draftMessages, type AiChannel } from './ai.js';
 import { resolveMessaging, sendMessage } from './delivery.js';
-import { buildContext, renderText, brandedEmailHtml, localeName } from './render.js';
+import { buildContext, renderText, brandedEmailHtml, localeName, linksToPlainText } from './render.js';
 import { loadAttachmentsByTokens, prepareDelivery, dataUriAttachment, previewImagesHtml, type OutAttachment } from './attach.js';
 import { scheduleZod } from '../scheduling/schedule.js';
 import { audienceZod, countReachable } from './audience.js';
@@ -405,9 +405,11 @@ messagesRouter.post('/quick-send', sendLimiter, requirePermission('create messag
   const headerAtt = b.channel === 'email' ? dataUriAttachment(org.emailSettings?.headerImage, 'header', 'headerimg') : null;
   const brandAtts: OutAttachment[] = [logoAtt, headerAtt].filter((x): x is OutAttachment => Boolean(x));
   const bodyWithLinks = prepared.linkLines.length ? `${bodyText}\n\n${prepared.linkLines.join('\n')}` : bodyText;
-  const html = b.channel === 'email' ? brandedEmailHtml(bodyWithLinks, org, { lang, signature, cta, attachmentsHtml: prepared.imagesHtml, logoCid: logoAtt ? 'logo' : undefined, headerImageCid: headerAtt ? 'headerimg' : undefined }) : undefined;
-  const plain = [bodyWithLinks, cta ? `${cta.label}: ${cta.url}` : '', signature].filter(Boolean).join('\n\n');
-  const ok = await sendMessage(messaging, b.channel, contact, subject, plain, html, b.mediaUrl ?? undefined, [...brandAtts, ...prepared.inline]);
+  const unsubscribeUrl = b.channel === 'email' && appUrl && person?.unsubToken ? `${appUrl}/unsubscribe/${person.unsubToken}` : undefined;
+  const oneClickUnsub = b.channel === 'email' && appUrl && person?.unsubToken ? `${appUrl}/api/public/unsubscribe/${person.unsubToken}/one-click` : undefined;
+  const html = b.channel === 'email' ? brandedEmailHtml(bodyWithLinks, org, { lang, signature, cta, unsubscribeUrl, attachmentsHtml: prepared.imagesHtml, logoCid: logoAtt ? 'logo' : undefined, headerImageCid: headerAtt ? 'headerimg' : undefined }) : undefined;
+  const plain = [linksToPlainText(bodyWithLinks), cta ? `${cta.label}: ${cta.url}` : '', signature].filter(Boolean).join('\n\n');
+  const ok = await sendMessage(messaging, b.channel, contact, subject, plain, html, b.mediaUrl ?? undefined, [...brandAtts, ...prepared.inline], oneClickUnsub);
 
   // Log the direct send so it appears in the sent-log alongside campaigns: a
   // lightweight campaign row (marked as a direct send) + one recipient row.

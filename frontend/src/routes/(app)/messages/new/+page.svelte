@@ -6,6 +6,7 @@
   import { get } from 'svelte/store';
   import { t, locale, tr, enabledLocales, displayName, personContext } from '$lib/i18n.js';
   import { nameOrder } from '$lib/stores/prefs.js';
+  import { hasRole } from '$lib/stores/auth.js';
   import PageHeader from '$lib/components/PageHeader.svelte';
   import ScheduleEditor from '$lib/components/ScheduleEditor.svelte';
   import { type Schedule, defaultSchedule, describeSchedule } from '$lib/schedule.js';
@@ -360,6 +361,68 @@
     if (form.channel === 'email') { if (!form.ctaLabel.en?.trim()) form.ctaLabel.en = 'Watch live'; form.ctaUrl = link; }
   }
 
+  // --- Saved link library (reusable: giving/Venmo, social, website, forms) -----
+  // Curated in Settings → email branding; offered here as one-click CTA / body
+  // inserts. Seeded with the church's social + website so links are ready to use.
+  let savedLinks = $state<{ label: string; url: string }[]>([]);
+  let orgEmailSettings = $state<Record<string, any>>({});
+  const canSaveLinks = hasRole('Admin');
+  onMount(async () => {
+    try {
+      const { data } = await api<{ data: any }>('/settings');
+      orgEmailSettings = data?.emailSettings ?? {};
+      const curated = (orgEmailSettings.quickLinks ?? []) as { label: string; url: string }[];
+      const s = orgEmailSettings.social ?? {};
+      const derived = [
+        s.facebook && { label: 'Facebook', url: s.facebook },
+        s.instagram && { label: 'Instagram', url: s.instagram },
+        s.youtube && { label: 'YouTube', url: s.youtube },
+        orgEmailSettings.website && { label: 'Website', url: orgEmailSettings.website },
+      ].filter(Boolean) as { label: string; url: string }[];
+      const seen = new Set(curated.map((l) => l.url));
+      savedLinks = [...curated, ...derived.filter((l) => !seen.has(l.url))];
+    } catch { /* optional */ }
+  });
+  // Link picker UI state.
+  let linkMenuOpen = $state(false);
+  let customLinkLabel = $state('');
+  let customLinkUrl = $state('');
+  let saveCustomLink = $state(false);
+  const normalizeUrl = (u: string) => { const t = u.trim(); return t && !/^https?:\/\//i.test(t) && !t.startsWith('mailto:') && !t.startsWith('tel:') ? `https://${t}` : t; };
+  // Insert a labelled link into the body for every enabled language as markdown
+  // [label](url) — the email renders it as a real clickable link (render.ts) and
+  // SMS/plain flattens it to "label: url".
+  function insertLinkInBody(label: string, url: string) {
+    const u = normalizeUrl(url); const l = label.trim() || u;
+    if (!u) return;
+    const md = `[${l}](${u})`;
+    for (const loc of get(enabledLocales)) { const c = loc.code; form.body[c] = (form.body[c] ? form.body[c] + '\n\n' : '') + md; }
+    form.body = { ...form.body };
+  }
+  function setCtaFromLink(label: string, url: string) {
+    const u = normalizeUrl(url); if (!u) return;
+    if (!form.ctaLabel.en?.trim()) form.ctaLabel.en = label.trim();
+    form.ctaUrl = u; form.ctaLabel = { ...form.ctaLabel };
+  }
+  async function saveLinkToLibrary(label: string, url: string) {
+    const u = normalizeUrl(url); const l = label.trim(); if (!u || !l) return;
+    const next = [...savedLinks.filter((x) => x.url !== u), { label: l, url: u }];
+    savedLinks = next;
+    if (!canSaveLinks) return; // non-admins can still use it this session
+    try {
+      await api('/settings', { method: 'PUT', body: JSON.stringify({ emailSettings: { ...orgEmailSettings, quickLinks: next.map((x) => ({ label: x.label, url: x.url })) } }) });
+      orgEmailSettings = { ...orgEmailSettings, quickLinks: next };
+    } catch (err) { error = (err as Error).message; }
+  }
+  // Insert / set-CTA from the custom fields, optionally saving to the library.
+  function useCustomLink(asCta: boolean) {
+    if (!customLinkUrl.trim()) return;
+    const label = customLinkLabel.trim() || customLinkUrl.trim();
+    if (asCta) setCtaFromLink(label, customLinkUrl); else insertLinkInBody(label, customLinkUrl);
+    if (saveCustomLink) saveLinkToLibrary(label, customLinkUrl);
+    customLinkLabel = ''; customLinkUrl = ''; saveCustomLink = false; linkMenuOpen = false;
+  }
+
   function applyTemplate() {
     const tpl = templates.find((x) => x.id === Number(templateId));
     if (!tpl) return;
@@ -557,6 +620,39 @@
       </label>
     {/each}
 
+    <!-- Smart links: drop a Venmo/giving/social/any link into the body (renders as
+         a real clickable link in the email) or set it as the CTA button. Pick a
+         saved link or add a custom one; optionally save it to reuse. -->
+    <div class="relative">
+      <button type="button" class="btn-ghost border border-slate-300 text-sm dark:border-slate-700" onclick={() => (linkMenuOpen = !linkMenuOpen)}>🔗 {tr({ en: 'Insert link', ar: 'إدراج رابط' }, $locale)}</button>
+      {#if linkMenuOpen}
+        <div class="absolute z-20 mt-1 w-80 max-w-[90vw] rounded-xl border border-slate-200 bg-white p-3 shadow-xl dark:border-slate-700 dark:bg-slate-900" use:clickOutside={() => (linkMenuOpen = false)}>
+          {#if savedLinks.length}
+            <p class="mb-1 text-xs font-medium text-slate-500">{tr({ en: 'Saved links', ar: 'روابط محفوظة' }, $locale)}</p>
+            <div class="mb-3 max-h-40 space-y-1 overflow-y-auto">
+              {#each savedLinks as sl (sl.url)}
+                <div class="flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-sm dark:border-slate-700">
+                  <span class="min-w-0 flex-1 truncate" title={sl.url}>{sl.label}</span>
+                  <button type="button" class="rounded px-2 py-0.5 text-xs hover:bg-slate-100 dark:hover:bg-slate-800" onclick={() => { insertLinkInBody(sl.label, sl.url); linkMenuOpen = false; }}>{tr({ en: 'In body', ar: 'في النص' }, $locale)}</button>
+                  {#if form.channel === 'email'}<button type="button" class="rounded px-2 py-0.5 text-xs font-medium" style="color: var(--brand)" onclick={() => { setCtaFromLink(sl.label, sl.url); linkMenuOpen = false; }}>{tr({ en: 'As button', ar: 'كزر' }, $locale)}</button>{/if}
+                </div>
+              {/each}
+            </div>
+          {/if}
+          <p class="mb-1 text-xs font-medium text-slate-500">{tr({ en: 'Add a link', ar: 'أضف رابطاً' }, $locale)}</p>
+          <div class="space-y-1.5">
+            <input class="input text-sm" placeholder={tr({ en: 'Label — e.g. Give via Venmo', ar: 'التسمية — مثل: تبرّع عبر Venmo' }, $locale)} bind:value={customLinkLabel} />
+            <input class="input force-ltr text-sm" placeholder="https://…  ·  venmo.com/…  ·  facebook.com/…" bind:value={customLinkUrl} />
+            <label class="flex items-center gap-2 text-xs text-slate-500"><input type="checkbox" bind:checked={saveCustomLink} /> {canSaveLinks ? tr({ en: 'Save to reuse next time', ar: 'حفظ لإعادة الاستخدام لاحقاً' }, $locale) : tr({ en: 'Keep for this message', ar: 'احتفظ به لهذه الرسالة' }, $locale)}</label>
+            <div class="flex gap-2">
+              <button type="button" class="btn-ghost flex-1 border border-slate-300 text-sm dark:border-slate-700 disabled:opacity-50" disabled={!customLinkUrl.trim()} onclick={() => useCustomLink(false)}>{tr({ en: 'Insert in body', ar: 'أدرج في النص' }, $locale)}</button>
+              {#if form.channel === 'email'}<button type="button" class="flex-1 rounded-lg px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50" style="background: var(--brand)" disabled={!customLinkUrl.trim()} onclick={() => useCustomLink(true)}>{tr({ en: 'Set as button', ar: 'اجعله زراً' }, $locale)}</button>{/if}
+            </div>
+          </div>
+        </div>
+      {/if}
+    </div>
+
     <div class="rounded-lg bg-slate-50 p-3 text-xs text-slate-600 dark:bg-slate-800/50 dark:text-slate-300">
       <p class="mb-1 font-medium text-slate-700 dark:text-slate-200">✨ {tr({ en: 'Personalise with merge fields', ar: 'التخصيص بحقول الدمج' }, $locale)}</p>
       <p class="font-mono text-slate-700 dark:text-slate-200">{MERGE}</p>
@@ -596,6 +692,15 @@
         </div>
         {#if $enabledLocales.some((l) => l.code === 'ar')}
           <label class="mt-2 block text-sm"><span class="mb-1 block text-xs text-slate-500">{tr({ en: 'Button text (Arabic)', ar: 'نص الزر (عربي)' }, $locale)}</span><input class="input" dir="rtl" bind:value={form.ctaLabel.ar} /></label>
+        {/if}
+        {#if savedLinks.length}
+          <div class="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+            <span>{tr({ en: 'Or use a saved link:', ar: 'أو استخدم رابطاً محفوظاً:' }, $locale)}</span>
+            <select class="input w-auto py-1 text-xs" onchange={(e) => { const v = (e.currentTarget as HTMLSelectElement).value; const sl = savedLinks.find((x) => x.url === v); if (sl) setCtaFromLink(sl.label, sl.url); (e.currentTarget as HTMLSelectElement).value = ''; }}>
+              <option value="">{tr({ en: 'Choose…', ar: 'اختر…' }, $locale)}</option>
+              {#each savedLinks as sl (sl.url)}<option value={sl.url}>{sl.label}</option>{/each}
+            </select>
+          </div>
         {/if}
       </div>
     {/if}

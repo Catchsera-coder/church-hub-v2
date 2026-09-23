@@ -42,6 +42,34 @@ export function renderText(text: string, ctx: MergeContext): string {
 const escapeHtml = (s: string): string =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
+// A single clickable link, email-client-safe.
+const anchor = (url: string, label: string, color: string): string => {
+  const href = /^https?:\/\//i.test(url) ? url : `https://${url}`;
+  return `<a href="${href}" target="_blank" rel="noopener" style="color:${color};text-decoration:underline;font-weight:600">${label}</a>`;
+};
+
+/**
+ * Make links in the body actually clickable in the delivered email. Runs on
+ * ALREADY-HTML-ESCAPED text. Supports markdown `[label](url)` (nice labels — e.g.
+ * "Give via Venmo") and auto-links bare http(s):// and www. URLs. Bare-URL
+ * linking skips text already inside an <a> so we never double-wrap.
+ */
+export function linkifyHtml(escaped: string, color: string): string {
+  const md = escaped.replace(/\[([^\]\n]+)\]\((https?:\/\/[^)\s]+|www\.[^)\s]+)\)/g, (_m, label: string, url: string) => anchor(url, label, color));
+  return md
+    .split(/(<a\b[^>]*>.*?<\/a>)/gs)
+    .map((chunk) => (chunk.startsWith('<a') ? chunk : chunk.replace(/(https?:\/\/[^\s<]+|www\.[a-z0-9][^\s<]+)/gi, (u) => anchor(u, u, color))))
+    .join('');
+}
+
+/**
+ * Flatten markdown `[label](url)` to "label: url" for plain-text channels
+ * (SMS/WhatsApp and the email plain-text fallback) so the link is still usable.
+ */
+export function linksToPlainText(text: string): string {
+  return (text || '').replace(/\[([^\]\n]+)\]\((https?:\/\/[^)\s]+|www\.[^)\s]+)\)/g, (_m, label: string, url: string) => `${label}: ${url}`);
+}
+
 const validHex = (v?: string | null): string | null =>
   v && /^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(v) ? v : null;
 
@@ -61,12 +89,13 @@ export type OrgBrand = {
   emailSettings?: EmailSettings | null;
 };
 
-/** Render body text (already merge-substituted) into styled paragraphs. */
-function paragraphs(text: string): string {
+/** Render body text (already merge-substituted) into styled paragraphs, with any
+ * `[label](url)` markdown or bare URLs turned into clickable links. */
+function paragraphs(text: string, linkColor: string): string {
   return escapeHtml(text)
     .split(/\n{2,}/)
     .filter((p) => p.trim() !== '')
-    .map((p) => `<p style="margin:0 0 16px;line-height:1.65;font-size:15px;color:#0f172a">${p.replace(/\n/g, '<br/>')}</p>`)
+    .map((p) => `<p style="margin:0 0 16px;line-height:1.65;font-size:15px;color:#0f172a">${linkifyHtml(p.replace(/\n/g, '<br/>'), linkColor)}</p>`)
     .join('');
 }
 
@@ -188,8 +217,8 @@ export function brandedEmailHtml(
   // the body. (renderText leaves [image] untouched — unlike {{tokens}}.)
   const imagesBlock = opts.attachmentsHtml ?? '';
   const body = imagesBlock && /\[images?\]/i.test(bodyText)
-    ? bodyText.split(/\[images?\]/i).map(paragraphs).join(imagesBlock)
-    : paragraphs(bodyText) + imagesBlock;
+    ? bodyText.split(/\[images?\]/i).map((seg) => paragraphs(seg, brand)).join(imagesBlock)
+    : paragraphs(bodyText, brand) + imagesBlock;
   const cta = opts.cta && opts.cta.url && opts.cta.label ? ctaButton(opts.cta, btn) : '';
   const signature = opts.signature
     ? `<div style="margin:20px 0 0;font-size:15px;line-height:1.6;color:#0f172a">${escapeHtml(opts.signature).replace(/\n/g, '<br/>')}</div>`

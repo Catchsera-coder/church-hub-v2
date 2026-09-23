@@ -67,7 +67,7 @@
     // Default the dashboard to all widgets when the church hasn't customized it.
     const widgets = r.data.dashboard?.widgets?.length ? r.data.dashboard.widgets : ALL_WIDGET_KEYS;
     const es = r.data.emailSettings ?? {};
-    form = { ...r.data, name: r.data.name ?? {}, dashboard: { widgets }, emailSettings: { ...es, signature: es.signature ?? {}, social: es.social ?? {} } };
+    form = { ...r.data, name: r.data.name ?? {}, dashboard: { widgets }, emailSettings: { ...es, signature: es.signature ?? {}, social: es.social ?? {}, quickLinks: es.quickLinks ?? [] } };
     if (isAdmin) {
       const m = await api<{ data: any }>('/settings/messaging');
       // secret fields start blank; blank on save = leave unchanged
@@ -94,6 +94,7 @@
           showContactFooter: form.emailSettings?.showContactFooter !== false,
           buttonColor: form.emailSettings?.buttonColor || '',
           headerImage: form.emailSettings?.headerImage || '',
+          quickLinks: (form.emailSettings?.quickLinks ?? []).filter((l: any) => l?.label?.trim() && l?.url?.trim()),
         },
       }) });
       saved = true;
@@ -362,6 +363,23 @@
         <label class="block space-y-1"><span class="text-sm text-slate-600 dark:text-slate-300">Facebook</span><input class="input force-ltr" placeholder="https://facebook.com/…" bind:value={form.emailSettings.social.facebook} /></label>
         <label class="block space-y-1"><span class="text-sm text-slate-600 dark:text-slate-300">Instagram</span><input class="input force-ltr" placeholder="https://instagram.com/…" bind:value={form.emailSettings.social.instagram} /></label>
         <label class="block space-y-1"><span class="text-sm text-slate-600 dark:text-slate-300">YouTube</span><input class="input force-ltr" placeholder="https://youtube.com/@…" bind:value={form.emailSettings.social.youtube} /></label>
+      </div>
+
+      <!-- Reusable link library: giving/Venmo, forms, any link. Offered in the
+           message composer as one-click "insert in body" / "set as button". -->
+      <div class="space-y-2">
+        <div>
+          <span class="text-sm font-medium text-slate-700 dark:text-slate-200">🔗 {tr({ en: 'Quick links (reusable)', ar: 'روابط سريعة (لإعادة الاستخدام)' }, $locale)}</span>
+          <p class="text-xs text-slate-500 dark:text-slate-400">{tr({ en: 'Give a link a name (e.g. “Give via Venmo”) so anyone can drop it into an email in one click. Facebook/Instagram/YouTube/Website above are offered automatically too.', ar: 'سمِّ الرابط (مثل «تبرّع عبر Venmo») ليتمكن أي شخص من إدراجه في البريد بنقرة واحدة. تُعرض أيضاً روابط فيسبوك/إنستغرام/يوتيوب/الموقع تلقائياً.' }, $locale)}</p>
+        </div>
+        {#each form.emailSettings.quickLinks as ql, i (i)}
+          <div class="flex flex-wrap items-center gap-2">
+            <input class="input flex-1 min-w-[120px] text-sm" placeholder={tr({ en: 'Label', ar: 'التسمية' }, $locale)} bind:value={ql.label} />
+            <input class="input force-ltr flex-[2] min-w-[160px] text-sm" placeholder="https://…  ·  venmo.com/…" bind:value={ql.url} />
+            <button type="button" class="text-xs text-rose-600 hover:underline" onclick={() => (form.emailSettings.quickLinks = form.emailSettings.quickLinks.filter((_: any, j: number) => j !== i))}>{tr({ en: 'Remove', ar: 'إزالة' }, $locale)}</button>
+          </div>
+        {/each}
+        <button type="button" class="text-sm font-medium hover:underline" style="color: var(--brand)" onclick={() => (form.emailSettings.quickLinks = [...(form.emailSettings.quickLinks ?? []), { label: '', url: '' }])}>+ {tr({ en: 'Add a link', ar: 'أضف رابطاً' }, $locale)}</button>
       </div>
 
       <div class="flex flex-wrap items-center gap-4">

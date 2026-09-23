@@ -68,6 +68,9 @@ export type EmailSettings = {
   showContactFooter?: boolean; // include address/phone/website footer (default true)
   buttonColor?: string;        // CTA button colour; falls back to brandColor
   headerImage?: string;        // optional email header photo/banner (data: URI or https URL), shown on the right of the header
+  // Reusable link library (giving/Venmo, social, website, forms, …) the composer
+  // offers as one-click CTA / insert-into-body options. Non-secret.
+  quickLinks?: { label: string; url: string }[];
 };
 
 // ---------------------------------------------------------------------------

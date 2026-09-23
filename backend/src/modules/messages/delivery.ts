@@ -127,11 +127,12 @@ export async function sendMessage(
   html?: string,      // optional branded HTML for email (plain `body` is the fallback)
   mediaUrl?: string,  // optional image for MMS (SMS) / media (WhatsApp) — Twilio only
   attachments?: EmailAttachment[], // files attached inline to email (ignored on SMS/WhatsApp)
+  listUnsubscribeUrl?: string, // email one-click unsubscribe URL (RFC 8058) — deliverability
 ): Promise<boolean> {
   try {
     if (channel === 'email') {
-      if (m.emailProvider === 'sendgrid') return await sendEmailSendgrid(m, to, subject, body, html, attachments);
-      if (m.emailProvider === 'acs') return await sendEmailAcs(m, to, subject, body, html, attachments);
+      if (m.emailProvider === 'sendgrid') return await sendEmailSendgrid(m, to, subject, body, html, attachments, listUnsubscribeUrl);
+      if (m.emailProvider === 'acs') return await sendEmailAcs(m, to, subject, body, html, attachments, listUnsubscribeUrl);
     } else if (channel === 'whatsapp') {
       if (m.whatsappProvider === 'twilio') return await sendWhatsappTwilio(m, to, body, mediaUrl);
       if (m.whatsappProvider === 'azure') return await sendWhatsappAcs(m, to, body);
@@ -185,7 +186,7 @@ export async function verifyEmail(m: ResolvedMessaging, to: string): Promise<{ o
 }
 
 // --- Email: SendGrid ---------------------------------------------------------
-async function sendEmailSendgrid(m: ResolvedMessaging, to: string, subject: string, body: string, html?: string, attachments?: EmailAttachment[]): Promise<boolean> {
+async function sendEmailSendgrid(m: ResolvedMessaging, to: string, subject: string, body: string, html?: string, attachments?: EmailAttachment[], listUnsubscribeUrl?: string): Promise<boolean> {
   // SendGrid requires text/plain before text/html; include both when we have HTML.
   const content = html
     ? [{ type: 'text/plain', value: body }, { type: 'text/html', value: html }]
@@ -199,6 +200,7 @@ async function sendEmailSendgrid(m: ResolvedMessaging, to: string, subject: stri
       ...(m.mailReplyTo ? { reply_to: { email: m.mailReplyTo } } : {}),
       subject: subject || '(no subject)',
       content,
+      ...(listUnsubscribeUrl ? { headers: { 'List-Unsubscribe': `<${listUnsubscribeUrl}>`, 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' } } : {}),
       ...(attachments?.length ? { attachments: attachments.map((a) => ({ content: a.base64, filename: a.filename, type: a.contentType, disposition: a.contentId ? 'inline' : 'attachment', ...(a.contentId ? { content_id: a.contentId } : {}) })) } : {}),
     }),
   });
@@ -208,7 +210,7 @@ async function sendEmailSendgrid(m: ResolvedMessaging, to: string, subject: stri
 }
 
 // --- Email: Azure Communication Services -------------------------------------
-async function sendEmailAcs(m: ResolvedMessaging, to: string, subject: string, body: string, html?: string, attachments?: EmailAttachment[]): Promise<boolean> {
+async function sendEmailAcs(m: ResolvedMessaging, to: string, subject: string, body: string, html?: string, attachments?: EmailAttachment[], listUnsubscribeUrl?: string): Promise<boolean> {
   const res = await acsSignedFetch(
     m.acsConnectionString!,
     '/emails:send?api-version=2025-09-01',
@@ -217,6 +219,7 @@ async function sendEmailAcs(m: ResolvedMessaging, to: string, subject: string, b
       content: { subject: subject || '(no subject)', plainText: body, ...(html ? { html } : {}) },
       recipients: { to: [{ address: to }] },
       ...(m.mailReplyTo ? { replyTo: [{ address: m.mailReplyTo }] } : {}),
+      ...(listUnsubscribeUrl ? { headers: { 'List-Unsubscribe': `<${listUnsubscribeUrl}>`, 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' } } : {}),
       ...(attachments?.length ? { attachments: attachments.map((a) => ({ name: a.filename, contentType: a.contentType, contentInBase64: a.base64, ...(a.contentId ? { contentId: a.contentId } : {}) })) } : {}),
     },
   );

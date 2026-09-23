@@ -24,6 +24,20 @@ publicConsentRouter.get(
   }),
 );
 
+// RFC 8058 one-click unsubscribe: the `List-Unsubscribe` header points here and
+// the mail client POSTs `List-Unsubscribe=One-Click` with no user interaction.
+// Any POST to this path opts the person out of EMAIL (headers are email-only).
+// Gmail/Yahoo bulk-sender requirement — improves deliverability + inbox trust.
+publicConsentRouter.post(
+  '/:token/one-click',
+  asyncHandler(async (req, res) => {
+    const [p] = await db.select({ id: people.id }).from(people).where(eq(people.unsubToken, req.params.token)).limit(1);
+    if (!p) throw notFound('Link not found.');
+    await db.update(people).set({ emailOptOut: true, updatedAt: new Date() }).where(eq(people.id, p.id));
+    res.status(200).send('Unsubscribed.');
+  }),
+);
+
 publicConsentRouter.post(
   '/:token',
   asyncHandler(async (req, res) => {
