@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { and, eq, isNull, sql, type SQL } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
 import { people, personServiceType, attendanceRecords } from '../../db/schema.js';
 
 // Shared people list/export filters so the list and its export stay identical.
@@ -7,6 +7,9 @@ export const peopleListQuery = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(1000).default(25),
   search: z.string().trim().optional(),
+  // Resolve a specific set of people by id (comma-separated), e.g. to show names
+  // for pre-selected recipients. Bounded to keep the IN list sane.
+  ids: z.string().trim().optional(),
   status: z.enum(['visitor', 'regular', 'member', 'inactive', 'conference_attendee']).optional(),
   review: z.enum(['pending']).optional(),
   ageGroup: z.enum(['child', 'youth', 'adult']).optional(),
@@ -40,6 +43,10 @@ export function peopleFilters(q: PeopleQuery): SQL[] {
   // Archived are excluded from normal views/pickers unless explicitly requested.
   if (q.archived === 'only') filters.push(sql`${people.archivedAt} IS NOT NULL`);
   else if (q.archived !== 'include') filters.push(isNull(people.archivedAt));
+  if (q.ids) {
+    const idList = q.ids.split(',').map((s) => Number(s.trim())).filter((n) => Number.isInteger(n) && n > 0).slice(0, 500);
+    filters.push(idList.length ? inArray(people.id, idList) : sql`false`);
+  }
   if (q.status) filters.push(eq(people.membershipStatus, q.status));
   if (q.category) filters.push(eq(people.category, q.category));
   if (q.firstSeenYear) filters.push(sql`(extract(year from ${people.firstVisitOn}) = ${q.firstSeenYear} OR ${people.customFields}->>'firstSeenYear' = ${String(q.firstSeenYear)})`);

@@ -14,7 +14,7 @@ import { sendCampaignNow } from './send.js';
 import { resolveAi, draftMessages, type AiChannel } from './ai.js';
 import { resolveMessaging, sendMessage } from './delivery.js';
 import { buildContext, renderText, brandedEmailHtml, localeName } from './render.js';
-import { loadAttachmentsByTokens, prepareDelivery, dataUriAttachment, type OutAttachment } from './attach.js';
+import { loadAttachmentsByTokens, prepareDelivery, dataUriAttachment, previewImagesHtml, type OutAttachment } from './attach.js';
 import { scheduleZod } from '../scheduling/schedule.js';
 import { audienceZod, countReachable } from './audience.js';
 import { currentOrg } from '../settings/routes.js';
@@ -339,6 +339,8 @@ const previewSchema = z.object({
   ctaLabel: z.record(z.string()).nullable().optional(),
   ctaUrl: z.string().nullable().optional(),
   lang: z.string().max(8).optional(),
+  attachmentTokens: z.array(z.string().max(80)).max(50).optional(),
+  imagePlacement: z.enum(['body', 'attach', 'both']).default('body'),
 });
 messagesRouter.post('/preview', requirePermission('view message'), asyncHandler(async (req, res) => {
   const b = previewSchema.parse(req.body);
@@ -351,7 +353,11 @@ messagesRouter.post('/preview', requirePermission('view message'), asyncHandler(
   const cta = b.ctaLabel && b.ctaUrl ? { label: renderText(localeName(b.ctaLabel, lang), ctx), url: b.ctaUrl } : null;
   if (b.channel === 'email') {
     const signature = renderText(localeName(org.emailSettings?.signature, lang), ctx) || undefined;
-    const html = brandedEmailHtml(bodyText, org, { lang, signature, cta, unsubscribeUrl: '#', preheader: subject });
+    // Preview uses public-URL images (they load in the same-origin iframe); real
+    // sends embed them as cid: (see send.ts). Logo/header use their URLs here too.
+    const appUrl = config.PUBLIC_APP_URL?.replace(/\/+$/, '');
+    const attachmentsHtml = await previewImagesHtml(b.attachmentTokens ?? [], appUrl, b.imagePlacement);
+    const html = brandedEmailHtml(bodyText, org, { lang, signature, cta, unsubscribeUrl: '#', preheader: subject, attachmentsHtml });
     res.json({ data: { channel: 'email', subject, html, text: bodyText } });
   } else {
     const text = [bodyText, cta ? `${cta.label}: ${cta.url}` : ''].filter(Boolean).join('\n\n');

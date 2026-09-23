@@ -118,6 +118,12 @@
   let peopleList = $state<any[]>([]);
   let peopleSearch = $state('');
   let selectedIds = $state<Set<number>>(new Set());
+  // Remember the picked person objects (not just ids) so we can show removable
+  // chips of who's selected even after the search list changes underneath.
+  let selectedPeople = $state<Map<number, any>>(new Map());
+  // Whether the search + checkbox list is expanded. Collapses to chips + an
+  // "Add / edit people" button once the user is done picking.
+  let showPicker = $state(true);
   let onePersonId = $state<number | null>(null);
   let oneContact = $state('');
 
@@ -164,8 +170,19 @@
   const reachable = (p: any) => Boolean(form.channel === 'email' ? p.email : p.mobile);
   const contactOf = (p: any) => (form.channel === 'email' ? p.email : p.mobile)
     || tr(form.channel === 'email' ? { en: 'no email on file', ar: 'لا يوجد بريد' } : { en: 'no number on file', ar: 'لا يوجد رقم' }, $locale);
-  function toggleId(id: number) { const s = new Set(selectedIds); if (s.has(id)) s.delete(id); else s.add(id); selectedIds = s; }
-  function selectAllShown() { const s = new Set(selectedIds); for (const p of peopleList) s.add(p.id); selectedIds = s; }
+  // Toggle a person in/out of the selection. Accepts the full person so we can
+  // keep the id set AND the id→person map (for chips) in sync.
+  function toggleId(p: any) {
+    const ids = new Set(selectedIds); const map = new Map(selectedPeople);
+    if (ids.has(p.id)) { ids.delete(p.id); map.delete(p.id); } else { ids.add(p.id); map.set(p.id, p); }
+    selectedIds = ids; selectedPeople = map;
+  }
+  function selectAllShown() {
+    const ids = new Set(selectedIds); const map = new Map(selectedPeople);
+    for (const p of peopleList) { ids.add(p.id); map.set(p.id, p); }
+    selectedIds = ids; selectedPeople = map;
+  }
+  function clearPeople() { selectedIds = new Set(); selectedPeople = new Map(); }
   // Select EVERYONE in the directory who has a contact on this channel (an email
   // for email, a number for SMS/WhatsApp) — not only opted-in. Opted-out people
   // are still skipped at send time.
@@ -175,9 +192,9 @@
     try {
       const filter = form.channel === 'email' ? 'hasEmail=true' : 'hasPhone=true';
       const r = await api<{ data: any[] }>(`/people?${filter}&limit=5000`);
-      const s = new Set(selectedIds);
-      for (const p of r.data) s.add(p.id);
-      selectedIds = s;
+      const ids = new Set(selectedIds); const map = new Map(selectedPeople);
+      for (const p of r.data) { ids.add(p.id); map.set(p.id, p); }
+      selectedIds = ids; selectedPeople = map;
       if (!peopleList.length) peopleList = r.data.slice(0, 50);
     } catch (err) { error = (err as Error).message; } finally { selectingAll = false; }
   }
@@ -193,6 +210,7 @@
       const f = filledForm();
       const { data } = await api<{ data: any }>('/messages/preview', { method: 'POST', body: JSON.stringify({
         channel: form.channel, subject: form.subject, body: f.body, ctaLabel: f.ctaLabel, ctaUrl: f.ctaUrl,
+        attachmentTokens: attachments.map((a) => a.token), imagePlacement,
       }) });
       previewData = data;
     } catch (err) { previewData = { error: (err as Error).message }; } finally { previewing = false; }
@@ -291,7 +309,14 @@
     const p = sp.get('people');
     if (p) {
       const ids = p.split(',').map(Number).filter((n) => Number.isFinite(n) && n > 0);
-      if (ids.length) { recipMode = 'people'; selectedIds = new Set(ids); searchPeople(); }
+      if (ids.length) {
+        recipMode = 'people'; selectedIds = new Set(ids); showPicker = false;
+        // Resolve the prefilled ids to names so the selected chips read properly.
+        api<{ data: any[] }>(`/people?ids=${ids.join(',')}&limit=${ids.length}`)
+          .then((r) => { const map = new Map(selectedPeople); for (const pp of r.data) map.set(pp.id, pp); selectedPeople = map; })
+          .catch(() => { const map = new Map(selectedPeople); for (const id of ids) if (!map.has(id)) map.set(id, { id }); selectedPeople = map; });
+        searchPeople();
+      }
     }
     if (sp.get('audience') === 'all') recipMode = 'all';
     const ch = sp.get('channel');
@@ -402,7 +427,7 @@
   function composeAnother() {
     done = null; error = '';
     form = { name: '', channel: form.channel, subject: {}, body: {}, mediaUrl: null, ctaLabel: {}, ctaUrl: '' };
-    customValues = {}; selectedIds = new Set(); selectedMinistryIds = new Set();
+    customValues = {}; selectedIds = new Set(); selectedPeople = new Map(); showPicker = true; selectedMinistryIds = new Set();
     onePersonId = null; oneContact = ''; peopleSearch = ''; scheduleAt = ''; templateId = '';
     attachments = []; attachError = ''; imagePlacement = 'body';
   }
@@ -659,25 +684,49 @@
           </label>
         </div>
       {:else if recipMode === 'people'}
+        <!-- Selected people as removable chips: always shows exactly who's on the
+             list, so a click that "adds" is visibly confirmed. -->
+        {#if selectedPeople.size}
+          <div class="flex flex-wrap items-center gap-1.5">
+            {#each [...selectedPeople.values()] as p (p.id)}
+              <span class="inline-flex items-center gap-1 rounded-full bg-slate-100 py-0.5 ps-2.5 pe-1 text-xs dark:bg-slate-800">
+                <span>{personName(p) || `#${p.id}`}</span>
+                <button type="button" class="grid h-4 w-4 place-items-center rounded-full text-slate-400 hover:bg-slate-300 hover:text-slate-700 dark:hover:bg-slate-600 dark:hover:text-slate-100" aria-label={tr({ en: 'Remove', ar: 'إزالة' }, $locale)} onclick={() => toggleId(p)}>✕</button>
+              </span>
+            {/each}
+            <button type="button" class="ms-1 text-xs text-slate-500 hover:underline" onclick={clearPeople}>{tr({ en: 'Clear all', ar: 'مسح الكل' }, $locale)}</button>
+          </div>
+        {/if}
+        {#if !showPicker}
+          <!-- Collapsed: chips stay visible; one click reopens the picker. -->
+          <button type="button" class="self-start rounded-lg border border-dashed border-slate-300 px-3 py-1.5 text-sm text-slate-600 hover:border-slate-400 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800" onclick={() => { showPicker = true; if (!peopleList.length) searchPeople(); }}>
+            {selectedPeople.size
+              ? tr({ en: '+ Add or edit people', ar: '+ إضافة أو تعديل الأشخاص' }, $locale)
+              : tr({ en: '+ Choose people', ar: '+ اختيار الأشخاص' }, $locale)}
+          </button>
+        {:else}
         <div class="flex flex-wrap items-center gap-2">
           <input class="input max-w-xs" placeholder={tr({ en: 'Search members…', ar: 'ابحث عن أعضاء…' }, $locale)} bind:value={peopleSearch} oninput={searchPeople} />
           <button type="button" class="text-xs text-slate-500 hover:underline" onclick={selectAllShown}>{tr({ en: 'Select all shown', ar: 'تحديد الظاهر' }, $locale)}</button>
           <button type="button" class="text-xs font-medium hover:underline disabled:opacity-50" style="color: var(--brand)" disabled={selectingAll} onclick={selectAllWithContact}>{selectingAll ? $t('common.loading') : (form.channel === 'email' ? tr({ en: 'Select everyone with an email', ar: 'تحديد كل من له بريد' }, $locale) : tr({ en: 'Select everyone with a number', ar: 'تحديد كل من له رقم' }, $locale))}</button>
-          <button type="button" class="text-xs text-slate-500 hover:underline" onclick={() => (selectedIds = new Set())}>{tr({ en: 'Clear', ar: 'مسح' }, $locale)}</button>
           <span class="text-xs font-medium" style="color: var(--brand)">{selectedIds.size} {tr({ en: 'selected', ar: 'محدد' }, $locale)}</span>
+          <button type="button" class="ms-auto rounded-lg px-3 py-1 text-xs font-semibold text-white" style="background: var(--brand)" onclick={() => (showPicker = false)}>{tr({ en: 'Done', ar: 'تم' }, $locale)}</button>
         </div>
+        <!-- Multi-select list stays open while you tick people; each row toggles
+             in place (no auto-close), and "Done" collapses it when finished. -->
         <div class="max-h-56 space-y-1 overflow-y-auto rounded-lg border border-slate-200 p-2 dark:border-slate-700">
           {#each peopleList as p (p.id)}
-            <label class="flex items-center gap-2 rounded px-2 py-1 text-sm hover:bg-slate-50 dark:hover:bg-slate-800">
-              <input type="checkbox" checked={selectedIds.has(p.id)} onchange={() => toggleId(p.id)} />
+            <label class="flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-sm hover:bg-slate-50 dark:hover:bg-slate-800 {selectedIds.has(p.id) ? 'bg-slate-50 dark:bg-slate-800/60' : ''}">
+              <input type="checkbox" checked={selectedIds.has(p.id)} onchange={() => toggleId(p)} />
               <span>{personName(p)}</span>
               {#if personContext(p, $locale)}<span class="text-xs text-slate-400">{personContext(p, $locale)}</span>{/if}
               <span class="ms-auto force-ltr text-xs {reachable(p) ? 'text-slate-400' : 'text-amber-500 dark:text-amber-400'}">{contactOf(p)}</span>
             </label>
           {:else}
-            <p class="px-2 py-1 text-xs text-slate-400">{tr({ en: 'No matching opted-in members.', ar: 'لا يوجد أعضاء موافقون مطابقون.' }, $locale)}</p>
+            <p class="px-2 py-1 text-xs text-slate-400">{tr({ en: 'No matching members. Type to search the directory.', ar: 'لا يوجد أعضاء مطابقون. اكتب للبحث في الدليل.' }, $locale)}</p>
           {/each}
         </div>
+        {/if}
       {:else}
         <div class="space-y-2" use:clickOutside={() => { if (!onePersonId) peopleList = []; }}>
           <input class="input max-w-sm" placeholder={tr({ en: 'Search a member…', ar: 'ابحث عن عضو…' }, $locale)} bind:value={peopleSearch} oninput={searchPeople} />

@@ -29,6 +29,18 @@ const EMAIL_INLINE_CAP = 9 * 1024 * 1024;
 
 const isImage = (a: AttachmentRow) => (a.contentType || '').toLowerCase().startsWith('image/');
 const escapeAttr = (s: string) => (s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const imgTag = (src: string, name: string) => `<img src="${src}" alt="${escapeAttr(name)}" style="max-width:100%;height:auto;border-radius:12px;margin:12px 0;display:block" />`;
+
+/**
+ * Inline-image HTML for the IN-APP PREVIEW, using public URLs (which load in the
+ * same-origin preview iframe) instead of cid: refs (which only resolve in a real
+ * email client). Real sends use CID via prepareDelivery; preview uses this.
+ */
+export async function previewImagesHtml(tokens: string[], appUrl: string | undefined, imagePlacement: ImagePlacement = 'body'): Promise<string> {
+  if (imagePlacement === 'attach' || !appUrl || !tokens.length) return '';
+  const atts = await loadAttachmentsByTokens(tokens);
+  return atts.filter(isImage).map((a) => imgTag(`${appUrl}/api/public/attachments/${a.token}`, a.filename)).join('');
+}
 
 export async function loadCampaignAttachments(campaignId: number): Promise<AttachmentRow[]> {
   return db.select().from(messageAttachments).where(eq(messageAttachments.campaignId, campaignId));
@@ -60,7 +72,6 @@ export async function prepareDelivery(
     // 'body'/'both' → embed images inline (CID) so they render in the recipient's
     // client without fetching an external URL. 'attach' → attach as files.
     const embedInBody = imagePlacement === 'body' || imagePlacement === 'both';
-    const imgTag = (src: string, name: string) => `<img src="${src}" alt="${escapeAttr(name)}" style="max-width:100%;height:auto;border-radius:12px;margin:12px 0;display:block" />`;
 
     const inline: OutAttachment[] = [];
     const linkLines: string[] = [];
