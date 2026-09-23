@@ -16,7 +16,38 @@
   let loading = $state(true);
   const manage = can('create attendance');
   const canEdit = can('update attendance');
+  const canEditPerson = can('update person');
   const isSuper = hasRole('Super Admin');
+
+  // Membership status is the person's REAL status — editing it here writes to the
+  // member's record and reflects everywhere. visitor → regular → member → inactive.
+  const STATUSES = [
+    { v: 'visitor', en: 'Visitor', ar: 'زائر' },
+    { v: 'regular', en: 'Regular', ar: 'منتظم' },
+    { v: 'member', en: 'Member', ar: 'عضو' },
+    { v: 'inactive', en: 'Inactive', ar: 'غير نشط' },
+  ];
+  function statusClasses(s: string): string {
+    return s === 'member' ? 'text-emerald-700 dark:text-emerald-300'
+      : s === 'inactive' ? 'text-slate-500 dark:text-slate-400'
+      : s === 'regular' ? 'text-sky-700 dark:text-sky-300'
+      : 'text-amber-700 dark:text-amber-300';
+  }
+  let savingStatus = $state<number | null>(null);
+  let statusSaved = $state<number | null>(null);
+  async function setStatus(r: any, value: string) {
+    if (!r.personId || value === r.membershipStatus) return;
+    const prev = r.membershipStatus;
+    savingStatus = r.personId;
+    r.membershipStatus = value; records = records; // optimistic
+    try {
+      await api(`/people/${r.personId}`, { method: 'PUT', body: JSON.stringify({ membershipStatus: value }) });
+      statusSaved = r.personId; setTimeout(() => { if (statusSaved === r.personId) statusSaved = null; }, 1500);
+    } catch (err) {
+      r.membershipStatus = prev; records = records;
+      alert(err instanceof ApiError ? err.message : (err as Error).message);
+    } finally { savingStatus = null; }
+  }
 
   // 'all' | 'new' (visitor/self-registered) | 'member' (regular/member).
   let who = $state<'all' | 'new' | 'member'>('all');
@@ -156,6 +187,13 @@
   <span class="ms-auto text-sm text-slate-500">{filtered.length} {tr({ en: 'checked in', ar: 'مسجّل' }, $locale)}</span>
 </div>
 
+{#if canEditPerson && records.length}
+  <p class="mb-3 flex items-center gap-1.5 text-xs text-slate-400">
+    <span>✏️</span>
+    <span>{tr({ en: 'Tip: change anyone’s status right here — it updates their member record everywhere (e.g. move a first-time visitor to Regular or Member).', ar: 'نصيحة: غيّر حالة أي شخص من هنا — تُحدَّث في سجل العضو في كل مكان (مثلاً نقل زائر لأول مرة إلى منتظم أو عضو).' }, $locale)}</span>
+  </p>
+{/if}
+
 <DataTable {loading} rows={filtered} headers={[tr({ en: 'Name', ar: 'الاسم' }, $locale), tr({ en: 'Status', ar: 'الحالة' }, $locale), tr({ en: 'Checked in', ar: 'وقت التسجيل' }, $locale)]}>
   {#snippet row(r)}
     <td class="p-3 font-medium">
@@ -166,7 +204,18 @@
       {/if}
       {#if r.selfRegistered && !r.reviewedAt}<span class="ms-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">{tr({ en: 'new', ar: 'جديد' }, $locale)}</span>{/if}
     </td>
-    <td class="p-3 capitalize text-slate-600 dark:text-slate-300">{r.membershipStatus}</td>
+    <td class="p-3">
+      {#if canEditPerson && r.personId}
+        <span class="inline-flex items-center gap-1.5">
+          <select class="input h-8 w-32 py-0 text-xs font-medium capitalize {statusClasses(r.membershipStatus)}" value={r.membershipStatus} disabled={savingStatus === r.personId} onchange={(e) => setStatus(r, (e.currentTarget as HTMLSelectElement).value)}>
+            {#each STATUSES as s}<option value={s.v}>{tr({ en: s.en, ar: s.ar }, $locale)}</option>{/each}
+          </select>
+          {#if savingStatus === r.personId}<span class="text-xs text-slate-400">…</span>{:else if statusSaved === r.personId}<span class="text-xs text-emerald-600 dark:text-emerald-400">✓</span>{/if}
+        </span>
+      {:else}
+        <span class="capitalize font-medium {statusClasses(r.membershipStatus)}">{r.membershipStatus}</span>
+      {/if}
+    </td>
     <td class="p-3 force-ltr text-slate-600 dark:text-slate-300">{dateTime(r.checkedInAt)}</td>
   {/snippet}
 </DataTable>
