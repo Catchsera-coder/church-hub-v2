@@ -5,8 +5,11 @@
   // optional one-click "Polish with AI" button. The stored value is plain text
   // with simple markers (**bold**, *italic*, ## heading, - list) that the email
   // renderer turns into safe, styled HTML. SMS/WhatsApp just show the plain text.
+  // NOTE: no fallback in $bindable() — the parent binds form.body[locale], which
+  // is undefined until typed, and Svelte 5 forbids binding undefined to a
+  // bindable that has a fallback value (props_invalid_value). Handlers coalesce.
   let {
-    value = $bindable(''),
+    value = $bindable(),
     dir = 'ltr',
     rows = 5,
     required = false,
@@ -71,7 +74,7 @@
   async function polish() {
     if (!onpolish || !(value ?? '').trim()) return;
     polishing = true; polishError = '';
-    try { value = await onpolish(value); }
+    try { value = await onpolish(value ?? ''); }
     catch (err) { polishError = (err as Error).message; }
     finally { polishing = false; }
   }
