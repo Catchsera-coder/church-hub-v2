@@ -11,7 +11,7 @@ import { authenticate, requirePermission } from '../../middleware/auth.js';
 import { badRequest, notFound } from '../../http/errors.js';
 import { logActivity } from '../activity/service.js';
 import { sendCampaignNow } from './send.js';
-import { resolveAi, draftMessages, type AiChannel } from './ai.js';
+import { resolveAi, draftMessages, polishEmailBody, type AiChannel } from './ai.js';
 import { resolveMessaging, sendMessage } from './delivery.js';
 import { buildContext, renderText, brandedEmailHtml, localeName, linksToPlainText } from './render.js';
 import { loadAttachmentsByTokens, prepareDelivery, dataUriAttachment, previewImagesHtml, type OutAttachment } from './attach.js';
@@ -142,6 +142,22 @@ messagesRouter.post('/ai-draft', aiLimiter, requirePermission('create message'),
     // Log the provider detail server-side; return a generic message to the client.
     console.error('[ai-draft] failed:', err instanceof Error ? err.message : err);
     throw badRequest('AI drafting failed. Please try again.');
+  }
+}));
+
+// One-click "Polish with AI": reformat one email body with light markdown,
+// keeping the wording. Returns the formatted text for the sender to review.
+messagesRouter.post('/ai-polish', aiLimiter, requirePermission('create message'), asyncHandler(async (req, res) => {
+  const b = z.object({ text: z.string().min(1).max(8000) }).parse(req.body);
+  const org = await currentOrg();
+  const ai = resolveAi(org.messaging);
+  if (!ai) throw badRequest('AI is not configured. Add an Anthropic API key or Azure OpenAI in Settings → Messaging.');
+  try {
+    const text = await polishEmailBody(ai, b.text);
+    res.json({ data: { text } });
+  } catch (err) {
+    console.error('[ai-polish] failed:', err instanceof Error ? err.message : err);
+    throw badRequest('AI formatting failed. Please try again.');
   }
 }));
 

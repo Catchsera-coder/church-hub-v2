@@ -63,11 +63,29 @@ export function linkifyHtml(escaped: string, color: string): string {
 }
 
 /**
- * Flatten markdown `[label](url)` to "label: url" for plain-text channels
- * (SMS/WhatsApp and the email plain-text fallback) so the link is still usable.
+ * Flatten markdown for plain-text channels (SMS/WhatsApp and the email
+ * plain-text fallback): `[label](url)` → "label: url", and strip the light
+ * formatting markers (**bold**, *italic*, ## heading) so the text reads clean.
  */
 export function linksToPlainText(text: string): string {
-  return (text || '').replace(/\[([^\]\n]+)\]\((https?:\/\/[^)\s]+|www\.[^)\s]+)\)/g, (_m, label: string, url: string) => `${label}: ${url}`);
+  return (text || '')
+    .replace(/\[([^\]\n]+)\]\((https?:\/\/[^)\s]+|www\.[^)\s]+)\)/g, (_m, label: string, url: string) => `${label}: ${url}`)
+    .replace(/^\s{0,3}#{1,3}\s+/gm, '')
+    .replace(/\*\*([^*\n]+)\*\*/g, '$1')
+    .replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, '$1$2');
+}
+
+/**
+ * Inline formatting on ALREADY-HTML-ESCAPED text: **bold** and *italic*, then
+ * links. Only generates a fixed, safe set of tags — the body is never raw HTML,
+ * so there's no injection surface. Bold is applied before italic so `**x**`
+ * isn't mis-read as italics.
+ */
+function renderInline(escaped: string, color: string): string {
+  const withEmphasis = escaped
+    .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
+  return linkifyHtml(withEmphasis, color);
 }
 
 const validHex = (v?: string | null): string | null =>
@@ -89,13 +107,35 @@ export type OrgBrand = {
   emailSettings?: EmailSettings | null;
 };
 
-/** Render body text (already merge-substituted) into styled paragraphs, with any
- * `[label](url)` markdown or bare URLs turned into clickable links. */
+/** Render body text (already merge-substituted) into styled blocks: headings
+ * (## bigger, ### medium), bullet and numbered lists, and paragraphs — with
+ * bold, italic, link markdown and bare URLs. Everything is HTML-escaped first
+ * and only a fixed set of tags is emitted, so a sender can format their email
+ * without any raw-HTML/injection risk. */
 function paragraphs(text: string, linkColor: string): string {
   return escapeHtml(text)
     .split(/\n{2,}/)
-    .filter((p) => p.trim() !== '')
-    .map((p) => `<p style="margin:0 0 16px;line-height:1.65;font-size:15px;color:#0f172a">${linkifyHtml(p.replace(/\n/g, '<br/>'), linkColor)}</p>`)
+    .filter((b) => b.trim() !== '')
+    .map((block) => {
+      const lines = block.split('\n');
+      // Heading (## big, ### medium) — a single-line block starting with #.
+      if (lines.length === 1 && /^\s{0,3}#{2,3}\s+/.test(lines[0])) {
+        const m = lines[0].match(/^\s{0,3}(#{2,3})\s+(.*)$/)!;
+        const size = m[1].length === 2 ? '20px' : '17px';
+        return `<p style="margin:14px 0 10px;font-size:${size};font-weight:700;line-height:1.35;color:#0f172a">${renderInline(m[2], linkColor)}</p>`;
+      }
+      // Bullet list — every line starts with "- " or "* ".
+      if (lines.length > 0 && lines.every((l) => /^\s{0,3}[-*]\s+/.test(l))) {
+        const items = lines.map((l) => `<li style="margin:0 0 5px;line-height:1.6">${renderInline(l.replace(/^\s{0,3}[-*]\s+/, ''), linkColor)}</li>`).join('');
+        return `<ul style="margin:0 0 16px;padding-left:22px;font-size:15px;color:#0f172a">${items}</ul>`;
+      }
+      // Numbered list — every line starts with "1." / "1)".
+      if (lines.length > 0 && lines.every((l) => /^\s{0,3}\d+[.)]\s+/.test(l))) {
+        const items = lines.map((l) => `<li style="margin:0 0 5px;line-height:1.6">${renderInline(l.replace(/^\s{0,3}\d+[.)]\s+/, ''), linkColor)}</li>`).join('');
+        return `<ol style="margin:0 0 16px;padding-left:22px;font-size:15px;color:#0f172a">${items}</ol>`;
+      }
+      return `<p style="margin:0 0 16px;line-height:1.65;font-size:15px;color:#0f172a">${renderInline(block.replace(/\n/g, '<br/>'), linkColor)}</p>`;
+    })
     .join('');
 }
 

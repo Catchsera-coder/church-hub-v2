@@ -106,6 +106,59 @@ export async function draftMessages(ai: ResolvedAi, req: AiDraftRequest): Promis
   return ai.provider === 'azure' ? draftAzure(ai, req) : draftAnthropic(ai, req);
 }
 
+// --- One-click "Polish with AI": reformat an email body with light markdown ---
+// (**bold**, *italic*, ## headings, - lists) WITHOUT changing the wording or
+// meaning. Reuses whichever provider the church already configured.
+const POLISH_SYSTEM = [
+  'You format church email messages. You are given the body text of an email.',
+  'Reformat it to be clear and attractive using ONLY this light markdown:',
+  '- **bold** for key phrases, *italic* for gentle emphasis,',
+  '- "## " at the start of a line for a big section heading, "### " for a smaller one,',
+  '- "- " at the start of lines for a bullet list.',
+  'Rules: keep ALL of the original meaning, wording, names, dates, numbers and links.',
+  'Do NOT add new information, greetings, sign-offs or links that are not already there.',
+  'Do NOT write HTML. Keep the same language as the input. Return ONLY the reformatted body text.',
+].join('\n');
+
+export async function polishEmailBody(ai: ResolvedAi, text: string): Promise<string> {
+  const body = text.trim();
+  if (!body) return text;
+  const out = ai.provider === 'azure'
+    ? await polishAzure(ai, body)
+    : await polishAnthropic(ai, body);
+  return (out || '').trim() || text;
+}
+
+async function polishAnthropic(ai: Extract<ResolvedAi, { provider: 'anthropic' }>, body: string): Promise<string> {
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-api-key': ai.apiKey, 'anthropic-version': '2023-06-01' },
+    body: JSON.stringify({
+      model: ai.model, max_tokens: 2048, system: POLISH_SYSTEM,
+      messages: [{ role: 'user', content: body }],
+    }),
+  });
+  if (!res.ok) throw new Error(`AI provider ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  const data = (await res.json()) as { stop_reason?: string; content?: Array<{ type: string; text?: string }> };
+  if (data.stop_reason === 'refusal') throw new Error('The AI declined to format this message.');
+  return data.content?.find((b) => b.type === 'text')?.text ?? '';
+}
+
+async function polishAzure(ai: Extract<ResolvedAi, { provider: 'azure' }>, body: string): Promise<string> {
+  const url = `${ai.endpoint}/openai/deployments/${encodeURIComponent(ai.deployment)}/chat/completions?api-version=${ai.apiVersion}`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'api-key': ai.apiKey },
+    body: JSON.stringify({
+      messages: [{ role: 'system', content: POLISH_SYSTEM }, { role: 'user', content: body }],
+      max_tokens: 2048, temperature: 0.3,
+    }),
+  });
+  if (!res.ok) throw new Error(`Azure OpenAI ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
+  return data.choices?.[0]?.message?.content ?? '';
+}
+
 async function draftAnthropic(ai: Extract<ResolvedAi, { provider: 'anthropic' }>, req: AiDraftRequest): Promise<AiDraftResult> {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',

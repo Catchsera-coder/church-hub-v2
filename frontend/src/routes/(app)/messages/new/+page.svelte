@@ -9,6 +9,7 @@
   import { hasRole, can } from '$lib/stores/auth.js';
   import PageHeader from '$lib/components/PageHeader.svelte';
   import ScheduleEditor from '$lib/components/ScheduleEditor.svelte';
+  import RichTextArea from '$lib/components/RichTextArea.svelte';
   import { type Schedule, defaultSchedule, describeSchedule } from '$lib/schedule.js';
   import { resolveStreamLink } from '$lib/stream.js';
   import { clickOutside } from '$lib/actions/clickOutside.js';
@@ -249,6 +250,13 @@
       }) });
       previewData = data;
     } catch (err) { previewData = { error: (err as Error).message }; } finally { previewing = false; }
+  }
+
+  // One-click "Polish with AI" for a single email body (one language). Returns
+  // the reformatted text; RichTextArea swaps it in for the sender to review.
+  async function polishBody(text: string): Promise<string> {
+    const { data } = await api<{ data: { text: string } }>('/messages/ai-polish', { method: 'POST', body: JSON.stringify({ text }) });
+    return data.text;
   }
 
   // --- Quick send to a single member or an ad-hoc phone/email
@@ -696,7 +704,14 @@
     {#each $enabledLocales as l}
       <label class="block space-y-1">
         <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Message', ar: 'الرسالة' }, $locale)} ({l.native})</span>
-        <textarea class="input" dir={l.dir} rows="4" bind:value={form.body[l.code]} required={l.code === 'en'}></textarea>
+        <RichTextArea
+          bind:value={form.body[l.code]}
+          dir={l.dir}
+          rows={5}
+          required={l.code === 'en'}
+          format={form.channel === 'email'}
+          onpolish={form.channel === 'email' ? polishBody : undefined}
+        />
       </label>
     {/each}
 
