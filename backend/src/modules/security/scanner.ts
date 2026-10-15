@@ -2,10 +2,12 @@ import { and, eq, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 import { db } from '../../db/index.js';
 import {
   users, userRoles, roles, refreshTokens, passwordResetTokens, activityLog,
-  securityFindings, securityScans,
+  organisations, securityFindings, securityScans, type MessagingSettings,
 } from '../../db/schema.js';
 import { config } from '../../config.js';
-import { currentOrg } from '../settings/routes.js';
+import { encryptMaybe } from '../../auth/mfa.js';
+
+const SECRET_FIELDS = ['sendgridApiKey', 'twilioAuthToken', 'acsConnectionString', 'aiApiKey', 'azureOpenaiKey', 'azureMapsKey'];
 
 /**
  * Security Center scanner. A deterministic, NIST/OWASP-Top-10-aligned self-audit
@@ -41,6 +43,13 @@ async function privilegedUsers() {
   const seen = new Map<number, typeof rows[number]>();
   for (const r of rows) if (!seen.has(r.id)) seen.set(r.id, r);
   return [...seen.values()];
+}
+
+/** Secret fields in the RAW settings row that are present but not AES-GCM ("v1:") encrypted. */
+async function unencryptedSecretFields(): Promise<string[]> {
+  const [raw] = await db.select({ messaging: organisations.messaging }).from(organisations).where(eq(organisations.id, 1)).limit(1);
+  const m = (raw?.messaging ?? {}) as Record<string, unknown>;
+  return SECRET_FIELDS.filter((k) => typeof m[k] === 'string' && (m[k] as string).length > 0 && !(m[k] as string).startsWith('v1:'));
 }
 
 /** Run every check and return the findings currently present. */
@@ -87,18 +96,18 @@ export async function detectFindings(): Promise<Detected[]> {
     });
   }
 
-  // --- A02: provider secrets stored in plaintext in the DB ------------------
-  const org = await currentOrg();
-  const m = (org.messaging ?? {}) as Record<string, unknown>;
-  const secretFields = ['sendgridApiKey', 'twilioAuthToken', 'acsConnectionString', 'aiApiKey', 'azureOpenaiKey', 'azureMapsKey'];
-  const present = secretFields.filter((k) => typeof m[k] === 'string' && (m[k] as string).length > 0);
-  if (present.length) {
+  // --- A02: provider secrets NOT encrypted at rest --------------------------
+  // Read the RAW stored settings (currentOrg() decrypts, which would mask whether
+  // the value is actually encrypted). A secret is "plaintext" only if it lacks the
+  // v1: AES-GCM prefix — i.e. a legacy value saved before at-rest encryption.
+  const unencrypted = await unencryptedSecretFields();
+  if (unencrypted.length) {
     out.push({
       code: 'plaintext-provider-keys', category: 'A02', severity: 'medium',
-      title: 'Messaging/AI provider keys stored in plain text',
-      detail: `${present.length} provider secret(s) are stored unencrypted in the settings record. Anyone with database access could read them.`,
-      recommendation: 'Move these to an encrypted store (Azure Key Vault) and reference them from config. Until then, keep database access tightly restricted and rotate keys periodically. This is a planned code change for the reviewed deploy.',
-      autofixable: false, evidence: { fields: present },
+      title: 'Provider keys not encrypted at rest',
+      detail: `${unencrypted.length} provider secret(s) are stored without encryption (legacy values from before at-rest encryption).`,
+      recommendation: 'Click Fix to encrypt them now (AES-256-GCM at rest). New keys you enter are already encrypted automatically.',
+      autofixable: true, evidence: { fields: unencrypted },
     });
   }
 
@@ -141,6 +150,33 @@ export async function detectFindings(): Promise<Detected[]> {
     });
   }
 
+  // --- A01: too many Super Admins (least privilege) -------------------------
+  const [superCount] = await db.select({ c: sql<number>`count(distinct ${users.id})::int` })
+    .from(users).innerJoin(userRoles, eq(userRoles.userId, users.id)).innerJoin(roles, eq(roles.id, userRoles.roleId))
+    .where(and(eq(users.isActive, true), eq(roles.name, 'Super Admin')));
+  if ((superCount?.c ?? 0) > 3) {
+    out.push({
+      code: 'too-many-super-admins', category: 'A01', severity: 'medium',
+      title: 'More Super Admins than needed',
+      detail: `${superCount.c} active accounts have the Super Admin role — the highest level of access. The more there are, the bigger the risk if one is compromised.`,
+      recommendation: 'Keep Super Admin to a small, trusted few. In Team, lower others to a role that fits what they actually do.',
+      autofixable: false, evidence: { count: superCount.c },
+    });
+  }
+
+  // --- A07/hygiene: expired team invites not cleaned up ---------------------
+  const [staleInv] = await db.select({ c: sql<number>`count(*)::int` }).from(users)
+    .where(and(sql`${users.inviteTokenHash} IS NOT NULL`, lt(users.inviteExpiresAt, new Date())));
+  if ((staleInv?.c ?? 0) > 0) {
+    out.push({
+      code: 'stale-invites', category: 'A07', severity: 'low',
+      title: 'Expired team invitations still active',
+      detail: `${staleInv.c} team invite link(s) have expired but are still stored. Clearing them removes unused ways in.`,
+      recommendation: 'Safe to auto-remove now — click Fix. (Only expired invite links are cleared; no active member is affected.)',
+      autofixable: true, evidence: { count: staleInv.c },
+    });
+  }
+
   // --- A05: app not served over HTTPS ---------------------------------------
   if (config.PUBLIC_APP_URL && !/^https:\/\//i.test(config.PUBLIC_APP_URL)) {
     out.push({
@@ -179,6 +215,24 @@ const FIXERS: Record<string, () => Promise<string>> = {
     const r = await db.delete(passwordResetTokens)
       .where(or(lt(passwordResetTokens.expiresAt, new Date()), sql`${passwordResetTokens.usedAt} IS NOT NULL`)).returning({ id: passwordResetTokens.id });
     return `Removed ${r.length} used/expired reset code(s).`;
+  },
+  'stale-invites': async () => {
+    const r = await db.update(users).set({ inviteTokenHash: null, inviteExpiresAt: null, updatedAt: new Date() })
+      .where(and(sql`${users.inviteTokenHash} IS NOT NULL`, lt(users.inviteExpiresAt, new Date()))).returning({ id: users.id });
+    return `Cleared ${r.length} expired invite link(s).`;
+  },
+  'plaintext-provider-keys': async () => {
+    // Re-save the settings with every secret field encrypted at rest (encryptMaybe
+    // leaves already-encrypted values untouched, so only legacy plaintext changes).
+    const [raw] = await db.select({ messaging: organisations.messaging }).from(organisations).where(eq(organisations.id, 1)).limit(1);
+    const m = { ...((raw?.messaging ?? {}) as Record<string, unknown>) };
+    let n = 0;
+    for (const f of SECRET_FIELDS) {
+      const v = m[f];
+      if (typeof v === 'string' && v.length > 0 && !v.startsWith('v1:')) { m[f] = encryptMaybe(v); n++; }
+    }
+    if (n) await db.update(organisations).set({ messaging: m as unknown as MessagingSettings, updatedAt: new Date() }).where(eq(organisations.id, 1));
+    return `Encrypted ${n} provider secret(s) at rest.`;
   },
 };
 

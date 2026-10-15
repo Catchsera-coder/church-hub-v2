@@ -81,6 +81,10 @@ const schema = z.object({
   AZURE_OPENAI_KEY: z.string().optional(),
   AZURE_OPENAI_DEPLOYMENT: z.string().optional(),
   AZURE_OPENAI_API_VERSION: z.string().optional(),
+  // When 'true', authenticate to Azure OpenAI with the container's managed
+  // identity (no key stored anywhere) instead of an API key. The host injects
+  // IDENTITY_ENDPOINT / IDENTITY_HEADER for the token exchange.
+  AZURE_OPENAI_USE_MANAGED_IDENTITY: z.enum(['true', 'false']).optional(),
 });
 
 const parsed = schema.safeParse(process.env);

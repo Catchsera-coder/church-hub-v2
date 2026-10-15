@@ -12,22 +12,49 @@ import type { MessagingSettings } from '../../db/schema.js';
  */
 export type ResolvedAi =
   | { provider: 'anthropic'; apiKey: string; model: string }
-  | { provider: 'azure'; endpoint: string; apiKey: string; deployment: string; apiVersion: string; model: string };
+  | { provider: 'azure'; endpoint: string; apiKey: string; deployment: string; apiVersion: string; model: string; useManagedIdentity: boolean };
 
-const DEFAULT_AZURE_MODEL = 'gpt-4o-mini';
+const DEFAULT_AZURE_MODEL = 'gpt-4.1-mini';
 const DEFAULT_AZURE_API_VERSION = '2024-10-21';
+
+// --- Managed-identity token (Azure Container Apps) --------------------------
+// When the app authenticates to Azure OpenAI with its own identity, there is NO
+// API key to store anywhere. The host injects IDENTITY_ENDPOINT / IDENTITY_HEADER;
+// we exchange them for a short-lived AAD token and cache it until it nears expiry.
+let miToken: { token: string; expMs: number } | null = null;
+async function managedIdentityToken(): Promise<string> {
+  if (miToken && Date.now() < miToken.expMs - 120_000) return miToken.token;
+  const ep = process.env.IDENTITY_ENDPOINT, hdr = process.env.IDENTITY_HEADER;
+  if (!ep || !hdr) throw new Error('Managed identity is not available in this environment.');
+  const url = `${ep}?resource=${encodeURIComponent('https://cognitiveservices.azure.com')}&api-version=2019-08-01`;
+  const res = await fetch(url, { headers: { 'X-IDENTITY-HEADER': hdr } });
+  if (!res.ok) throw new Error(`Managed identity token ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  const d = (await res.json()) as { access_token: string; expires_on?: string; expires_in?: string };
+  const expMs = d.expires_on ? Number(d.expires_on) * 1000 : Date.now() + Number(d.expires_in ?? 3000) * 1000;
+  miToken = { token: d.access_token, expMs };
+  return d.access_token;
+}
+async function azureHeaders(ai: Extract<ResolvedAi, { provider: 'azure' }>): Promise<Record<string, string>> {
+  return ai.useManagedIdentity
+    ? { 'content-type': 'application/json', authorization: `Bearer ${await managedIdentityToken()}` }
+    : { 'content-type': 'application/json', 'api-key': ai.apiKey };
+}
 
 export function resolveAi(dbMsg?: MessagingSettings | null): ResolvedAi | null {
   const m = dbMsg ?? {};
   const azEndpoint = (m.azureOpenaiEndpoint || config.AZURE_OPENAI_ENDPOINT || '').replace(/\/+$/, '');
-  const azKey = m.azureOpenaiKey || config.AZURE_OPENAI_KEY;
-  const provider = m.aiProvider || (azEndpoint && azKey ? 'azure' : 'anthropic');
+  const azKey = m.azureOpenaiKey || config.AZURE_OPENAI_KEY || '';
+  // Use managed identity when enabled and the host provides the identity endpoint.
+  const useMI = config.AZURE_OPENAI_USE_MANAGED_IDENTITY === 'true' && Boolean(process.env.IDENTITY_ENDPOINT && process.env.IDENTITY_HEADER);
+  const provider = m.aiProvider || (azEndpoint && (azKey || useMI) ? 'azure' : 'anthropic');
 
   if (provider === 'azure') {
     const model = m.aiModel || config.AZURE_OPENAI_DEPLOYMENT || DEFAULT_AZURE_MODEL;
     const deployment = m.azureOpenaiDeployment || config.AZURE_OPENAI_DEPLOYMENT || model;
     const apiVersion = m.azureOpenaiApiVersion || config.AZURE_OPENAI_API_VERSION || DEFAULT_AZURE_API_VERSION;
-    if (azEndpoint && azKey && deployment) return { provider: 'azure', endpoint: azEndpoint, apiKey: azKey, deployment, apiVersion, model };
+    if (azEndpoint && deployment && (azKey || useMI)) {
+      return { provider: 'azure', endpoint: azEndpoint, apiKey: azKey, deployment, apiVersion, model, useManagedIdentity: !azKey && useMI };
+    }
     return null;
   }
 
@@ -148,7 +175,7 @@ async function polishAzure(ai: Extract<ResolvedAi, { provider: 'azure' }>, body:
   const url = `${ai.endpoint}/openai/deployments/${encodeURIComponent(ai.deployment)}/chat/completions?api-version=${ai.apiVersion}`;
   const res = await fetch(url, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', 'api-key': ai.apiKey },
+    headers: await azureHeaders(ai),
     body: JSON.stringify({
       messages: [{ role: 'system', content: POLISH_SYSTEM }, { role: 'user', content: body }],
       max_tokens: 2048, temperature: 0.3,
@@ -182,7 +209,7 @@ async function draftAzure(ai: Extract<ResolvedAi, { provider: 'azure' }>, req: A
   const system = `You write church messages. Respond ONLY with a valid JSON object exactly matching this shape (no extra keys, no markdown fences): ${shapeHint(req.channels, req.locales)}`;
   const res = await fetch(url, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', 'api-key': ai.apiKey },
+    headers: await azureHeaders(ai),
     body: JSON.stringify({
       messages: [{ role: 'system', content: system }, { role: 'user', content: buildPrompt(req) }],
       response_format: { type: 'json_object' },
