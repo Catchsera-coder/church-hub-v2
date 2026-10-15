@@ -324,6 +324,40 @@
   }
   function messageSelected() { if (selected.size) goto(`/messages/new?people=${[...selected].join(',')}`); }
 
+  // --- Group the WHOLE current view under a named group (reuses ministries of
+  // kind 'group'). Pick an existing group or type a new name to create it. ------
+  const canMakeGroup = can('create ministry');
+  const canGroup = canRoster || canMakeGroup;
+  let groupPanelOpen = $state(false);
+  let groupTargetId = $state<string>('');
+  let newGroupName = $state('');
+  let groupBusy = $state(false);
+  const groupOptions = $derived(ministries.filter((m) => m.kind === 'group'));
+  async function addViewToGroup() {
+    groupBusy = true;
+    try {
+      // Resolve (or create) the destination group.
+      let gid = groupTargetId ? Number(groupTargetId) : 0;
+      const name = newGroupName.trim();
+      if (!gid && name) {
+        if (!canMakeGroup) { alert(tr({ en: 'You can add to an existing group, but not create a new one.', ar: 'يمكنك الإضافة إلى مجموعة موجودة، لكن لا يمكنك إنشاء مجموعة جديدة.' }, $locale)); return; }
+        const created = await api<{ data: { id: number } }>(`/ministries`, { method: 'POST', body: JSON.stringify({ name: { en: name, ar: name }, kind: 'group' }) });
+        gid = created.data.id;
+      }
+      if (!gid) { alert(tr({ en: 'Choose a group or type a new group name.', ar: 'اختر مجموعة أو اكتب اسم مجموعة جديدة.' }, $locale)); return; }
+      // Everyone in the current view (same filters as the list/message action).
+      const q = applyViewParams(new URLSearchParams({ limit: '2000' }));
+      const r = await api<{ data: Person[] }>(`/people?${q}`);
+      const ids = r.data.map((p) => p.id);
+      if (!ids.length) { alert(tr({ en: 'No one in this view yet.', ar: 'لا أحد في هذا العرض بعد.' }, $locale)); return; }
+      const { data } = await api<{ data: { count: number } }>(`/ministries/${gid}/members/bulk`, { method: 'POST', body: JSON.stringify({ personIds: ids, role: 'member' }) });
+      const gname = name || tr(groupOptions.find((g) => g.id === gid)?.name ?? { en: 'the group' }, $locale);
+      alert(tr({ en: `Added ${data.count} people to “${gname}”.`, ar: `تمت إضافة ${data.count} شخصاً إلى «${gname}».` }, $locale));
+      groupPanelOpen = false; newGroupName = ''; groupTargetId = '';
+      if (name) { try { ministries = (await api<{ data: any[] }>('/ministries')).data; } catch { /* non-fatal */ } }
+    } catch (err) { alert((err as Error).message); } finally { groupBusy = false; }
+  }
+
   onMount(async () => {
     // Deep links from the dashboard cards: pre-apply the filter + show its banner.
     const sp = new URLSearchParams(window.location.search);
@@ -552,10 +586,31 @@
   </div>
 {/if}
 
-{#if canMessage && meta && meta.total > 0 && selected.size === 0}
-  <div class="mb-3 flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800/40">
-    <span class="text-slate-600 dark:text-slate-300">{tr({ en: 'This view', ar: 'هذا العرض' }, $locale)}: <span class="font-semibold" style="color: var(--brand)">{meta.total}</span> {tr({ en: 'people', ar: 'شخص' }, $locale)}</span>
-    <button class="ms-auto rounded-lg px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50" style="background: var(--brand)" disabled={messagingGroup} onclick={messageGroup}>✉️ {messagingGroup ? '…' : tr({ en: 'Message this group (email / SMS)', ar: 'راسل هذه المجموعة (بريد / SMS)' }, $locale)}</button>
+{#if (canMessage || canGroup) && meta && meta.total > 0 && selected.size === 0}
+  <div class="mb-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800/40">
+    <div class="flex flex-wrap items-center gap-3">
+      <span class="text-slate-600 dark:text-slate-300">{tr({ en: 'This view', ar: 'هذا العرض' }, $locale)}: <span class="font-semibold" style="color: var(--brand)">{meta.total}</span> {tr({ en: 'people', ar: 'شخص' }, $locale)}</span>
+      <div class="ms-auto flex flex-wrap items-center gap-2">
+        {#if canGroup}
+          <button class="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-white dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800 {groupPanelOpen ? 'ring-1 ring-slate-400' : ''}" onclick={() => (groupPanelOpen = !groupPanelOpen)}>👥 {tr({ en: 'Add all to a group', ar: 'أضِف الكل إلى مجموعة' }, $locale)}</button>
+        {/if}
+        {#if canMessage}<button class="rounded-lg px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50" style="background: var(--brand)" disabled={messagingGroup} onclick={messageGroup}>✉️ {messagingGroup ? '…' : tr({ en: 'Message this group (email / SMS)', ar: 'راسل هذه المجموعة (بريد / SMS)' }, $locale)}</button>{/if}
+      </div>
+    </div>
+    {#if groupPanelOpen && canGroup}
+      <div class="mt-2 flex flex-wrap items-center gap-2 border-t border-slate-200 pt-2 dark:border-slate-700">
+        <span class="text-xs text-slate-500">{tr({ en: 'Put these', ar: 'ضع هؤلاء' }, $locale)} {meta.total} {tr({ en: 'people in:', ar: 'الأشخاص في:' }, $locale)}</span>
+        <select class="input w-52 py-1 text-sm" bind:value={groupTargetId} onchange={() => { if (groupTargetId) newGroupName = ''; }}>
+          <option value="">{tr({ en: '— existing group —', ar: '— مجموعة موجودة —' }, $locale)}</option>
+          {#each groupOptions as g}<option value={g.id}>🏡 {tr(g.name, $locale)}</option>{/each}
+        </select>
+        {#if canMakeGroup}
+          <span class="text-xs text-slate-400">{tr({ en: 'or', ar: 'أو' }, $locale)}</span>
+          <input class="input w-48 py-1 text-sm" placeholder={tr({ en: 'New group name…', ar: 'اسم مجموعة جديدة…' }, $locale)} bind:value={newGroupName} oninput={() => { if (newGroupName) groupTargetId = ''; }} />
+        {/if}
+        <button class="btn-primary text-sm" disabled={groupBusy || (!groupTargetId && !newGroupName.trim())} onclick={addViewToGroup}>{groupBusy ? $t('common.loading') : tr({ en: 'Add', ar: 'إضافة' }, $locale)}</button>
+      </div>
+    {/if}
   </div>
 {/if}
 
