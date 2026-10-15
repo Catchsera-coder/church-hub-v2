@@ -114,6 +114,41 @@
     } catch (e) { p.membershipStatus = prev; rows = rows; alert((e as Error).message); } finally { savingStatus = null; }
   }
 
+  // Inline edit of Name / Email / Phone directly in the list — writes the real
+  // record (syncs everywhere), optimistic + ✓. One cell at a time.
+  function autofocus(node: HTMLInputElement) { node.focus(); node.select(); }
+  let editCell = $state<{ id: number; field: 'name' | 'email' | 'mobile' } | null>(null);
+  let editVal = $state('');
+  let editFirst = $state(''); let editLast = $state('');
+  let savingCell = $state<number | null>(null);
+  let cellSaved = $state<number | null>(null);
+  function startEditCell(p: any, field: 'name' | 'email' | 'mobile') {
+    editCell = { id: p.id, field };
+    if (field === 'email') editVal = p.email ?? '';
+    else if (field === 'mobile') editVal = p.mobile ?? '';
+    else { editFirst = p.givenName?.en ?? ''; editLast = p.familyName?.en ?? ''; }
+  }
+  async function saveCell(p: any) {
+    if (!editCell || editCell.id !== p.id) return;
+    const field = editCell.field;
+    let body: any; let apply: () => void; let rollback: () => void;
+    if (field === 'email') {
+      const v = editVal.trim() || null; if (v === (p.email ?? null)) { editCell = null; return; }
+      const prev = p.email; body = { email: v }; apply = () => (p.email = v); rollback = () => (p.email = prev);
+    } else if (field === 'mobile') {
+      const v = editVal.trim() || null; if (v === (p.mobile ?? null)) { editCell = null; return; }
+      const prev = p.mobile; body = { mobile: v }; apply = () => (p.mobile = v); rollback = () => (p.mobile = prev);
+    } else {
+      const first = editFirst.trim(); if (!first) { editCell = null; return; }
+      const g = { ...(p.givenName ?? {}), en: first }; const fam = { ...(p.familyName ?? {}), en: editLast.trim() };
+      const pg = p.givenName, pf = p.familyName; body = { givenName: g, familyName: fam };
+      apply = () => { p.givenName = g; p.familyName = fam; }; rollback = () => { p.givenName = pg; p.familyName = pf; };
+    }
+    savingCell = p.id; apply(); rows = rows; editCell = null;
+    try { await api(`/people/${p.id}`, { method: 'PUT', body: JSON.stringify(body) }); cellSaved = p.id; setTimeout(() => { if (cellSaved === p.id) cellSaved = null; }, 1500); }
+    catch (e) { rollback(); rows = rows; alert((e as Error).message); } finally { savingCell = null; }
+  }
+
   // Empty string = filter off. Kept in one object so "active count" + clear are simple.
   const EMPTY = {
     status: '', ageGroup: '', birthdayMonth: '', anniversaryMonth: '',
@@ -495,10 +530,20 @@
               <span class="inline-block rounded-md bg-slate-100 px-2 py-0.5 text-xs font-semibold tabular-nums text-slate-500 dark:bg-slate-800 dark:text-slate-400">{p.id}</span>
             </td>
             <td class="p-3 align-top">
+              {#if editCell?.id === p.id && editCell.field === 'name'}
+                <div class="flex flex-wrap items-center gap-1">
+                  <input class="input h-8 w-28 py-0 text-sm" bind:value={editFirst} use:autofocus onkeydown={(e) => { if (e.key === 'Enter') saveCell(p); if (e.key === 'Escape') editCell = null; }} placeholder={tr({ en: 'First', ar: 'الأول' }, $locale)} />
+                  <input class="input h-8 w-28 py-0 text-sm" bind:value={editLast} onkeydown={(e) => { if (e.key === 'Enter') saveCell(p); if (e.key === 'Escape') editCell = null; }} placeholder={tr({ en: 'Last', ar: 'الأخير' }, $locale)} />
+                  <button class="text-xs font-medium" style="color: var(--brand)" onmousedown={(e) => { e.preventDefault(); saveCell(p); }}>{$t('common.save')}</button>
+                  <button class="text-xs text-slate-400" onmousedown={(e) => { e.preventDefault(); editCell = null; }}>✕</button>
+                </div>
+              {:else}
               <div class="flex flex-wrap items-center gap-2">
                 <a class="font-medium text-primary-700 hover:underline dark:text-primary-300" href="/members/{p.id}">
                   {primaryName(p)}
                 </a>
+                {#if canEditStatus}<button class="text-xs text-slate-300 hover:text-slate-600 dark:hover:text-slate-200" title={tr({ en: 'Edit name', ar: 'تعديل الاسم' }, $locale)} onclick={() => startEditCell(p, 'name')}>✏️</button>{/if}
+                {#if cellSaved === p.id}<span class="text-xs text-emerald-600 dark:text-emerald-400">✓</span>{/if}
                 {#if p.selfRegistered && !p.reviewedAt}
                   <span class="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">{tr({ en: 'new', ar: 'جديد' }, $locale)}</span>
                 {/if}
@@ -507,6 +552,7 @@
                 {/if}
               </div>
               {#if nameExtras(p)}<div class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{nameExtras(p)}</div>{/if}
+              {/if}
             </td>
             <td class="p-3 align-top">
               {#if p.householdName}
@@ -541,8 +587,21 @@
                 <span class="capitalize font-medium {statusClasses(p.membershipStatus)}">{(p.membershipStatus || '').replace(/_/g, ' ')}</span>
               {/if}
             </td>
-            <td class="p-3 force-ltr text-slate-600 dark:text-slate-300">{p.email ?? '—'}</td>
-            <td class="p-3 force-ltr text-slate-600 dark:text-slate-300">{p.mobile ?? '—'}</td>
+            <td class="p-3 force-ltr text-slate-600 dark:text-slate-300">
+              {#if editCell?.id === p.id && editCell.field === 'email'}
+                <input class="input h-8 w-48 py-0 text-sm" type="email" bind:value={editVal} use:autofocus onkeydown={(e) => { if (e.key === 'Enter') saveCell(p); if (e.key === 'Escape') editCell = null; }} onblur={() => saveCell(p)} />
+              {:else if canEditStatus}
+                <button class="text-start hover:underline hover:decoration-dotted {p.email ? '' : 'text-slate-400'}" onclick={() => startEditCell(p, 'email')}>{p.email ?? (tr({ en: '＋ add', ar: '＋ إضافة' }, $locale))}</button>
+                {#if savingCell === p.id && editCell === null}<span class="ms-1 text-xs text-slate-400">…</span>{/if}
+              {:else}{p.email ?? '—'}{/if}
+            </td>
+            <td class="p-3 force-ltr text-slate-600 dark:text-slate-300">
+              {#if editCell?.id === p.id && editCell.field === 'mobile'}
+                <input class="input h-8 w-40 py-0 text-sm" type="tel" bind:value={editVal} use:autofocus onkeydown={(e) => { if (e.key === 'Enter') saveCell(p); if (e.key === 'Escape') editCell = null; }} onblur={() => saveCell(p)} />
+              {:else if canEditStatus}
+                <button class="text-start hover:underline hover:decoration-dotted {p.mobile ? '' : 'text-slate-400'}" onclick={() => startEditCell(p, 'mobile')}>{p.mobile ?? (tr({ en: '＋ add', ar: '＋ إضافة' }, $locale))}</button>
+              {:else}{p.mobile ?? '—'}{/if}
+            </td>
             {#if reviewOnly}
               <td class="p-3">
                 {#if can('update person')}
