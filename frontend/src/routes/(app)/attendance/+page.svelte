@@ -6,6 +6,7 @@
   import { can, hasRole } from '$lib/stores/auth.js';
   import FilterBar from '$lib/components/FilterBar.svelte';
   import PageHeader from '$lib/components/PageHeader.svelte';
+  import ExportMenu from '$lib/components/ExportMenu.svelte';
   import PageHint from '$lib/components/PageHint.svelte';
   import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 
@@ -51,6 +52,7 @@
       if (f.from) p.set('from', f.from);
       if (f.to) p.set('to', f.to);
       const qs = p.toString();
+      exportParams = qs; // reused by the Export menu so it exports the same filter
       rows = (await api<{ data: any[] }>(`/attendance/events${qs ? `?${qs}` : ''}`)).data;
     } finally { loading = false; }
   }
@@ -95,6 +97,7 @@
     return arr;
   });
   const totals = $derived({ sessions: rows.length, attendance: rows.reduce((s, e) => s + (e.count ?? 0), 0) });
+  let exportParams = $state('');
 
   // Collapsible groups. Default: first group open (or all when few).
   let openKeys = $state<Set<string>>(new Set());
@@ -122,6 +125,7 @@
 
 <PageHeader title={$t('nav.attendance')}>
   {#snippet actions()}
+    {#if can('view attendance')}<ExportMenu resource="attendance" title={tr({ en: 'Attendance — sessions', ar: 'الحضور — الجلسات' }, $locale)} params={exportParams} />{/if}
     <a href="/analytics" class="btn-ghost border border-slate-300 text-sm dark:border-slate-700">📊 {tr({ en: 'Insights', ar: 'التحليلات' }, $locale)}</a>
     {#if can('create attendance')}<a href="/attendance/new" class="btn-primary">{$t('common.new')}</a>{/if}
   {/snippet}

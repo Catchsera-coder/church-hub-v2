@@ -8,6 +8,7 @@
   import { can, hasRole } from '$lib/stores/auth.js';
   import DataTable from '$lib/components/DataTable.svelte';
   import PageHeader from '$lib/components/PageHeader.svelte';
+  import ExportMenu from '$lib/components/ExportMenu.svelte';
   import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
   import { clickOutside } from '$lib/actions/clickOutside.js';
 
@@ -180,7 +181,8 @@
 
 <PageHeader title={event ? tr(event.title, $locale) || tr({ en: 'Attendance', ar: 'الحضور' }, $locale) : tr({ en: 'Attendance', ar: 'الحضور' }, $locale)} back="/attendance">
   {#snippet actions()}
-    {#if canEdit}<button class="btn-ghost" onclick={() => (editing = !editing)}>{tr({ en: 'Edit name / time', ar: 'تعديل الاسم / الوقت' }, $locale)}</button>{/if}
+    {#if event}<ExportMenu resource="attendance-event" title={tr(event.title, $locale) || tr({ en: 'Attendance', ar: 'الحضور' }, $locale)} params={`eventId=${id}`} />{/if}
+    {#if canEdit}<button class="btn-ghost" onclick={() => (editing = !editing)}>{tr({ en: 'Edit name / time', ar: 'تعديل الوقت / الاسم' }, $locale)}</button>{/if}
     {#if isSuper}<button class="btn-ghost text-rose-600 dark:text-rose-400" onclick={() => (confirmDelete = true)}>{$t('common.delete')}</button>{/if}
   {/snippet}
 </PageHeader>

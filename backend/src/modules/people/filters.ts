@@ -2,6 +2,14 @@ import { z } from 'zod';
 import { and, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
 import { people, personServiceType, attendanceRecords } from '../../db/schema.js';
 
+// Accept a multi-value filter as a JSON array OR a comma-separated string.
+const toArray = (v: unknown): unknown[] | undefined =>
+  v == null ? undefined : Array.isArray(v) ? v : String(v).split(',').map((s) => s.trim()).filter(Boolean);
+const arrEnum = <T extends [string, ...string[]]>(vals: T) =>
+  z.preprocess(toArray, z.array(z.enum(vals)).optional());
+const arrNum = (min: number, max: number) =>
+  z.preprocess(toArray, z.array(z.coerce.number().int().min(min).max(max)).optional());
+
 // Shared people list/export filters so the list and its export stay identical.
 export const peopleListQuery = z.object({
   page: z.coerce.number().int().min(1).default(1),
@@ -16,6 +24,14 @@ export const peopleListQuery = z.object({
   birthdayMonth: z.coerce.number().int().min(1).max(12).optional(),
   anniversaryMonth: z.coerce.number().int().min(1).max(12).optional(),
   ministryId: z.coerce.number().int().positive().optional(),
+  // Multi-value variants (segment targeting): any of these matches (OR within a
+  // filter, AND across filters). Accept a JSON array OR a comma-separated string
+  // so both the composer (JSON) and a query string work. The single-value fields
+  // above are kept for the Members list, which filters one value at a time.
+  statuses: arrEnum(['visitor', 'regular', 'member', 'inactive', 'conference_attendee']),
+  ageGroups: arrEnum(['child', 'youth', 'adult']),
+  birthdayMonths: arrNum(1, 12),
+  ministryIds: arrNum(1, 1_000_000_000),
   hasEmail: z.enum(['true', 'false']).optional(),
   hasPhone: z.enum(['true', 'false']).optional(),
   optedIn: z.enum(['email', 'sms', 'whatsapp']).optional(),
@@ -48,6 +64,18 @@ export function peopleFilters(q: PeopleQuery): SQL[] {
     filters.push(idList.length ? inArray(people.id, idList) : sql`false`);
   }
   if (q.status) filters.push(eq(people.membershipStatus, q.status));
+  // Multi-value (segment) filters — OR within each, AND across them.
+  if (q.statuses?.length) filters.push(inArray(people.membershipStatus, q.statuses as ('visitor' | 'regular' | 'member' | 'inactive' | 'conference_attendee')[]));
+  if (q.ageGroups?.length) {
+    const parts = q.ageGroups.map((g) => g === 'child'
+      ? sql`(${people.dateOfBirth} IS NOT NULL AND extract(year from age(${people.dateOfBirth})) < 13)`
+      : g === 'youth'
+        ? sql`extract(year from age(${people.dateOfBirth})) BETWEEN 13 AND 17`
+        : sql`extract(year from age(${people.dateOfBirth})) >= 18`);
+    filters.push(sql`(${sql.join(parts, sql` OR `)})`);
+  }
+  if (q.birthdayMonths?.length) filters.push(sql`extract(month from ${people.dateOfBirth}) IN (${sql.join(q.birthdayMonths.map((m) => sql`${m}`), sql`, `)})`);
+  if (q.ministryIds?.length) filters.push(sql`EXISTS (SELECT 1 FROM ${personServiceType} pst WHERE pst.person_id = ${people.id} AND pst.service_type_id IN (${sql.join(q.ministryIds.map((m) => sql`${m}`), sql`, `)}))`);
   if (q.category) filters.push(eq(people.category, q.category));
   if (q.firstSeenYear) filters.push(sql`(extract(year from ${people.firstVisitOn}) = ${q.firstSeenYear} OR ${people.customFields}->>'firstSeenYear' = ${String(q.firstSeenYear)})`);
   if (q.review === 'pending') { filters.push(eq(people.selfRegistered, true)); filters.push(isNull(people.reviewedAt)); }

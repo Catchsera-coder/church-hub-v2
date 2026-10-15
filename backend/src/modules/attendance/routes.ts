@@ -145,6 +145,9 @@ attendanceRouter.get('/events/:id/records', requirePermission('view attendance')
       checkedInAt: attendanceRecords.checkedInAt,
       givenName: people.givenName,
       familyName: people.familyName,
+      // Contact for the exportable attendee list.
+      email: people.email,
+      mobile: people.mobile,
       // For the new-vs-member filter on the attendee list.
       membershipStatus: people.membershipStatus,
       selfRegistered: people.selfRegistered,

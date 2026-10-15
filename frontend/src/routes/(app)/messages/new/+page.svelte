@@ -143,12 +143,25 @@
     { v: 7, en: 'July', ar: 'يوليو' }, { v: 8, en: 'August', ar: 'أغسطس' }, { v: 9, en: 'September', ar: 'سبتمبر' },
     { v: 10, en: 'October', ar: 'أكتوبر' }, { v: 11, en: 'November', ar: 'نوفمبر' }, { v: 12, en: 'December', ar: 'ديسمبر' },
   ];
-  let seg = $state<Record<string, string>>({ status: '', ageGroup: '', birthdayMonth: '', ministryId: '', inactiveWeeks: '' });
+  // Segment filters are MULTI-select: pick one or more statuses, age groups,
+  // birthday months and ministries (OR within a filter, AND across filters).
+  let seg = $state<{ statuses: string[]; ageGroups: string[]; birthdayMonths: number[]; ministryIds: number[]; inactiveWeeks: string }>({
+    statuses: [], ageGroups: [], birthdayMonths: [], ministryIds: [], inactiveWeeks: '',
+  });
+  function toggleSeg<T>(key: 'statuses' | 'ageGroups' | 'birthdayMonths' | 'ministryIds', v: T) {
+    const arr = seg[key] as unknown as T[];
+    seg = { ...seg, [key]: arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v] };
+  }
   const segmentObj = $derived.by(() => {
-    const o: Record<string, string> = {};
-    for (const [k, v] of Object.entries(seg)) if (v !== '') o[k] = v;
+    const o: Record<string, any> = {};
+    if (seg.statuses.length) o.statuses = seg.statuses;
+    if (seg.ageGroups.length) o.ageGroups = seg.ageGroups;
+    if (seg.birthdayMonths.length) o.birthdayMonths = seg.birthdayMonths;
+    if (seg.ministryIds.length) o.ministryIds = seg.ministryIds;
+    if (seg.inactiveWeeks) o.inactiveWeeks = seg.inactiveWeeks;
     return o;
   });
+  const segCount = $derived(seg.statuses.length + seg.ageGroups.length + seg.birthdayMonths.length + seg.ministryIds.length + (seg.inactiveWeeks ? 1 : 0));
 
   // Email only: send to people who have an email even if they never opted in.
   // Ignored on SMS/WhatsApp (STOP is a hard opt-out we must honour).
@@ -370,7 +383,15 @@
       recipMode = 'ministries'; selectedMinistryIds = new Set((aud.ministryIds ?? []).filter((n: any) => Number.isFinite(n)));
     } else if (aud.mode === 'segment') {
       recipMode = 'segment';
-      seg = { ...seg, ...Object.fromEntries(Object.entries(aud.segment ?? {}).map(([k, v]) => [k, String(v)])) };
+      const s: any = aud.segment ?? {};
+      const arr = (v: any): any[] => (v == null || v === '') ? [] : Array.isArray(v) ? v : [v];
+      seg = {
+        statuses: arr(s.statuses ?? s.status).map(String),
+        ageGroups: arr(s.ageGroups ?? s.ageGroup).map(String),
+        birthdayMonths: arr(s.birthdayMonths ?? s.birthdayMonth).map(Number),
+        ministryIds: arr(s.ministryIds ?? s.ministryId).map(Number),
+        inactiveWeeks: s.inactiveWeeks != null ? String(s.inactiveWeeks) : '',
+      };
     }
   }
   async function prefillFromCampaign(cid: number) {
@@ -865,21 +886,47 @@
         </div>
         {#if selectedMinistryIds.size}<p class="text-xs font-medium" style="color: var(--brand)">{selectedMinistryIds.size} {tr({ en: 'selected', ar: 'محدد' }, $locale)}</p>{/if}
       {:else if recipMode === 'segment'}
-        <p class="text-xs text-slate-400">{tr({ en: 'Build a live audience from filters — anyone matching is included at send time.', ar: 'ابنِ جمهوراً حياً من عوامل التصفية — يُضمَّن كل مطابق وقت الإرسال.' }, $locale)}</p>
-        <div class="grid gap-2 sm:grid-cols-2">
-          <label class="text-sm"><span class="mb-1 block text-xs text-slate-500">{tr({ en: 'Status', ar: 'الحالة' }, $locale)}</span>
-            <select class="input" bind:value={seg.status}><option value="">{tr({ en: 'Any', ar: 'الكل' }, $locale)}</option><option value="visitor">{tr({ en: 'Visitor', ar: 'زائر' }, $locale)}</option><option value="regular">{tr({ en: 'Regular', ar: 'منتظم' }, $locale)}</option><option value="member">{tr({ en: 'Member', ar: 'عضو' }, $locale)}</option><option value="conference_attendee">{tr({ en: 'Conference attendee', ar: 'حضور مؤتمر' }, $locale)}</option></select>
-          </label>
-          <label class="text-sm"><span class="mb-1 block text-xs text-slate-500">{tr({ en: 'Age group', ar: 'الفئة العمرية' }, $locale)}</span>
-            <select class="input" bind:value={seg.ageGroup}><option value="">{tr({ en: 'Any', ar: 'الكل' }, $locale)}</option><option value="child">{tr({ en: 'Children', ar: 'أطفال' }, $locale)}</option><option value="youth">{tr({ en: 'Youth', ar: 'شباب' }, $locale)}</option><option value="adult">{tr({ en: 'Adults', ar: 'بالغون' }, $locale)}</option></select>
-          </label>
-          <label class="text-sm"><span class="mb-1 block text-xs text-slate-500">🎂 {tr({ en: 'Birthday month', ar: 'شهر الميلاد' }, $locale)}</span>
-            <select class="input" bind:value={seg.birthdayMonth}><option value="">{tr({ en: 'Any', ar: 'الكل' }, $locale)}</option>{#each MONTHS as mo}<option value={mo.v}>{tr({ en: mo.en, ar: mo.ar }, $locale)}</option>{/each}</select>
-          </label>
-          <label class="text-sm"><span class="mb-1 block text-xs text-slate-500">{tr({ en: 'In ministry', ar: 'في خدمة' }, $locale)}</span>
-            <select class="input" bind:value={seg.ministryId}><option value="">{tr({ en: 'Any', ar: 'الكل' }, $locale)}</option>{#each allMinistries as m}<option value={m.id}>{tr(m.name, $locale)}</option>{/each}</select>
-          </label>
-          <label class="text-sm"><span class="mb-1 block text-xs text-slate-500">{tr({ en: 'Not seen in', ar: 'لم يحضر منذ' }, $locale)}</span>
+        {@const segPill = (on: boolean) => `rounded-full border px-3 py-1 text-xs transition ${on ? 'border-transparent text-white shadow-sm' : 'border-slate-300 hover:border-slate-400 dark:border-slate-700'}`}
+        <div class="flex items-center justify-between gap-2">
+          <p class="text-xs text-slate-400">{tr({ en: 'Pick one or more in each filter — matches anyone in the chosen status/age/month AND in a chosen ministry. Live at send time.', ar: 'اختر واحداً أو أكثر في كل عامل — يطابق أي شخص ضمن الحالة/العمر/الشهر المختار و في خدمة مختارة. حيّ وقت الإرسال.' }, $locale)}</p>
+          {#if segCount}<button type="button" class="shrink-0 text-xs text-slate-500 hover:underline" onclick={() => (seg = { statuses: [], ageGroups: [], birthdayMonths: [], ministryIds: [], inactiveWeeks: '' })}>{tr({ en: 'Clear filters', ar: 'مسح العوامل' }, $locale)}</button>{/if}
+        </div>
+        <div class="space-y-3">
+          <div>
+            <span class="mb-1.5 block text-xs font-medium text-slate-500">{tr({ en: 'Status', ar: 'الحالة' }, $locale)}</span>
+            <div class="flex flex-wrap gap-1.5">
+              {#each [{ v: 'visitor', en: 'Visitor', ar: 'زائر' }, { v: 'regular', en: 'Regular', ar: 'منتظم' }, { v: 'member', en: 'Member', ar: 'عضو' }, { v: 'conference_attendee', en: 'Conference attendee', ar: 'حضور مؤتمر' }, { v: 'inactive', en: 'Inactive', ar: 'غير نشط' }] as o (o.v)}
+                <button type="button" class={segPill(seg.statuses.includes(o.v))} style={seg.statuses.includes(o.v) ? 'background: var(--brand)' : ''} onclick={() => toggleSeg('statuses', o.v)}>{tr({ en: o.en, ar: o.ar }, $locale)}</button>
+              {/each}
+            </div>
+          </div>
+          <div>
+            <span class="mb-1.5 block text-xs font-medium text-slate-500">{tr({ en: 'Age group', ar: 'الفئة العمرية' }, $locale)}</span>
+            <div class="flex flex-wrap gap-1.5">
+              {#each [{ v: 'child', en: 'Children', ar: 'أطفال' }, { v: 'youth', en: 'Youth', ar: 'شباب' }, { v: 'adult', en: 'Adults', ar: 'بالغون' }] as o (o.v)}
+                <button type="button" class={segPill(seg.ageGroups.includes(o.v))} style={seg.ageGroups.includes(o.v) ? 'background: var(--brand)' : ''} onclick={() => toggleSeg('ageGroups', o.v)}>{tr({ en: o.en, ar: o.ar }, $locale)}</button>
+              {/each}
+            </div>
+          </div>
+          <div>
+            <span class="mb-1.5 block text-xs font-medium text-slate-500">🎂 {tr({ en: 'Birthday month', ar: 'شهر الميلاد' }, $locale)}</span>
+            <div class="flex flex-wrap gap-1.5">
+              {#each MONTHS as mo (mo.v)}
+                <button type="button" class={segPill(seg.birthdayMonths.includes(mo.v))} style={seg.birthdayMonths.includes(mo.v) ? 'background: var(--brand)' : ''} onclick={() => toggleSeg('birthdayMonths', mo.v)}>{tr({ en: mo.en, ar: mo.ar }, $locale)}</button>
+              {/each}
+            </div>
+          </div>
+          {#if allMinistries.length}
+            <div>
+              <span class="mb-1.5 block text-xs font-medium text-slate-500">{tr({ en: 'In ministry / group', ar: 'في خدمة / مجموعة' }, $locale)}</span>
+              <div class="flex flex-wrap gap-1.5">
+                {#each allMinistries as m (m.id)}
+                  <button type="button" class={segPill(seg.ministryIds.includes(m.id))} style={seg.ministryIds.includes(m.id) ? 'background: var(--brand)' : ''} onclick={() => toggleSeg('ministryIds', m.id)}>{m.kind === 'group' ? '🏡' : '🙌'} {tr(m.name, $locale)}</button>
+                {/each}
+              </div>
+            </div>
+          {/if}
+          <label class="block max-w-xs text-sm"><span class="mb-1 block text-xs font-medium text-slate-500">{tr({ en: 'Not seen in', ar: 'لم يحضر منذ' }, $locale)}</span>
             <select class="input" bind:value={seg.inactiveWeeks}><option value="">{tr({ en: 'Any', ar: 'الكل' }, $locale)}</option><option value="4">{tr({ en: '4+ weeks', ar: '4+ أسابيع' }, $locale)}</option><option value="8">{tr({ en: '8+ weeks', ar: '8+ أسابيع' }, $locale)}</option><option value="12">{tr({ en: '12+ weeks', ar: '12+ أسبوع' }, $locale)}</option></select>
           </label>
         </div>

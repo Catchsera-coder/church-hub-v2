@@ -704,7 +704,9 @@ export const messageCampaigns = pgTable('message_campaigns', {
     mode: 'all' | 'people' | 'ministries' | 'segment';
     personIds?: number[];
     ministryIds?: number[];
-    segment?: Record<string, string | number>;
+    // Values may be a single string/number or an array (multi-select filters).
+    segment?: Record<string, string | number | (string | number)[]>;
+    ignoreOptIn?: boolean;
   }>(),
   // Recurring schedule (reuses the shared Schedule model). When set, the worker
   // re-sends each due occurrence instead of marking the campaign done.

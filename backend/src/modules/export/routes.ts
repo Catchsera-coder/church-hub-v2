@@ -1,8 +1,8 @@
 import { Router } from 'express';
 import ExcelJS from 'exceljs';
-import { desc, eq, isNull } from 'drizzle-orm';
+import { desc, eq, isNull, gte, lte, sql } from 'drizzle-orm';
 import { db } from '../../db/index.js';
-import { people, households, contributions, funds } from '../../db/schema.js';
+import { people, households, contributions, funds, attendanceEvents, attendanceRecords, serviceTypes } from '../../db/schema.js';
 import { asyncHandler } from '../../http/asyncHandler.js';
 import { authenticate, requirePermission } from '../../middleware/auth.js';
 import { currentOrg } from '../settings/routes.js';
@@ -146,4 +146,50 @@ exportRouter.get('/giving', requirePermission('view contribution'), asyncHandler
   const org = await currentOrg();
   if (isXlsx(req)) return sendXlsx(res, 'giving', 'Giving', headers, data, org);
   sendCsv(res, 'giving', headers, data);
+}));
+
+const fmtDate = (d: Date | string | null) => d ? new Date(d).toISOString().slice(0, 16).replace('T', ' ') : '';
+
+// --- Attendance: the sessions list (honours the same list filters) -----------
+exportRouter.get('/attendance', requirePermission('view attendance'), asyncHandler(async (req, res) => {
+  const q = req.query as Record<string, string>;
+  const filters = [] as import('drizzle-orm').SQL[];
+  if (q.q?.trim()) { const like = `%${q.q.trim().toLowerCase()}%`; filters.push(sql`(lower(coalesce(${attendanceEvents.title}->>'en','')) LIKE ${like} OR lower(coalesce(${attendanceEvents.title}->>'ar','')) LIKE ${like})`); }
+  if (q.year) filters.push(sql`extract(year from ${attendanceEvents.startsAt}) = ${Number(q.year)}`);
+  if (q.month) filters.push(sql`extract(month from ${attendanceEvents.startsAt}) = ${Number(q.month)}`);
+  if (q.dow !== undefined && q.dow !== '') filters.push(sql`extract(dow from ${attendanceEvents.startsAt}) = ${Number(q.dow)}`);
+  if (q.serviceTypeId) filters.push(eq(attendanceEvents.serviceTypeId, Number(q.serviceTypeId)));
+  if (q.from) { const d = new Date(q.from); if (!Number.isNaN(d.getTime())) filters.push(gte(attendanceEvents.startsAt, d)); }
+  if (q.to) { const d = new Date(q.to); if (!Number.isNaN(d.getTime())) { d.setHours(23, 59, 59, 999); filters.push(lte(attendanceEvents.startsAt, d)); } }
+  const countExpr = sql<number>`(SELECT count(*)::int FROM ${attendanceRecords} r WHERE r.attendance_event_id = attendance_events.id)`;
+  const rows = await db
+    .select({ startsAt: attendanceEvents.startsAt, title: attendanceEvents.title, service: serviceTypes.name, count: countExpr })
+    .from(attendanceEvents)
+    .leftJoin(serviceTypes, eq(serviceTypes.id, attendanceEvents.serviceTypeId))
+    .where(filters.length ? and(...filters) : undefined)
+    .orderBy(desc(attendanceEvents.startsAt));
+  const headers = ['Date', 'Gathering', 'Service', 'Attendance'];
+  const data: Row[] = rows.map((r) => [fmtDate(r.startsAt), en(r.title), en(r.service), r.count ?? 0]);
+  const org = await currentOrg();
+  if (isXlsx(req)) return sendXlsx(res, 'attendance', 'Attendance — sessions', headers, data, org);
+  sendCsv(res, 'attendance', headers, data);
+}));
+
+// --- Attendance: one event's attendee list (?eventId=) -----------------------
+exportRouter.get('/attendance-event', requirePermission('view attendance'), asyncHandler(async (req, res) => {
+  const eventId = Number((req.query as Record<string, string>).eventId);
+  if (!Number.isInteger(eventId) || eventId <= 0) return sendCsv(res, 'attendance', ['Name'], []);
+  const [ev] = await db.select({ title: attendanceEvents.title, startsAt: attendanceEvents.startsAt }).from(attendanceEvents).where(eq(attendanceEvents.id, eventId)).limit(1);
+  const rows = await db
+    .select({ given: people.givenName, family: people.familyName, status: people.membershipStatus, email: people.email, mobile: people.mobile, checkedInAt: attendanceRecords.checkedInAt })
+    .from(attendanceRecords)
+    .innerJoin(people, eq(people.id, attendanceRecords.personId))
+    .where(eq(attendanceRecords.attendanceEventId, eventId))
+    .orderBy(desc(attendanceRecords.checkedInAt));
+  const headers = ['#', 'Name', 'Status', 'Checked in', 'Email', 'Mobile'];
+  const data: Row[] = rows.map((r, i) => [i + 1, `${en(r.given)} ${en(r.family)}`.trim(), r.status, fmtDate(r.checkedInAt), r.email ?? '', r.mobile ?? '']);
+  const org = await currentOrg();
+  const title = `${en(ev?.title) || 'Attendance'} — ${fmtDate(ev?.startsAt ?? null)}`;
+  if (isXlsx(req)) return sendXlsx(res, 'attendance-event', title, headers, data, org);
+  sendCsv(res, 'attendance-event', headers, data);
 }));

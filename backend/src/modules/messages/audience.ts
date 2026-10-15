@@ -9,8 +9,9 @@ export const audienceZod = z.object({
   mode: z.enum(['all', 'people', 'ministries', 'segment']),
   personIds: z.array(z.number().int().positive()).max(10000).optional(),
   ministryIds: z.array(z.number().int().positive()).max(500).optional(),
-  // Free-form filter map validated against the people filters below.
-  segment: z.record(z.union([z.string(), z.number()])).optional(),
+  // Free-form filter map validated against the people filters below. Values may
+  // be a single string/number or an array (multi-select segment filters).
+  segment: z.record(z.union([z.string(), z.number(), z.array(z.union([z.string(), z.number()]))])).optional(),
   // Email only: reach people who have an email on file even if they haven't
   // opted in (the sender takes responsibility). SMS/WhatsApp still honour
   // opt-out because STOP is a hard/legal opt-out; the flag is ignored there.

@@ -56,6 +56,39 @@
     return rows.filter((r) => r.length && r.some((c) => c !== ''));
   }
 
+  // Word (.doc): build an Office-readable HTML document from the same CSV data
+  // with the branded title block. Office opens HTML .doc files natively.
+  async function downloadWord() {
+    busy = true;
+    try {
+      const [csv, settings] = await Promise.all([
+        fetchBlob('csv').then((b) => b.text()),
+        fetch('/api/settings').then((r) => r.json()).catch(() => ({ data: {} })),
+      ]);
+      const rows = parseCsv(csv);
+      const headers = rows.shift() ?? [];
+      const org = settings.data ?? {};
+      const brand = /^#([0-9a-fA-F]{6})$/.test(org.brandColor ?? '') ? org.brandColor : '#3b3f8c';
+      const name = (org.name?.en ?? org.name?.ar ?? '').replace(/</g, '&lt;');
+      const now = new Date().toLocaleString();
+      const esc = (s: string) => String(s ?? '').replace(/</g, '&lt;');
+      const thead = `<tr>${headers.map((h) => `<th style="background:${brand};color:#fff;border:1px solid #cbd5e1;padding:6px 9px;text-align:start">${esc(h)}</th>`).join('')}</tr>`;
+      const tbody = rows.map((r) => `<tr>${r.map((c) => `<td style="border:1px solid #cbd5e1;padding:6px 9px">${esc(c)}</td>`).join('')}</tr>`).join('');
+      const header = `<h2 style="color:${brand};margin:0 0 2px">${name ? esc(name) + ' — ' : ''}${esc(title)}</h2>`
+        + (withDate ? `<div style="color:#666;font-size:11px;margin:0 0 12px">${now} · ${rows.length} ${tr({ en: 'rows', ar: 'صفوف' }, $locale)}</div>` : '');
+      const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word">`
+        + `<head><meta charset="utf-8"></head><body style="font-family:Arial,sans-serif;font-size:13px">${header}`
+        + `<table border="1" cellspacing="0" cellpadding="0" style="border-collapse:collapse;width:100%">${thead}${tbody}</table></body></html>`;
+      const blob = new Blob(['﻿', html], { type: 'application/msword' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `${resource}.doc`;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+      open = false;
+    } catch (e) { alert((e as Error).message); } finally { busy = false; }
+  }
+
   async function printPdf() {
     busy = true;
     try {
@@ -100,6 +133,7 @@
         {filtered ? tr({ en: 'Only the current filter', ar: 'المرشّح الحالي فقط' }, $locale) : tr({ en: 'All records', ar: 'كل السجلات' }, $locale)}
       </p>
       <button class="block w-full rounded px-3 py-2 text-start hover:bg-slate-100 dark:hover:bg-slate-800" onclick={() => download('xlsx')}>📊 {tr({ en: 'Excel (.xlsx)', ar: 'إكسل (.xlsx)' }, $locale)}</button>
+      <button class="block w-full rounded px-3 py-2 text-start hover:bg-slate-100 dark:hover:bg-slate-800" onclick={downloadWord}>📝 {tr({ en: 'Word (.doc)', ar: 'وورد (.doc)' }, $locale)}</button>
       <button class="block w-full rounded px-3 py-2 text-start hover:bg-slate-100 dark:hover:bg-slate-800" onclick={() => download('csv')}>📄 {tr({ en: 'CSV', ar: 'CSV' }, $locale)}</button>
       <button class="block w-full rounded px-3 py-2 text-start hover:bg-slate-100 dark:hover:bg-slate-800" onclick={printPdf}>🖨 {tr({ en: 'Print / PDF', ar: 'طباعة / PDF' }, $locale)}</button>
       <div class="mt-1 border-t border-slate-100 px-3 pt-2 text-xs text-slate-500 dark:border-slate-800">
