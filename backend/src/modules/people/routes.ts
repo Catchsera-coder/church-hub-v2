@@ -551,6 +551,15 @@ peopleRouter.post(
   }),
 );
 
+// Staff confirm a flagged email is actually correct → silences the bad-email flag
+// (until the email changes or a newer send to it fails).
+peopleRouter.post('/:id(\\d+)/email-ok', requirePermission('update person'), asyncHandler(async (req, res) => {
+  const [row] = await db.update(people).set({ emailCheckedAt: new Date(), updatedAt: new Date() })
+    .where(and(eq(people.id, Number(req.params.id)), isNull(people.deletedAt))).returning({ id: people.id });
+  if (!row) throw notFound();
+  res.json({ data: { ok: true } });
+}));
+
 // --- Merge duplicates (reversible) ------------------------------------------
 // Preview shows what will be filled + how many linked rows move; the merge itself
 // soft-deletes the duplicate and is undoable. See merge.ts.

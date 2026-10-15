@@ -20,6 +20,7 @@ type Base = {
   upcomingGatherings: number; attendanceByService: ServiceCount[];
   missedTwoMeetings: number;
   awayLong: number;
+  badEmails: number;
   followUp: { statuses: string[]; missedCount: number; missedWeeks: number; awayWeeks: number };
 };
 let baseCache: { at: number; data: Base } | null = null;
@@ -73,6 +74,10 @@ dashboardRouter.get(
         .select({ c: sql<number>`count(*)::int` })
         .from(people)
         .where(and(...peopleFilters(peopleListQuery.parse({ away: '1', awayWeeks, missedStatuses: statusCsv }))));
+      const [badEmail] = await db
+        .select({ c: sql<number>`count(*)::int` })
+        .from(people)
+        .where(and(...peopleFilters(peopleListQuery.parse({ badEmail: '1' }))));
       // Attendance this month broken down by service/ministry (General = no service).
       const svc = await db
         .select({ name: serviceTypes.name, count: sql<number>`count(*)::int` })
@@ -93,6 +98,7 @@ dashboardRouter.get(
         attendanceByService: svc.map((s) => ({ name: s.name ?? null, count: s.count })),
         missedTwoMeetings: missed?.c ?? 0,
         awayLong: away?.c ?? 0,
+        badEmails: badEmail?.c ?? 0,
         followUp: { statuses, missedCount, missedWeeks, awayWeeks },
       };
       baseCache = { at: Date.now(), data: base };

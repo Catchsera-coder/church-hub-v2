@@ -24,6 +24,7 @@
     { key: 'newMembers', label: { en: 'New this month', ar: 'جدد هذا الشهر' } },
     { key: 'missed', label: { en: 'Missed two meetings', ar: 'تغيّب عن اجتماعين' } },
     { key: 'away', label: { en: 'Away more than two weeks', ar: 'غائب أكثر من أسبوعين' } },
+    { key: 'badEmails', label: { en: 'Email addresses to check', ar: 'عناوين بريد تحتاج مراجعة' } },
     { key: 'awaitingApproval', label: { en: 'Awaiting approval', ar: 'بانتظار الموافقة' } },
     { key: 'birthdays', label: { en: 'Birthdays this month', ar: 'أعياد ميلاد هذا الشهر' } },
     { key: 'upcoming', label: { en: 'Upcoming attendance', ar: 'الحضور القادم' } },

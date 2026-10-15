@@ -13,6 +13,7 @@
     upcomingGatherings: number; attendanceByService: ServiceCount[];
     missedTwoMeetings: number;
     awayLong: number;
+    badEmails: number;
     followUp: { statuses: string[]; missedCount: number; missedWeeks: number; awayWeeks: number };
     liveGathering?: { id: number; title: Record<string, string>; startsAt: string; publicToken: string } | null;
     givingThisMonthCents?: number;
@@ -34,12 +35,13 @@
     newMembers: { label: { en: 'New this month', ar: 'جدد هذا الشهر' }, value: (s) => s.newMembersThisMonth, emoji: '✨', href: '/members?review=pending' },
     missed: { label: { en: 'Missed two meetings this month', ar: 'تغيّب عن اجتماعين هذا الشهر' }, value: (s) => s.missedTwoMeetings, emoji: '⚠️' },
     away: { label: { en: 'Away more than two weeks', ar: 'غائب أكثر من أسبوعين' }, value: (s) => s.awayLong, emoji: '🚪' },
+    badEmails: { label: { en: 'Email addresses to check', ar: 'عناوين بريد تحتاج مراجعة' }, value: (s) => s.badEmails, emoji: '✉️', href: '/members?badEmail=1' },
     awaitingApproval: { label: { en: 'Awaiting approval', ar: 'بانتظار الموافقة' }, value: (s) => s.awaitingApproval, href: '/members?review=pending', emoji: '🔔' },
     birthdays: { label: { en: 'Birthdays this month', ar: 'أعياد ميلاد هذا الشهر' }, value: (s) => s.birthdaysThisMonth, emoji: '🎂', href: `/members?birthdayMonth=${curMonth}` },
     upcoming: { label: { en: 'Upcoming attendance', ar: 'الحضور القادم' }, value: (s) => s.upcomingGatherings, href: '/attendance', emoji: '📅' },
     giving: { label: { en: 'Giving this month', ar: 'العطاء هذا الشهر' }, value: (s) => s.givingThisMonthCents, money: true, href: '/giving' },
   };
-  const DEFAULT_WIDGETS = ['members', 'families', 'attendance', 'newMembers', 'missed', 'away', 'awaitingApproval', 'birthdays', 'upcoming', 'services', 'giving'];
+  const DEFAULT_WIDGETS = ['members', 'families', 'attendance', 'newMembers', 'missed', 'away', 'badEmails', 'awaitingApproval', 'birthdays', 'upcoming', 'services', 'giving'];
   let widgets = $state<string[]>(DEFAULT_WIDGETS);
   let currency = $state('USD');
 
@@ -60,7 +62,7 @@
         const chosen = cfg.filter((k) => k in CATALOG || k === 'services');
         // Surface the follow-up cards for churches whose saved prefs predate them
         // (admins can turn them off in Settings → Dashboard).
-        for (const k of ['missed', 'away']) if (!chosen.includes(k)) chosen.push(k);
+        for (const k of ['missed', 'away', 'badEmails']) if (!chosen.includes(k)) chosen.push(k);
         widgets = chosen;
       }
     } finally {

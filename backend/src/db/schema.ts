@@ -313,6 +313,10 @@ export const people = pgTable('people', {
   // When this person was merged INTO another (duplicate cleanup): set to the
   // surviving person's id, and deletedAt is set too. Reversible via peopleMerges.
   mergedIntoId: integer('merged_into_id'),
+  // Staff confirmed the current email is correct (silences the "bad email" flag
+  // for an address that merely bounced once but is actually fine). Cleared when
+  // the email changes; re-flags if a newer send to the same address fails.
+  emailCheckedAt: timestamp('email_checked_at', { withTimezone: true }),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
   ...timestamps,
 }, (t) => ({

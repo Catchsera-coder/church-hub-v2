@@ -183,7 +183,21 @@
   // (continuous absence). groupParams carries the configured thresholds.
   let missedMode = $state(false);
   let awayMode = $state(false);
+  let badEmailMode = $state(false);
   let missedParams = $state<Record<string, string>>({});
+  // Email hygiene: flag invalid / bounced addresses to fix, confirm or remove.
+  const emailMalformed = (e: string | null | undefined) => !!e && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e);
+  const emailIssue = (p: any) => emailMalformed(p.email)
+    ? tr({ en: 'Invalid format — looks mistyped', ar: 'تنسيق غير صالح — يبدو خطأ إملائي' }, $locale)
+    : tr({ en: 'Delivery bounced — address may be wrong', ar: 'ارتد التسليم — قد يكون العنوان خاطئاً' }, $locale);
+  async function confirmEmail(p: any) {
+    try { await api(`/people/${p.id}/email-ok`, { method: 'POST' }); rows = rows.filter((x) => x.id !== p.id); }
+    catch (e) { alert((e as Error).message); }
+  }
+  async function removeBadEmail(p: any) {
+    try { await api(`/people/${p.id}`, { method: 'PUT', body: JSON.stringify({ email: null }) }); rows = rows.filter((x) => x.id !== p.id); }
+    catch (e) { alert((e as Error).message); }
+  }
   const canMessage = can('create message');
   let messagingGroup = $state(false);
   let pendingCount = $state(0);
@@ -255,6 +269,7 @@
       if (showArchived) q.set('archived', 'only');
       if (missedMode) q.set('missed', '1');
       if (awayMode) q.set('away', '1');
+      if (badEmailMode) q.set('badEmail', '1');
       if (missedMode || awayMode) for (const [k, v] of Object.entries(missedParams)) q.set(k, v);
       q.set('category', cat);
       for (const [k, v] of Object.entries(f)) if (v !== '') q.set(k, String(v));
@@ -311,6 +326,7 @@
     const sp = new URLSearchParams(window.location.search);
     if (sp.get('missed')) missedMode = true;
     if (sp.get('away')) awayMode = true;
+    if (sp.get('badEmail')) badEmailMode = true;
     if (missedMode || awayMode) {
       for (const k of ['missedCount', 'missedWeeks', 'missedStatuses', 'awayWeeks']) { const v = sp.get(k); if (v) missedParams[k] = v; }
     }
@@ -351,7 +367,16 @@
   </div>
 {/if}
 
-{#if pendingCount > 0 && !reviewOnly && !missedMode && !awayMode}
+{#if badEmailMode}
+  <div class="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm dark:border-rose-900/50 dark:bg-rose-900/20">
+    <a href="/dashboard" class="text-rose-700 hover:underline dark:text-rose-300">← {tr({ en: 'Dashboard', ar: 'لوحة المعلومات' }, $locale)}</a>
+    <span class="font-medium text-rose-800 dark:text-rose-200">✉️⚠️ {tr({ en: 'Check email addresses', ar: 'تحقّق من عناوين البريد' }, $locale)}</span>
+    <span class="text-rose-700/80 dark:text-rose-300/70">{tr({ en: 'invalid or bounced — fix the address, confirm it, or remove it', ar: 'غير صالح أو مرتد — صحّح العنوان أو أكّده أو أزِله' }, $locale)}{meta ? ` · ${meta.total}` : ''}</span>
+    <a href="/members" class="ms-auto text-xs text-slate-500 hover:underline">{tr({ en: 'Clear', ar: 'مسح' }, $locale)}</a>
+  </div>
+{/if}
+
+{#if pendingCount > 0 && !reviewOnly && !missedMode && !awayMode && !badEmailMode}
   <button class="mb-4 flex w-full items-center gap-3 rounded-xl bg-amber-50 px-4 py-3 text-start text-sm text-amber-800 hover:bg-amber-100 dark:bg-amber-900/20 dark:text-amber-200 dark:hover:bg-amber-900/30" onclick={toggleReview}>
     <span class="text-lg">🔔</span>
     <span class="flex-1">
@@ -603,9 +628,17 @@
               {#if editCell?.id === p.id && editCell.field === 'email'}
                 <input class="input h-8 w-48 py-0 text-sm" type="email" bind:value={editVal} use:autofocus onkeydown={(e) => { if (e.key === 'Enter') saveCell(p); if (e.key === 'Escape') editCell = null; }} onblur={() => saveCell(p)} />
               {:else if canEditStatus}
-                <button class="text-start hover:underline hover:decoration-dotted {p.email ? '' : 'text-slate-400'}" onclick={() => startEditCell(p, 'email')}>{p.email ?? (tr({ en: '＋ add', ar: '＋ إضافة' }, $locale))}</button>
+                <button class="text-start hover:underline hover:decoration-dotted {p.email ? '' : 'text-slate-400'} {badEmailMode ? 'text-rose-600 dark:text-rose-400' : ''}" onclick={() => startEditCell(p, 'email')}>{p.email ?? (tr({ en: '＋ add', ar: '＋ إضافة' }, $locale))}</button>
                 {#if savingCell === p.id && editCell === null}<span class="ms-1 text-xs text-slate-400">…</span>{/if}
               {:else}{p.email ?? '—'}{/if}
+              {#if badEmailMode && canEditStatus}
+                <div class="mt-1 force-ltr text-xs text-rose-500">{emailIssue(p)}</div>
+                <div class="mt-1 flex gap-2">
+                  <button class="rounded border border-slate-300 px-1.5 py-0.5 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" onclick={() => startEditCell(p, 'email')}>✏️ {tr({ en: 'Fix', ar: 'تصحيح' }, $locale)}</button>
+                  <button class="rounded border border-emerald-300 px-1.5 py-0.5 text-xs text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-300" onclick={() => confirmEmail(p)}>✓ {tr({ en: 'Looks right', ar: 'صحيح' }, $locale)}</button>
+                  <button class="rounded border border-rose-300 px-1.5 py-0.5 text-xs text-rose-700 hover:bg-rose-50 dark:border-rose-800 dark:text-rose-300" onclick={() => removeBadEmail(p)}>✕ {tr({ en: 'Remove', ar: 'إزالة' }, $locale)}</button>
+                </div>
+              {/if}
             </td>
             <td class="p-3 force-ltr text-slate-600 dark:text-slate-300">
               {#if editCell?.id === p.id && editCell.field === 'mobile'}

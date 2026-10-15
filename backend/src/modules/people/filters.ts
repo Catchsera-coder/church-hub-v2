@@ -48,6 +48,10 @@ export const peopleListQuery = z.object({
   // from `missed` (which is sporadic: missed some of the last few weeks).
   away: z.enum(['1', 'true']).optional(),
   awayWeeks: z.coerce.number().int().min(1).max(52).optional(),
+  // "Bad email" review queue: a non-empty address that is malformed, OR that a
+  // real email send hard-bounced to (invalid recipient — NOT a rate-limit/network
+  // blip) and hasn't been confirmed since. Stage-1 email hygiene.
+  badEmail: z.enum(['1', 'true']).optional(),
   // Archived visibility: default hides archived; 'only' shows just archived;
   // 'include' shows both.
   archived: z.enum(['only', 'include']).optional(),
@@ -136,6 +140,19 @@ export function peopleFilters(q: PeopleQuery): SQL[] {
       (SELECT count(DISTINCT date_trunc('week', ae.starts_at)) FROM ${attendanceEvents} ae WHERE ae.starts_at >= now() - (${weeks} * interval '1 week') AND ae.starts_at <= now())
       - (SELECT count(DISTINCT date_trunc('week', ae2.starts_at)) FROM ${attendanceEvents} ae2 JOIN ${attendanceRecords} ar2 ON ar2.attendance_event_id = ae2.id AND ar2.person_id = ${people.id} WHERE ae2.starts_at >= now() - (${weeks} * interval '1 week') AND ae2.starts_at <= now())
     ) >= ${count}`);
+  }
+  if (q.badEmail) {
+    // Malformed syntax, OR a hard bounce to this exact address that staff haven't
+    // confirmed since. Rate-limit (429) / network errors are NOT "bad emails".
+    const malformed = sql`(${people.email} IS NOT NULL AND ${people.email} <> '' AND ${people.email} !~* '^[^@[:space:]]+@[^@[:space:]]+\\.[^@[:space:]]+$')`;
+    const bounced = sql`EXISTS (
+      SELECT 1 FROM message_recipients mr JOIN message_campaigns mc ON mc.id = mr.message_campaign_id
+      WHERE mr.person_id = ${people.id} AND mc.channel = 'email' AND mr.status = 'failed'
+        AND mr.to_contact = ${people.email} AND ${people.email} <> ''
+        AND mr.error ~* '(invalid|recipient|not\\s+a?\\s*valid|mailbox|address|\\b550\\b|SenderNotAllowed|BadRequest|DomainNotFound|does not exist)'
+        AND mr.error !~* '(429|TooManyRequests|LimitExceeded|throttl|fetch failed|network|timeout|ECONN|ETIMEDOUT)'
+        AND (${people.emailCheckedAt} IS NULL OR ${people.emailCheckedAt} < mr.sent_at))`;
+    filters.push(sql`(${malformed} OR ${bounced})`);
   }
   if (q.away) {
     const weeks = q.awayWeeks ?? 2;
