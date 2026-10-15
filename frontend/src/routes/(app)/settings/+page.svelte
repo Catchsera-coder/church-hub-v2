@@ -22,8 +22,7 @@
     { key: 'families', label: { en: 'Families', ar: 'العائلات' } },
     { key: 'attendance', label: { en: 'Attendance this month', ar: 'الحضور هذا الشهر' } },
     { key: 'newMembers', label: { en: 'New this month', ar: 'جدد هذا الشهر' } },
-    { key: 'missed', label: { en: 'Missed two meetings', ar: 'تغيّب عن اجتماعين' } },
-    { key: 'away', label: { en: 'Away more than two weeks', ar: 'غائب أكثر من أسبوعين' } },
+    { key: 'away', label: { en: 'Need a follow-up (away 2+ weeks)', ar: 'يحتاجون متابعة (غائبون أسبوعين فأكثر)' } },
     { key: 'badEmails', label: { en: 'Email addresses to check', ar: 'عناوين بريد تحتاج مراجعة' } },
     { key: 'awaitingApproval', label: { en: 'Awaiting approval', ar: 'بانتظار الموافقة' } },
     { key: 'birthdays', label: { en: 'Birthdays this month', ar: 'أعياد ميلاد هذا الشهر' } },
@@ -325,8 +324,8 @@
       {#if form.dashboard?.followUp}
         <div class="mt-3 space-y-3 border-t border-slate-100 pt-4 dark:border-slate-800">
           <div>
-            <p class="text-sm font-medium">{tr({ en: 'Follow-up groups', ar: 'مجموعات المتابعة' }, $locale)}</p>
-            <p class="text-xs text-slate-500 dark:text-slate-400">{tr({ en: 'Who counts for the “Missed two meetings” and “Away more than two weeks” cards.', ar: 'من يُحتسب لبطاقتَي «تغيّب عن اجتماعين» و«غائب أكثر من أسبوعين».' }, $locale)}</p>
+            <p class="text-sm font-medium">{tr({ en: 'Follow-up group', ar: 'مجموعة المتابعة' }, $locale)}</p>
+            <p class="text-xs text-slate-500 dark:text-slate-400">{tr({ en: 'Who counts for the “Need a follow-up” card — members & regulars with no attendance recently.', ar: 'من يُحتسب لبطاقة «يحتاجون متابعة» — الأعضاء والمنتظمون بلا حضور مؤخراً.' }, $locale)}</p>
           </div>
           <div>
             <span class="mb-1 block text-xs text-slate-500">{tr({ en: 'Only these statuses', ar: 'هذه الحالات فقط' }, $locale)}</span>
@@ -337,8 +336,6 @@
             </div>
           </div>
           <div class="grid gap-3 sm:grid-cols-3">
-            <label class="block space-y-1"><span class="text-xs text-slate-500">{tr({ en: 'Missed at least (meetings)', ar: 'تغيّب عن (اجتماعات) على الأقل' }, $locale)}</span><input class="input" type="number" min="1" max="12" bind:value={form.dashboard.followUp.missedCount} /></label>
-            <label class="block space-y-1"><span class="text-xs text-slate-500">{tr({ en: 'of the last (weeks)', ar: 'من آخر (أسابيع)' }, $locale)}</span><input class="input" type="number" min="2" max="26" bind:value={form.dashboard.followUp.missedWeeks} /></label>
             <label class="block space-y-1"><span class="text-xs text-slate-500">{tr({ en: 'Away more than (weeks)', ar: 'غائب أكثر من (أسابيع)' }, $locale)}</span><input class="input" type="number" min="1" max="52" bind:value={form.dashboard.followUp.awayWeeks} /></label>
           </div>
         </div>

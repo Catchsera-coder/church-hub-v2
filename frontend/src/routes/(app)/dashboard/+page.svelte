@@ -19,9 +19,8 @@
     givingThisMonthCents?: number;
   }
   const curMonth = new Date().getMonth() + 1;
-  // Follow-up group links carry the configured thresholds so the Members list
-  // (and its "Message this group") shows exactly the same people as the card.
-  const missedHref = (s: Stats) => `/members?missed=1&missedCount=${s.followUp.missedCount}&missedWeeks=${s.followUp.missedWeeks}&missedStatuses=${s.followUp.statuses.join(',')}`;
+  // The single follow-up card. Its link carries the configured threshold so the
+  // Members list (and its "Message this group") shows exactly the same people.
   const awayHref = (s: Stats) => `/members?away=1&awayWeeks=${s.followUp.awayWeeks}&missedStatuses=${s.followUp.statuses.join(',')}`;
   let stats = $state<Stats | null>(null);
   let loading = $state(true);
@@ -32,16 +31,15 @@
     members: { label: { en: 'Members', ar: 'الأعضاء' }, value: (s) => s.members, href: '/members' },
     families: { label: { en: 'Families', ar: 'العائلات' }, value: (s) => s.households, href: '/families' },
     attendance: { label: { en: 'Attendance this month', ar: 'الحضور هذا الشهر' }, value: (s) => s.attendanceThisMonth, href: '/attendance' },
-    newMembers: { label: { en: 'New this month', ar: 'جدد هذا الشهر' }, value: (s) => s.newMembersThisMonth, emoji: '✨', href: '/members?review=pending' },
-    missed: { label: { en: 'Missed two meetings this month', ar: 'تغيّب عن اجتماعين هذا الشهر' }, value: (s) => s.missedTwoMeetings, emoji: '⚠️' },
-    away: { label: { en: 'Away more than two weeks', ar: 'غائب أكثر من أسبوعين' }, value: (s) => s.awayLong, emoji: '🚪' },
+    newMembers: { label: { en: 'New this month', ar: 'جدد هذا الشهر' }, value: (s) => s.newMembersThisMonth, emoji: '✨', href: '/members?newThisMonth=1' },
+    away: { label: { en: 'Need a follow-up — away 2+ weeks', ar: 'يحتاجون متابعة — غائبون أسبوعين فأكثر' }, value: (s) => s.awayLong, emoji: '🚪' },
     badEmails: { label: { en: 'Email addresses to check', ar: 'عناوين بريد تحتاج مراجعة' }, value: (s) => s.badEmails, emoji: '✉️', href: '/members?badEmail=1' },
     awaitingApproval: { label: { en: 'Awaiting approval', ar: 'بانتظار الموافقة' }, value: (s) => s.awaitingApproval, href: '/members?review=pending', emoji: '🔔' },
     birthdays: { label: { en: 'Birthdays this month', ar: 'أعياد ميلاد هذا الشهر' }, value: (s) => s.birthdaysThisMonth, emoji: '🎂', href: `/members?birthdayMonth=${curMonth}` },
     upcoming: { label: { en: 'Upcoming attendance', ar: 'الحضور القادم' }, value: (s) => s.upcomingGatherings, href: '/attendance', emoji: '📅' },
     giving: { label: { en: 'Giving this month', ar: 'العطاء هذا الشهر' }, value: (s) => s.givingThisMonthCents, money: true, href: '/giving' },
   };
-  const DEFAULT_WIDGETS = ['members', 'families', 'attendance', 'newMembers', 'missed', 'away', 'badEmails', 'awaitingApproval', 'birthdays', 'upcoming', 'services', 'giving'];
+  const DEFAULT_WIDGETS = ['members', 'families', 'attendance', 'newMembers', 'away', 'badEmails', 'awaitingApproval', 'birthdays', 'upcoming', 'services', 'giving'];
   let widgets = $state<string[]>(DEFAULT_WIDGETS);
   let currency = $state('USD');
 
@@ -61,9 +59,11 @@
       if (cfg && cfg.length) {
         const chosen = cfg.filter((k) => k in CATALOG || k === 'services');
         // Surface the follow-up cards for churches whose saved prefs predate them
-        // (admins can turn them off in Settings → Dashboard).
-        for (const k of ['missed', 'away', 'badEmails']) if (!chosen.includes(k)) chosen.push(k);
-        widgets = chosen;
+        // (admins can turn them off in Settings → Dashboard). 'missed' was merged
+        // into the single 'away' follow-up card, so drop it from older prefs.
+        const pruned = chosen.filter((k) => k !== 'missed');
+        for (const k of ['away', 'badEmails']) if (!pruned.includes(k)) pruned.push(k);
+        widgets = pruned;
       }
     } finally {
       loading = false;
@@ -143,12 +143,12 @@
     {#each countWidgets as key}
       {@const w = CATALOG[key]}
       {@const val = w?.value(stats)}
-      {@const href = key === 'missed' ? missedHref(stats) : key === 'away' ? awayHref(stats) : w?.href}
+      {@const href = key === 'away' ? awayHref(stats) : w?.href}
       <!-- Giving is permission-gated server-side (omitted → drops off silently). -->
       {#if w && val !== undefined}
         {#snippet tile()}
           <p class="text-sm text-slate-500">{w.emoji ? w.emoji + ' ' : ''}{tr(w.label, $locale)}</p>
-          <p class="mt-1 text-3xl font-semibold {w.money ? 'force-ltr' : ''}" style={(key === 'awaitingApproval' || key === 'missed' || key === 'away') && val > 0 ? 'color: var(--brand)' : ''}>{w.money ? money(val) : val}</p>
+          <p class="mt-1 text-3xl font-semibold {w.money ? 'force-ltr' : ''}" style={(key === 'awaitingApproval' || key === 'away') && val > 0 ? 'color: var(--brand)' : ''}>{w.money ? money(val) : val}</p>
           {#if href}<span class="mt-2 inline-block text-xs text-slate-400 group-hover:text-slate-500">{tr({ en: 'View →', ar: 'عرض →' }, $locale)}</span>{/if}
         {/snippet}
         {#if href}

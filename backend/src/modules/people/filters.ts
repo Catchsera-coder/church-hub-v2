@@ -52,6 +52,9 @@ export const peopleListQuery = z.object({
   // real email send hard-bounced to (invalid recipient — NOT a rate-limit/network
   // blip) and hasn't been confirmed since. Stage-1 email hygiene.
   badEmail: z.enum(['1', 'true']).optional(),
+  // Added to the directory this calendar month — the exact set the dashboard's
+  // "New this month" card counts, so the card drills into its own people.
+  newThisMonth: z.enum(['1', 'true']).optional(),
   // Archived visibility: default hides archived; 'only' shows just archived;
   // 'include' shows both.
   archived: z.enum(['only', 'include']).optional(),
@@ -141,6 +144,7 @@ export function peopleFilters(q: PeopleQuery): SQL[] {
       - (SELECT count(DISTINCT date_trunc('week', ae2.starts_at)) FROM ${attendanceEvents} ae2 JOIN ${attendanceRecords} ar2 ON ar2.attendance_event_id = ae2.id AND ar2.person_id = ${people.id} WHERE ae2.starts_at >= now() - (${weeks} * interval '1 week') AND ae2.starts_at <= now())
     ) >= ${count}`);
   }
+  if (q.newThisMonth) filters.push(sql`${people.createdAt} >= date_trunc('month', now())`);
   if (q.badEmail) {
     // Malformed syntax, OR a hard bounce to this exact address that staff haven't
     // confirmed since. Rate-limit (429) / network errors are NOT "bad emails".

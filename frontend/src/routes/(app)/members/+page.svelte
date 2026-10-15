@@ -184,6 +184,7 @@
   let missedMode = $state(false);
   let awayMode = $state(false);
   let badEmailMode = $state(false);
+  let newMonthMode = $state(false);
   let missedParams = $state<Record<string, string>>({});
   // Email hygiene: flag invalid / bounced addresses to fix, confirm or remove.
   const emailMalformed = (e: string | null | undefined) => !!e && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e);
@@ -260,19 +261,27 @@
     } catch (err) { alert((err as Error).message); } finally { bulkBusy = false; }
   }
 
+  // Every filter that defines the CURRENT view, in one place, so the list, its
+  // "Message this group" and "Add all to a group" always target the exact same
+  // people. Paging/limit is added by the caller.
+  function applyViewParams(q: URLSearchParams) {
+    if (search.trim()) q.set('search', search.trim());
+    if (reviewOnly) q.set('review', 'pending');
+    if (showArchived) q.set('archived', 'only');
+    if (missedMode) q.set('missed', '1');
+    if (awayMode) q.set('away', '1');
+    if (badEmailMode) q.set('badEmail', '1');
+    if (newMonthMode) q.set('newThisMonth', '1');
+    if (missedMode || awayMode) for (const [k, v] of Object.entries(missedParams)) q.set(k, v);
+    q.set('category', cat);
+    for (const [k, v] of Object.entries(f)) if (v !== '') q.set(k, String(v));
+    return q;
+  }
+
   async function load() {
     loading = true;
     try {
-      const q = new URLSearchParams({ page: String(page), limit: String(toLimit($pageSize)) });
-      if (search.trim()) q.set('search', search.trim());
-      if (reviewOnly) q.set('review', 'pending');
-      if (showArchived) q.set('archived', 'only');
-      if (missedMode) q.set('missed', '1');
-      if (awayMode) q.set('away', '1');
-      if (badEmailMode) q.set('badEmail', '1');
-      if (missedMode || awayMode) for (const [k, v] of Object.entries(missedParams)) q.set(k, v);
-      q.set('category', cat);
-      for (const [k, v] of Object.entries(f)) if (v !== '') q.set(k, String(v));
+      const q = applyViewParams(new URLSearchParams({ page: String(page), limit: String(toLimit($pageSize)) }));
       const r = await api<{ data: Person[]; meta: Meta }>(`/people?${q}`);
       rows = r.data;
       meta = r.meta;
@@ -306,13 +315,7 @@
   async function messageGroup() {
     messagingGroup = true;
     try {
-      const q = new URLSearchParams({ limit: '2000', category: cat });
-      if (search.trim()) q.set('search', search.trim());
-      if (reviewOnly) q.set('review', 'pending');
-      if (missedMode) q.set('missed', '1');
-      if (awayMode) q.set('away', '1');
-      if (missedMode || awayMode) for (const [k, v] of Object.entries(missedParams)) q.set(k, v);
-      for (const [k, v] of Object.entries(f)) if (v !== '') q.set(k, String(v));
+      const q = applyViewParams(new URLSearchParams({ limit: '2000' }));
       const r = await api<{ data: Person[] }>(`/people?${q}`);
       const ids = r.data.map((p) => p.id);
       if (!ids.length) { alert(tr({ en: 'No one in this group yet.', ar: 'لا أحد في هذه المجموعة بعد.' }, $locale)); return; }
@@ -327,6 +330,7 @@
     if (sp.get('missed')) missedMode = true;
     if (sp.get('away')) awayMode = true;
     if (sp.get('badEmail')) badEmailMode = true;
+    if (sp.get('newThisMonth')) newMonthMode = true;
     if (missedMode || awayMode) {
       for (const k of ['missedCount', 'missedWeeks', 'missedStatuses', 'awayWeeks']) { const v = sp.get(k); if (v) missedParams[k] = v; }
     }
@@ -359,11 +363,19 @@
       <span class="font-medium text-amber-800 dark:text-amber-200">⚠️ {tr({ en: 'Missed two meetings', ar: 'تغيّب عن اجتماعين' }, $locale)}</span>
       <span class="text-amber-700/80 dark:text-amber-300/70">{tr({ en: 'members & regulars who missed several of the last weeks', ar: 'الأعضاء والمنتظمون الذين تغيّبوا عن عدة أسابيع ماضية' }, $locale)}{meta ? ` · ${meta.total}` : ''}</span>
     {:else}
-      <span class="font-medium text-amber-800 dark:text-amber-200">🚪 {tr({ en: 'Away more than two weeks', ar: 'غائب أكثر من أسبوعين' }, $locale)}</span>
+      <span class="font-medium text-amber-800 dark:text-amber-200">🚪 {tr({ en: 'Need a follow-up — away 2+ weeks', ar: 'يحتاجون متابعة — غائبون أسبوعين فأكثر' }, $locale)}</span>
       <span class="text-amber-700/80 dark:text-amber-300/70">{tr({ en: 'members & regulars with no attendance recently', ar: 'الأعضاء والمنتظمون بلا حضور مؤخراً' }, $locale)}{meta ? ` · ${meta.total}` : ''}</span>
     {/if}
-    {#if canMessage}<button class="ms-auto rounded-lg px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50" style="background: var(--brand)" disabled={messagingGroup} onclick={messageGroup}>✉️ {messagingGroup ? '…' : tr({ en: 'Message this group', ar: 'راسل هذه المجموعة' }, $locale)}</button>{/if}
-    <a href="/members" class="text-xs text-slate-500 hover:underline">{tr({ en: 'Clear', ar: 'مسح' }, $locale)}</a>
+    <a href="/members" class="ms-auto text-xs text-slate-500 hover:underline">{tr({ en: 'Clear', ar: 'مسح' }, $locale)}</a>
+  </div>
+{/if}
+
+{#if newMonthMode}
+  <div class="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm dark:border-emerald-900/50 dark:bg-emerald-900/20">
+    <a href="/dashboard" class="text-emerald-700 hover:underline dark:text-emerald-300">← {tr({ en: 'Dashboard', ar: 'لوحة المعلومات' }, $locale)}</a>
+    <span class="font-medium text-emerald-800 dark:text-emerald-200">✨ {tr({ en: 'New this month', ar: 'جدد هذا الشهر' }, $locale)}</span>
+    <span class="text-emerald-700/80 dark:text-emerald-300/70">{tr({ en: 'people added to the directory this calendar month', ar: 'أشخاص أُضيفوا إلى الدليل هذا الشهر' }, $locale)}{meta ? ` · ${meta.total}` : ''}</span>
+    <a href="/members" class="ms-auto text-xs text-slate-500 hover:underline">{tr({ en: 'Clear', ar: 'مسح' }, $locale)}</a>
   </div>
 {/if}
 
@@ -376,7 +388,7 @@
   </div>
 {/if}
 
-{#if pendingCount > 0 && !reviewOnly && !missedMode && !awayMode && !badEmailMode}
+{#if pendingCount > 0 && !reviewOnly && !missedMode && !awayMode && !badEmailMode && !newMonthMode}
   <button class="mb-4 flex w-full items-center gap-3 rounded-xl bg-amber-50 px-4 py-3 text-start text-sm text-amber-800 hover:bg-amber-100 dark:bg-amber-900/20 dark:text-amber-200 dark:hover:bg-amber-900/30" onclick={toggleReview}>
     <span class="text-lg">🔔</span>
     <span class="flex-1">
@@ -537,6 +549,13 @@
         {/if}
       </div>
     {/if}
+  </div>
+{/if}
+
+{#if canMessage && meta && meta.total > 0 && selected.size === 0}
+  <div class="mb-3 flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800/40">
+    <span class="text-slate-600 dark:text-slate-300">{tr({ en: 'This view', ar: 'هذا العرض' }, $locale)}: <span class="font-semibold" style="color: var(--brand)">{meta.total}</span> {tr({ en: 'people', ar: 'شخص' }, $locale)}</span>
+    <button class="ms-auto rounded-lg px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50" style="background: var(--brand)" disabled={messagingGroup} onclick={messageGroup}>✉️ {messagingGroup ? '…' : tr({ en: 'Message this group (email / SMS)', ar: 'راسل هذه المجموعة (بريد / SMS)' }, $locale)}</button>
   </div>
 {/if}
 
