@@ -57,12 +57,26 @@
     } catch (err) { alert(err instanceof ApiError ? err.message : (err as Error).message); }
     finally { sending = false; }
   }
+
+  // Save this message's content as a reusable template (picker in the composer).
+  async function saveAsTemplate() {
+    const name = prompt(tr({ en: 'Name this template', ar: 'سمِّ هذا القالب' }, $locale), (msg.subject?.en || msg.name || ''));
+    if (!name?.trim()) return;
+    try {
+      await api('/message-templates', { method: 'POST', body: JSON.stringify({ name: name.trim(), channel: msg.channel, subject: msg.subject ?? {}, body: msg.body ?? {} }) });
+      alert(tr({ en: 'Saved as template ✓', ar: 'حُفظ كقالب ✓' }, $locale));
+    } catch (err) { alert(err instanceof ApiError ? err.message : (err as Error).message); }
+  }
 </script>
 
 <PageHeader title={msg?.name ?? tr({ en: 'Message', ar: 'رسالة' }, $locale)} back="/messages">
   {#snippet actions()}
     {#if msg && (msg.status === 'draft' || msg.status === 'scheduled') && can('update message')}
       <button class="btn-primary" onclick={sendNow} disabled={sending}>{sending ? $t('common.loading') : tr({ en: 'Send now', ar: 'إرسال الآن' }, $locale)}</button>
+    {/if}
+    {#if msg && can('create message')}
+      <a class="btn-ghost border border-slate-300 dark:border-slate-700" href={`/messages/new?from=${id}`}>↻ {tr({ en: 'Duplicate / resend', ar: 'تكرار / إعادة إرسال' }, $locale)}</a>
+      <button class="btn-ghost border border-slate-300 dark:border-slate-700" onclick={saveAsTemplate}>💾 {tr({ en: 'Save as template', ar: 'حفظ كقالب' }, $locale)}</button>
     {/if}
   {/snippet}
 </PageHeader>

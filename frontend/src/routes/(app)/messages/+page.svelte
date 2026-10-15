@@ -132,11 +132,16 @@
     <td class="p-3 text-slate-600 dark:text-slate-300">{m.sentByName || m.createdByName || '—'}</td>
     <td class="p-3 force-ltr text-slate-600 dark:text-slate-300">{m.sentAt ? dateTime(m.sentAt) : (m.scheduledFor ? dateTime(m.scheduledFor) : dateTime(m.createdAt))}</td>
     <td class="p-3 text-end">
-      {#if (m.status === 'draft' || m.status === 'scheduled') && can('update message')}
-        <button class="text-xs text-primary-600 hover:underline disabled:opacity-50 dark:text-primary-300" disabled={sending === m.id} onclick={(e) => sendNow(m, e)}>
-          {sending === m.id ? $t('common.loading') : tr({ en: 'Send now', ar: 'إرسال الآن' }, $locale)}
-        </button>
-      {/if}
+      <div class="flex items-center justify-end gap-3">
+        {#if (m.status === 'draft' || m.status === 'scheduled') && can('update message')}
+          <button class="text-xs text-primary-600 hover:underline disabled:opacity-50 dark:text-primary-300" disabled={sending === m.id} onclick={(e) => sendNow(m, e)}>
+            {sending === m.id ? $t('common.loading') : tr({ en: 'Send now', ar: 'إرسال الآن' }, $locale)}
+          </button>
+        {/if}
+        {#if can('create message')}
+          <a class="text-xs text-slate-500 hover:underline dark:text-slate-400" href={`/messages/new?from=${m.id}`}>↻ {tr({ en: 'Reuse', ar: 'إعادة استخدام' }, $locale)}</a>
+        {/if}
+      </div>
     </td>
   {/snippet}
 </DataTable>

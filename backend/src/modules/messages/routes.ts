@@ -258,6 +258,32 @@ messagesRouter.get('/:id(\\d+)/recipients', requirePermission('view message'), a
   res.json({ data: rows });
 }));
 
+// Duplicate a message for reuse ("send again" / edit-then-send / template base).
+// Returns a prefill payload (content + audience + a FRESH unlinked copy of each
+// attachment — the original keeps its own, since linkAttachments only binds
+// null-campaign rows). Nothing is sent and no campaign is created until the user
+// sends from the composer, so a congregation-wide resend is always reviewed.
+messagesRouter.post('/:id(\\d+)/duplicate', requirePermission('create message'), asyncHandler(async (req, res) => {
+  const id = Number(req.params.id);
+  const [c] = await db.select().from(messageCampaigns).where(eq(messageCampaigns.id, id)).limit(1);
+  if (!c) throw notFound();
+  const atts = await db.select().from(messageAttachments).where(eq(messageAttachments.campaignId, id));
+  const copied: { token: string; filename: string; contentType: string; sizeBytes: number }[] = [];
+  for (const a of atts) {
+    const [n] = await db.insert(messageAttachments).values({
+      campaignId: null, filename: a.filename, contentType: a.contentType, sizeBytes: a.sizeBytes,
+      storage: a.storage, blobName: a.blobName, data: a.data, uploadedByUserId: req.auth?.sub ?? null,
+    }).returning({ token: messageAttachments.token });
+    copied.push({ token: n!.token, filename: a.filename, contentType: a.contentType, sizeBytes: a.sizeBytes });
+  }
+  res.json({ data: {
+    channel: c.channel, subject: c.subject ?? {}, body: c.body ?? {},
+    ctaLabel: c.ctaLabel ?? null, ctaUrl: c.ctaUrl ?? null,
+    imagePlacement: c.imagePlacement ?? 'body', mediaUrl: c.mediaUrl ?? null,
+    audience: c.audience ?? null, name: c.name ?? '', attachments: copied,
+  } });
+}));
+
 messagesRouter.post('/', requirePermission('create message'), asyncHandler(async (req, res) => {
   const b = schema.parse(req.body);
   const [row] = await db.insert(messageCampaigns).values({

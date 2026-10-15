@@ -6,7 +6,7 @@
   import { get } from 'svelte/store';
   import { t, locale, tr, enabledLocales, displayName, personContext } from '$lib/i18n.js';
   import { nameOrder } from '$lib/stores/prefs.js';
-  import { hasRole } from '$lib/stores/auth.js';
+  import { hasRole, can } from '$lib/stores/auth.js';
   import PageHeader from '$lib/components/PageHeader.svelte';
   import ScheduleEditor from '$lib/components/ScheduleEditor.svelte';
   import { type Schedule, defaultSchedule, describeSchedule } from '$lib/schedule.js';
@@ -347,7 +347,60 @@
     if (subj) form.subject = { ...form.subject, en: subj };
     const bodyText = sp.get('body');
     if (bodyText) form.body = { ...form.body, en: bodyText };
+    // Reuse a past message: ?from=<campaignId> prefills EVERYTHING (channel,
+    // subject, body, CTA, image placement, audience, and a fresh copy of the
+    // attachments) so you can resend as-is or tweak first. Nothing sends until
+    // you click send.
+    const from = sp.get('from');
+    if (from && /^\d+$/.test(from)) prefillFromCampaign(Number(from));
   });
+
+  // Set the recipient mode + selections from a stored audience spec.
+  function applyAudience(aud: any) {
+    if (!aud || aud.mode === 'all') { recipMode = 'all'; if (aud?.ignoreOptIn) ignoreOptIn = true; return; }
+    if (aud.ignoreOptIn) ignoreOptIn = true;
+    if (aud.mode === 'people') {
+      recipMode = 'people'; showPicker = false;
+      const ids = (aud.personIds ?? []).filter((n: any) => Number.isFinite(n));
+      selectedIds = new Set(ids);
+      if (ids.length) api<{ data: any[] }>(`/people?ids=${ids.join(',')}&limit=${ids.length}`)
+        .then((r) => { const map = new Map(selectedPeople); for (const pp of r.data) map.set(pp.id, pp); selectedPeople = map; })
+        .catch(() => { const map = new Map(selectedPeople); for (const id of ids) map.set(id, { id }); selectedPeople = map; });
+    } else if (aud.mode === 'ministries') {
+      recipMode = 'ministries'; selectedMinistryIds = new Set((aud.ministryIds ?? []).filter((n: any) => Number.isFinite(n)));
+    } else if (aud.mode === 'segment') {
+      recipMode = 'segment';
+      seg = { ...seg, ...Object.fromEntries(Object.entries(aud.segment ?? {}).map(([k, v]) => [k, String(v)])) };
+    }
+  }
+  async function prefillFromCampaign(cid: number) {
+    try {
+      const { data: d } = await api<{ data: any }>(`/messages/${cid}/duplicate`, { method: 'POST' });
+      if (d.channel) form.channel = d.channel;
+      form.subject = { ...form.subject, ...(d.subject ?? {}) };
+      form.body = { ...form.body, ...(d.body ?? {}) };
+      if (d.ctaLabel) form.ctaLabel = { ...form.ctaLabel, ...d.ctaLabel };
+      if (d.ctaUrl) form.ctaUrl = d.ctaUrl;
+      if (d.imagePlacement) imagePlacement = d.imagePlacement;
+      if (d.mediaUrl) form.mediaUrl = d.mediaUrl;
+      if (d.attachments?.length) attachments = d.attachments.map((a: any) => ({ token: a.token, filename: a.filename, contentType: a.contentType, sizeBytes: a.sizeBytes }));
+      applyAudience(d.audience);
+    } catch (err) { error = (err as Error).message; }
+  }
+
+  // Save the current draft as a reusable branded template (appears in the picker).
+  let templateSaved = $state('');
+  async function saveAsTemplate() {
+    if (!form.body.en?.trim() && !form.subject.en?.trim()) { error = tr({ en: 'Write the message first, then save it as a template.', ar: 'اكتب الرسالة أولاً ثم احفظها كقالب.' }, $locale); return; }
+    const name = prompt(tr({ en: 'Name this template', ar: 'سمِّ هذا القالب' }, $locale), form.subject.en || form.name || '');
+    if (!name?.trim()) return;
+    try {
+      await api('/message-templates', { method: 'POST', body: JSON.stringify({ name: name.trim(), channel: form.channel, subject: form.subject, body: form.body }) });
+      templates = (await api<{ data: any[] }>('/message-templates')).data.filter((x) => x.isActive);
+      templateSaved = tr({ en: 'Saved as template ✓', ar: 'حُفظ كقالب ✓' }, $locale);
+      setTimeout(() => (templateSaved = ''), 4000);
+    } catch (err) { error = (err as Error).message; }
+  }
 
   function insertStreamLink() {
     const m = ministries.find((x) => x.id === Number(streamMinistryId));
@@ -570,17 +623,23 @@
       </label>
     </div>
 
-    {#if templates.length > 0}
-      <label class="block space-y-1">
-        <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Start from template', ar: 'ابدأ من قالب' }, $locale)}</span>
-        <select class="input" bind:value={templateId} onchange={applyTemplate}>
-          <option value="">{tr({ en: '— None —', ar: '— بدون —' }, $locale)}</option>
-          {#each templates as tpl}
-            <option value={tpl.id}>{tpl.name}</option>
-          {/each}
-        </select>
-      </label>
-    {/if}
+    <div class="flex flex-wrap items-end gap-3">
+      {#if templates.length > 0}
+        <label class="block flex-1 space-y-1">
+          <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Start from template', ar: 'ابدأ من قالب' }, $locale)}</span>
+          <select class="input" bind:value={templateId} onchange={applyTemplate}>
+            <option value="">{tr({ en: '— None —', ar: '— بدون —' }, $locale)}</option>
+            {#each templates as tpl}
+              <option value={tpl.id}>{tpl.name}</option>
+            {/each}
+          </select>
+        </label>
+      {/if}
+      {#if can('create message')}
+        <button type="button" class="btn-ghost border border-slate-300 text-sm dark:border-slate-700" onclick={saveAsTemplate}>💾 {tr({ en: 'Save as template', ar: 'حفظ كقالب' }, $locale)}</button>
+      {/if}
+      {#if templateSaved}<span class="pb-2 text-xs font-medium text-emerald-600 dark:text-emerald-400">{templateSaved}</span>{/if}
+    </div>
 
     <div class="rounded-lg border border-dashed border-slate-300 p-3 dark:border-slate-600">
       {#if !showAi}
