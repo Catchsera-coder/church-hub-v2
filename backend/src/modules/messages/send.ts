@@ -122,16 +122,34 @@ export async function sendCampaignNow(
     await sleep(c.channel === 'email' ? 300 : 75);
   }
 
-  // How many are still waiting (rate-limit pause, or never reached).
-  const [{ pending }] = await db
-    .select({ pending: sql<number>`count(*) filter (where ${messageRecipients.status} = 'pending')::int` })
+  // A pass that was NOT stopped by a rate limit has offered the message to
+  // everyone currently eligible. Anyone still 'pending' is no longer in the
+  // audience (opted out, deactivated, archived, or lost their contact since the
+  // send began), so the loop above never reached them. Finalise them here —
+  // otherwise `pending` stays > 0 and the campaign is stuck 'sending' forever,
+  // re-draining every couple of minutes.
+  if (!rateLimited) {
+    await db.update(messageRecipients)
+      .set({ status: 'failed', sentAt: new Date(), error: `No longer eligible for ${c.channel} (opted out, inactive, archived, or no ${c.channel === 'email' ? 'email' : 'number'} on file).` })
+      .where(and(eq(messageRecipients.messageCampaignId, campaignId), eq(messageRecipients.status, 'pending')));
+  }
+
+  // Campaign-wide tallies (not just this batch): how many are still waiting, how
+  // many were ever delivered, and the total recipient rows.
+  const [{ pending, delivered, total }] = await db
+    .select({
+      pending: sql<number>`count(*) filter (where ${messageRecipients.status} = 'pending')::int`,
+      delivered: sql<number>`count(*) filter (where ${messageRecipients.status} = 'sent')::int`,
+      total: sql<number>`count(*)::int`,
+    })
     .from(messageRecipients).where(eq(messageRecipients.messageCampaignId, campaignId));
 
   // Rate-limited or anyone still pending → keep 'sending' (resumable) and set when
   // the background drainer should send the next batch: after the provider's cap
-  // resets (rate-limit) or soon (a normal pause). Complete → finalise 'sent'.
+  // resets (rate-limit) or soon (a normal pause). Complete → 'sent' if anyone was
+  // delivered (or there was no one to reach), else honestly 'failed'.
   const incomplete = rateLimited || pending > 0;
-  const status = incomplete ? 'sending' : (sent > 0 || audience.length === 0 ? 'sent' : 'failed');
+  const status = incomplete ? 'sending' : (delivered > 0 || total === 0 ? 'sent' : 'failed');
   const nextBatchAt = incomplete
     ? new Date(Date.now() + (rateLimited ? (retryAfterSec * 1000 + 30_000) : 120_000))
     : null;
