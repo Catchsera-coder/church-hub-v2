@@ -960,8 +960,17 @@
               </div>
             </div>
           {/if}
-          <label class="block max-w-xs text-sm"><span class="mb-1 block text-xs font-medium text-slate-500">{tr({ en: 'Not seen in', ar: 'لم يحضر منذ' }, $locale)}</span>
-            <select class="input" bind:value={seg.inactiveWeeks}><option value="">{tr({ en: 'Any', ar: 'الكل' }, $locale)}</option><option value="4">{tr({ en: '4+ weeks', ar: '4+ أسابيع' }, $locale)}</option><option value="8">{tr({ en: '8+ weeks', ar: '8+ أسابيع' }, $locale)}</option><option value="12">{tr({ en: '12+ weeks', ar: '12+ أسبوع' }, $locale)}</option></select>
+          <label class="block max-w-xs text-sm"><span class="mb-1 block text-xs font-medium text-slate-500">🚪 {tr({ en: 'Away — no attendance for', ar: 'غائب — بلا حضور منذ' }, $locale)}</span>
+            <select class="input" bind:value={seg.inactiveWeeks}>
+              <option value="">{tr({ en: 'Any', ar: 'الكل' }, $locale)}</option>
+              <option value="2">{tr({ en: '2+ weeks', ar: 'أسبوعين فأكثر' }, $locale)}</option>
+              <option value="3">{tr({ en: '3+ weeks', ar: '3 أسابيع فأكثر' }, $locale)}</option>
+              <option value="4">{tr({ en: '1+ month (4 weeks)', ar: 'شهر فأكثر (4 أسابيع)' }, $locale)}</option>
+              <option value="6">{tr({ en: 'More than a month (6 weeks)', ar: 'أكثر من شهر (6 أسابيع)' }, $locale)}</option>
+              <option value="8">{tr({ en: '2+ months', ar: 'شهرين فأكثر' }, $locale)}</option>
+              <option value="12">{tr({ en: '3+ months', ar: '3 أشهر فأكثر' }, $locale)}</option>
+            </select>
+            <span class="mt-1 block text-[11px] text-slate-400">{tr({ en: 'Members with no check-in in this time — straight from attendance. Combine with a status (e.g. Member) to reach exactly who you mean.', ar: 'الأعضاء بلا تسجيل حضور خلال هذه المدة — من بيانات الحضور مباشرة. اجمعها مع حالة (مثل: عضو) للوصول لمن تقصده بدقة.' }, $locale)}</span>
           </label>
         </div>
       {:else if recipMode === 'people'}
