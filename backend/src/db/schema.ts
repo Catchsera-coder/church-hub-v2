@@ -837,3 +837,41 @@ export const activityLog = pgTable('activity_log', {
   properties: jsonb('properties').$type<Record<string, unknown>>().notNull().default({}),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }, (t) => ({ createdIdx: index('activity_log_created_idx').on(t.createdAt) }));
+
+// ---------------------------------------------------------------------------
+// Security Center — weekly NIST/OWASP-aligned self-audit (Super Admin only)
+// ---------------------------------------------------------------------------
+export const securitySeverity = pgEnum('security_severity', ['critical', 'high', 'medium', 'low', 'info']);
+export const securityFindingStatus = pgEnum('security_finding_status', ['open', 'fixed', 'dismissed', 'fix_requested']);
+
+// One row per scan run (manual or scheduled) with a severity-count summary.
+export const securityScans = pgTable('security_scans', {
+  id: serial('id').primaryKey(),
+  startedAt: timestamp('started_at', { withTimezone: true }).defaultNow().notNull(),
+  finishedAt: timestamp('finished_at', { withTimezone: true }),
+  trigger: varchar('trigger', { length: 20 }).notNull().default('scheduled'), // scheduled | manual
+  openCount: integer('open_count').notNull().default(0),
+  autoFixed: integer('auto_fixed').notNull().default(0),
+  summary: jsonb('summary').$type<Record<string, number>>().notNull().default({}),
+});
+
+// One row per distinct check (keyed by `code`); re-scans update it in place so a
+// recurring issue keeps its history (firstSeenAt) and a resolved one is marked
+// fixed rather than duplicated.
+export const securityFindings = pgTable('security_findings', {
+  id: serial('id').primaryKey(),
+  code: varchar('code', { length: 60 }).notNull(),
+  category: varchar('category', { length: 40 }).notNull(), // OWASP ref (e.g. A01) / NIST area
+  severity: securitySeverity('severity').notNull(),
+  title: text('title').notNull(),
+  detail: text('detail').notNull(),
+  recommendation: text('recommendation').notNull(),
+  autofixable: boolean('autofixable').notNull().default(false),
+  status: securityFindingStatus('status').notNull().default('open'),
+  evidence: jsonb('evidence').$type<Record<string, unknown>>().notNull().default({}),
+  firstSeenAt: timestamp('first_seen_at', { withTimezone: true }).defaultNow().notNull(),
+  lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).defaultNow().notNull(),
+  resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+  resolvedByUserId: integer('resolved_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+  ...timestamps,
+}, (t) => ({ codeIdx: uniqueIndex('security_findings_code_idx').on(t.code) }));

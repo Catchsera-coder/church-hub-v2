@@ -37,6 +37,7 @@ import { publicMinistriesRouter } from './modules/ministries/public.routes.js';
 import { publicInboundRouter, publicAcsRouter } from './modules/messages/inbound.routes.js';
 import { publicBrandingRouter } from './modules/settings/public.routes.js';
 import { careRouter } from './modules/care/routes.js';
+import { securityRouter } from './modules/security/routes.js';
 
 export function createApp() {
   const app = express();
@@ -104,6 +105,7 @@ export function createApp() {
   app.use('/api/message-templates', messageTemplatesRouter);
   app.use('/api/team', teamRouter);
   app.use('/api/activity', activityRouter);
+  app.use('/api/security', securityRouter);
 
   app.use(errorHandler);
   return app;

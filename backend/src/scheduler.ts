@@ -1,7 +1,8 @@
-import { and, eq, or, lte, isNull, sql } from 'drizzle-orm';
+import { and, eq, or, lte, isNull, desc, sql } from 'drizzle-orm';
 import { pool, db } from './db/index.js';
-import { messageCampaigns, messageRecipients, automations } from './db/schema.js';
+import { messageCampaigns, messageRecipients, automations, securityScans } from './db/schema.js';
 import { sendCampaignNow } from './modules/messages/send.js';
+import { runScan } from './modules/security/scanner.js';
 import { runAutomation, resolveMessaging, type Channel } from './modules/automations/service.js';
 import { currentOrg } from './modules/settings/routes.js';
 import { isDue, defaultAutomationSchedule, partsInTz } from './modules/scheduling/schedule.js';
@@ -32,6 +33,7 @@ async function tick(): Promise<void> {
       await drainSendingCampaigns();
       await runScheduledCampaigns();
       await runAutoAutomations();
+      await runWeeklySecurityScan();
     } finally {
       await client.query('select pg_advisory_unlock($1)', [LOCK_KEY]);
     }
@@ -62,6 +64,15 @@ async function drainSendingCampaigns(): Promise<void> {
     await sendCampaignNow(c.id, c.sentByUserId ?? undefined, { resume: true })
       .catch((e) => console.error('[scheduler] drain', c.id, e instanceof Error ? e.message : e));
   }
+}
+
+// Weekly Security Center self-audit. Runs at most once every 7 days (checked by
+// the last scan's timestamp) and auto-heals the SAFE findings, so the system
+// keeps itself tidy and surfaces risks even when no one is signed in.
+async function runWeeklySecurityScan(): Promise<void> {
+  const [last] = await db.select({ at: securityScans.startedAt }).from(securityScans).orderBy(desc(securityScans.startedAt)).limit(1);
+  if (last && Date.now() - new Date(last.at).getTime() < 7 * 24 * 3600_000) return;
+  await runScan({ trigger: 'scheduled', autoHeal: true }).catch((e) => console.error('[scheduler] security-scan', e instanceof Error ? e.message : e));
 }
 
 async function runScheduledCampaigns(): Promise<void> {
