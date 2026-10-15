@@ -115,7 +115,28 @@
     goto('/login', { replaceState: true });
   }
 
-  const isActive = (href: string) => $page.url.pathname === href || $page.url.pathname.startsWith(href + '/');
+  // Highlight only the MOST SPECIFIC matching nav item. Matching by prefix alone
+  // lit up both a parent (/messages) and its child (/messages/templates) at once;
+  // picking the longest matching href fixes that so exactly one item is active.
+  const allHrefs = ['/dashboard', ...groups.flatMap((g) => g.items.map((i) => i.href))];
+  const activeHref = $derived.by(() => {
+    const p = $page.url.pathname;
+    let best = '';
+    for (const h of allHrefs) if ((p === h || p.startsWith(h + '/')) && h.length > best.length) best = h;
+    return best;
+  });
+  const isActive = (href: string) => href === activeHref;
+
+  // Collapsible sidebar groups — each group's open/closed state is remembered in
+  // this browser so the sidebar stays how the user likes it.
+  const COLLAPSE_KEY = 'ch_nav_collapsed';
+  let collapsed = $state<Record<string, boolean>>({});
+  onMount(() => { try { collapsed = JSON.parse(localStorage.getItem(COLLAPSE_KEY) || '{}'); } catch { /* ignore */ } });
+  function toggleGroup(key: string) {
+    collapsed = { ...collapsed, [key]: !collapsed[key] };
+    try { localStorage.setItem(COLLAPSE_KEY, JSON.stringify(collapsed)); } catch { /* ignore */ }
+  }
+
   // On mobile the sidebar is an overlay drawer; close it after choosing a link.
   const closeSidebar = () => (sidebarOpen = false);
 </script>
@@ -154,18 +175,30 @@
         {#each groups as g}
           {@const items = g.items.filter(visible)}
           {#if items.length}
+            {@const open = !collapsed[g.key]}
             <div>
-              <p class="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">{$t(g.key)}</p>
-              <div class="space-y-1">
-                {#each items as item}
-                  <a href={item.href} class="nav-link {isActive(item.href) ? 'nav-link-active' : ''}" onclick={closeSidebar}>
-                    <Icon name={item.icon} />{$t(item.label)}
-                    {#if item.href === '/reengagement' && reengageCount > 0}
-                      <span class="ms-auto rounded-full bg-primary-100 px-2 py-0.5 text-xs font-semibold text-primary-700 dark:bg-primary-900/50 dark:text-primary-300">{reengageCount}</span>
-                    {/if}
-                  </a>
-                {/each}
-              </div>
+              <button
+                type="button"
+                class="flex w-full items-center gap-1.5 rounded-md px-3 pb-1 pt-1 text-xs font-semibold uppercase tracking-wide text-slate-400 transition hover:text-slate-700 dark:hover:text-slate-200"
+                onclick={() => toggleGroup(g.key)}
+                aria-expanded={open}
+                title={open ? tr({ en: 'Collapse', ar: 'طيّ' }, $locale) : tr({ en: 'Expand', ar: 'توسيع' }, $locale)}
+              >
+                <span class="text-[10px] transition-transform duration-150 {open ? '' : '-rotate-90'}" aria-hidden="true">▼</span>
+                <span>{$t(g.key)}</span>
+              </button>
+              {#if open}
+                <div class="space-y-1">
+                  {#each items as item}
+                    <a href={item.href} class="nav-link {isActive(item.href) ? 'nav-link-active' : ''}" onclick={closeSidebar}>
+                      <Icon name={item.icon} />{$t(item.label)}
+                      {#if item.href === '/reengagement' && reengageCount > 0}
+                        <span class="ms-auto rounded-full bg-primary-100 px-2 py-0.5 text-xs font-semibold text-primary-700 dark:bg-primary-900/50 dark:text-primary-300">{reengageCount}</span>
+                      {/if}
+                    </a>
+                  {/each}
+                </div>
+              {/if}
             </div>
           {/if}
         {/each}
