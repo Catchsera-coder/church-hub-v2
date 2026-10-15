@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { api } from '$lib/api.js';
@@ -14,6 +14,11 @@
   let logo = $state<string | null>(null);
   let ready = $state(false);
   let sidebarOpen = $state(false);
+  // Desktop: collapse the whole sidebar to give pages the FULL page width. Mobile
+  // uses the overlay drawer instead. Remembered in this browser.
+  const SIDEBAR_KEY = 'ch_sidebar_collapsed';
+  let sidebarCollapsed = $state(false);
+  function toggleSidebarCollapsed() { sidebarCollapsed = !sidebarCollapsed; try { localStorage.setItem(SIDEBAR_KEY, sidebarCollapsed ? '1' : '0'); } catch { /* ignore */ } }
   // Live "needs attention" count → small badge on the nav item so it isn't out of sight.
   let reengageCount = $state(0);
 
@@ -131,11 +136,24 @@
   // this browser so the sidebar stays how the user likes it.
   const COLLAPSE_KEY = 'ch_nav_collapsed';
   let collapsed = $state<Record<string, boolean>>({});
-  onMount(() => { try { collapsed = JSON.parse(localStorage.getItem(COLLAPSE_KEY) || '{}'); } catch { /* ignore */ } });
-  function toggleGroup(key: string) {
-    collapsed = { ...collapsed, [key]: !collapsed[key] };
-    try { localStorage.setItem(COLLAPSE_KEY, JSON.stringify(collapsed)); } catch { /* ignore */ }
-  }
+  onMount(() => {
+    try { collapsed = JSON.parse(localStorage.getItem(COLLAPSE_KEY) || '{}'); } catch { /* ignore */ }
+    try { sidebarCollapsed = localStorage.getItem(SIDEBAR_KEY) === '1'; } catch { /* ignore */ }
+  });
+  function persistCollapsed() { try { localStorage.setItem(COLLAPSE_KEY, JSON.stringify(collapsed)); } catch { /* ignore */ } }
+  function toggleGroup(key: string) { collapsed = { ...collapsed, [key]: !collapsed[key] }; persistCollapsed(); }
+  function setAllGroups(v: boolean) { const next: Record<string, boolean> = {}; for (const g of groups) next[g.key] = v; collapsed = next; persistCollapsed(); }
+  const anyCollapsed = $derived(groups.some((g) => collapsed[g.key]));
+  // Re-open the group you navigate INTO so the active item is always visible.
+  // Only reacts to navigation (activeHref), never to manual collapses — so you can
+  // still collapse the group you're on.
+  $effect(() => {
+    const h = activeHref;
+    untrack(() => {
+      const g = groups.find((grp) => grp.items.some((i) => i.href === h));
+      if (g && collapsed[g.key]) { collapsed = { ...collapsed, [g.key]: false }; persistCollapsed(); }
+    });
+  });
 
   // On mobile the sidebar is an overlay drawer; close it after choosing a link.
   const closeSidebar = () => (sidebarOpen = false);
@@ -159,7 +177,7 @@
     {/if}
 
     <!-- Sidebar (static on md+, overlay drawer on mobile when open) -->
-    <aside class="hidden w-64 shrink-0 overflow-y-auto border-e border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900 md:block {sidebarOpen ? '!block fixed inset-y-0 start-0 z-40 shadow-xl md:!static md:!z-auto md:!shadow-none' : ''}">
+    <aside class="hidden w-64 shrink-0 overflow-y-auto border-e border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900 {sidebarCollapsed ? '' : 'md:block'} {sidebarOpen ? '!block fixed inset-y-0 start-0 z-40 shadow-xl md:!static md:!z-auto md:!shadow-none' : ''}">
       <div class="mb-6 flex items-center gap-2 px-2">
         {#if logo}
           <img src={logo} alt="" class="h-8 w-8 object-contain" />
@@ -168,10 +186,15 @@
         {/if}
         <span class="font-display text-lg font-semibold">{orgName ? tr(orgName, $locale) : $t('app.name')}</span>
       </div>
-      <nav class="space-y-5">
+      <nav class="space-y-4">
         <a href="/dashboard" class="nav-link {isActive('/dashboard') ? 'nav-link-active' : ''}" onclick={closeSidebar}>
           <Icon name="dashboard" />{$t('nav.dashboard')}
         </a>
+        <div class="flex justify-end px-2">
+          <button type="button" class="text-[11px] font-medium text-slate-400 hover:text-slate-700 dark:hover:text-slate-200" onclick={() => setAllGroups(!anyCollapsed)}>
+            {anyCollapsed ? tr({ en: 'Expand all', ar: 'توسيع الكل' }, $locale) : tr({ en: 'Collapse all', ar: 'طيّ الكل' }, $locale)}
+          </button>
+        </div>
         {#each groups as g}
           {@const items = g.items.filter(visible)}
           {#if items.length}
@@ -209,6 +232,7 @@
     <div class="flex min-w-0 flex-1 flex-col">
       <header class="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-900">
         <button class="btn-ghost md:hidden" onclick={() => (sidebarOpen = !sidebarOpen)} aria-label={tr({ en: 'Menu', ar: 'القائمة' }, $locale)}>☰</button>
+        <button class="btn-ghost hidden md:inline-flex" onclick={toggleSidebarCollapsed} aria-label={tr({ en: 'Toggle sidebar', ar: 'إظهار/إخفاء القائمة' }, $locale)} title={sidebarCollapsed ? tr({ en: 'Show menu (more width)', ar: 'إظهار القائمة' }, $locale) : tr({ en: 'Hide menu — use full width', ar: 'إخفاء القائمة — استخدام العرض الكامل' }, $locale)}>{sidebarCollapsed ? '☰' : '⟨⟨'}</button>
         <div class="flex-1"></div>
         <div class="flex items-center gap-2">
           <button class="btn-ghost" onclick={toggleTheme} aria-label={tr({ en: 'Theme', ar: 'النمط' }, $locale)}>{$theme === 'dark' ? '☀' : '☾'}</button>
