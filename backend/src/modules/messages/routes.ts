@@ -14,6 +14,7 @@ import { sendCampaignNow } from './send.js';
 import { resolveAi, draftMessages, polishEmailBody, type AiChannel } from './ai.js';
 import { resolveMessaging, sendMessage } from './delivery.js';
 import { buildContext, renderText, brandedEmailHtml, localeName, linksToPlainText } from './render.js';
+import { htmlToText, sanitizeEmailHtml } from './sanitize.js';
 import { loadAttachmentsByTokens, prepareDelivery, dataUriAttachment, previewImagesHtml, type OutAttachment } from './attach.js';
 import { scheduleZod } from '../scheduling/schedule.js';
 import { audienceZod, countReachable } from './audience.js';
@@ -32,6 +33,7 @@ const schema = z.object({
   channel: z.enum(['email', 'sms', 'whatsapp']).default('email'),
   subject: z.record(z.string()).default({}),
   body: z.record(z.string()).default({}),
+  bodyHtml: z.boolean().optional(),
   scheduledFor: z.string().nullable().optional(),
   mediaUrl: z.string().nullable().optional(),
   // Optional email call-to-action button: localized label + a link.
@@ -153,7 +155,9 @@ messagesRouter.post('/ai-polish', aiLimiter, requirePermission('create message')
   const ai = resolveAi(org.messaging);
   if (!ai) throw badRequest('AI is not configured. Add an Anthropic API key or Azure OpenAI in Settings → Messaging.');
   try {
-    const text = await polishEmailBody(ai, b.text);
+    const raw = await polishEmailBody(ai, b.text);
+    // The model returns HTML; sanitise it before it ever reaches the editor.
+    const text = sanitizeEmailHtml(raw.replace(/^```(?:html)?\s*/i, '').replace(/```\s*$/i, ''));
     res.json({ data: { text } });
   } catch (err) {
     console.error('[ai-polish] failed:', err instanceof Error ? err.message : err);
@@ -210,7 +214,7 @@ messagesRouter.get('/:id(\\d+)', requirePermission('view message'), asyncHandler
   const [row] = await db
     .select({
       id: messageCampaigns.id, name: messageCampaigns.name, channel: messageCampaigns.channel,
-      subject: messageCampaigns.subject, body: messageCampaigns.body, status: messageCampaigns.status,
+      subject: messageCampaigns.subject, body: messageCampaigns.body, bodyHtml: messageCampaigns.bodyHtml, status: messageCampaigns.status,
       scheduledFor: messageCampaigns.scheduledFor, sentAt: messageCampaigns.sentAt, createdAt: messageCampaigns.createdAt,
       mediaUrl: messageCampaigns.mediaUrl, ctaLabel: messageCampaigns.ctaLabel, ctaUrl: messageCampaigns.ctaUrl,
       imagePlacement: messageCampaigns.imagePlacement,
@@ -244,7 +248,7 @@ messagesRouter.get('/:id(\\d+)', requirePermission('view message'), asyncHandler
     const cta = row.ctaLabel && row.ctaUrl ? { label: renderText(localeName(row.ctaLabel, lang), ctx), url: row.ctaUrl } : null;
     if (row.channel === 'email') {
       const signature = renderText(localeName(org.emailSettings?.signature, lang), ctx) || undefined;
-      const html = brandedEmailHtml(bodyText, org, { lang, signature, cta, unsubscribeUrl: '#', preheader: subject });
+      const html = brandedEmailHtml(bodyText, org, { lang, signature, cta, unsubscribeUrl: '#', preheader: subject, bodyIsHtml: !!row.bodyHtml });
       return { lang, subject, html, text: bodyText };
     }
     return { lang, text: [bodyText, cta ? `${cta.label}: ${cta.url}` : ''].filter(Boolean).join('\n\n') };
@@ -294,7 +298,7 @@ messagesRouter.post('/:id(\\d+)/duplicate', requirePermission('create message'),
     copied.push({ token: n!.token, filename: a.filename, contentType: a.contentType, sizeBytes: a.sizeBytes });
   }
   res.json({ data: {
-    channel: c.channel, subject: c.subject ?? {}, body: c.body ?? {},
+    channel: c.channel, subject: c.subject ?? {}, body: c.body ?? {}, bodyHtml: c.bodyHtml ?? false,
     ctaLabel: c.ctaLabel ?? null, ctaUrl: c.ctaUrl ?? null,
     imagePlacement: c.imagePlacement ?? 'body', mediaUrl: c.mediaUrl ?? null,
     audience: c.audience ?? null, name: c.name ?? '', attachments: copied,
@@ -304,7 +308,7 @@ messagesRouter.post('/:id(\\d+)/duplicate', requirePermission('create message'),
 messagesRouter.post('/', requirePermission('create message'), asyncHandler(async (req, res) => {
   const b = schema.parse(req.body);
   const [row] = await db.insert(messageCampaigns).values({
-    name: b.name, channel: b.channel, subject: b.subject, body: b.body,
+    name: b.name, channel: b.channel, subject: b.subject, body: b.body, bodyHtml: b.bodyHtml ?? false,
     scheduledFor: b.scheduledFor ? new Date(b.scheduledFor) : null,
     mediaUrl: b.mediaUrl ?? null,
     ctaLabel: b.ctaLabel ?? null,
@@ -379,6 +383,7 @@ const previewSchema = z.object({
   channel: z.enum(['email', 'sms', 'whatsapp']),
   subject: z.record(z.string()).default({}),
   body: z.record(z.string()).default({}),
+  bodyHtml: z.boolean().optional(),
   ctaLabel: z.record(z.string()).nullable().optional(),
   ctaUrl: z.string().nullable().optional(),
   lang: z.string().max(8).optional(),
@@ -400,8 +405,8 @@ messagesRouter.post('/preview', requirePermission('view message'), asyncHandler(
     // sends embed them as cid: (see send.ts). Logo/header use their URLs here too.
     const appUrl = config.PUBLIC_APP_URL?.replace(/\/+$/, '');
     const attachmentsHtml = await previewImagesHtml(b.attachmentTokens ?? [], appUrl, b.imagePlacement);
-    const html = brandedEmailHtml(bodyText, org, { lang, signature, cta, unsubscribeUrl: '#', preheader: subject, attachmentsHtml });
-    res.json({ data: { channel: 'email', subject, html, text: bodyText } });
+    const html = brandedEmailHtml(bodyText, org, { lang, signature, cta, unsubscribeUrl: '#', preheader: subject, attachmentsHtml, bodyIsHtml: !!b.bodyHtml });
+    res.json({ data: { channel: 'email', subject, html, text: b.bodyHtml ? htmlToText(bodyText) : bodyText } });
   } else {
     const text = [bodyText, cta ? `${cta.label}: ${cta.url}` : ''].filter(Boolean).join('\n\n');
     res.json({ data: { channel: b.channel, text } });
@@ -417,6 +422,7 @@ const quickSendSchema = z.object({
   toContact: z.string().max(190).nullable().optional(),
   subject: z.record(z.string()).default({}),
   body: z.record(z.string()).default({}),
+  bodyHtml: z.boolean().optional(),
   ctaLabel: z.record(z.string()).nullable().optional(),
   ctaUrl: z.string().nullable().optional(),
   mediaUrl: z.string().nullable().optional(),
@@ -447,11 +453,12 @@ messagesRouter.post('/quick-send', sendLimiter, requirePermission('create messag
   const logoAtt = b.channel === 'email' ? dataUriAttachment(org.logoPath, 'logo', 'logo') : null;
   const headerAtt = b.channel === 'email' ? dataUriAttachment(org.emailSettings?.headerImage, 'header', 'headerimg') : null;
   const brandAtts: OutAttachment[] = [logoAtt, headerAtt].filter((x): x is OutAttachment => Boolean(x));
-  const bodyWithLinks = prepared.linkLines.length ? `${bodyText}\n\n${prepared.linkLines.join('\n')}` : bodyText;
+  const isHtml = b.channel === 'email' && !!b.bodyHtml;
+  const bodyWithLinks = (!isHtml && prepared.linkLines.length) ? `${bodyText}\n\n${prepared.linkLines.join('\n')}` : bodyText;
   const unsubscribeUrl = b.channel === 'email' && appUrl && person?.unsubToken ? `${appUrl}/unsubscribe/${person.unsubToken}` : undefined;
   const oneClickUnsub = b.channel === 'email' && appUrl && person?.unsubToken ? `${appUrl}/api/public/unsubscribe/${person.unsubToken}/one-click` : undefined;
-  const html = b.channel === 'email' ? brandedEmailHtml(bodyWithLinks, org, { lang, signature, cta, unsubscribeUrl, attachmentsHtml: prepared.imagesHtml, logoCid: logoAtt ? 'logo' : undefined, headerImageCid: headerAtt ? 'headerimg' : undefined }) : undefined;
-  const plain = [linksToPlainText(bodyWithLinks), cta ? `${cta.label}: ${cta.url}` : '', signature].filter(Boolean).join('\n\n');
+  const html = b.channel === 'email' ? brandedEmailHtml(bodyWithLinks, org, { lang, signature, cta, unsubscribeUrl, attachmentsHtml: prepared.imagesHtml, logoCid: logoAtt ? 'logo' : undefined, headerImageCid: headerAtt ? 'headerimg' : undefined, bodyIsHtml: isHtml }) : undefined;
+  const plain = [isHtml ? htmlToText(bodyText) : linksToPlainText(bodyWithLinks), cta ? `${cta.label}: ${cta.url}` : '', signature].filter(Boolean).join('\n\n');
   const result = await sendMessage(messaging, b.channel, contact, subject, plain, html, b.mediaUrl ?? undefined, [...brandAtts, ...prepared.inline], oneClickUnsub);
   const ok = result.ok;
 
@@ -464,7 +471,7 @@ messagesRouter.post('/quick-send', sendLimiter, requirePermission('create messag
   const now = new Date();
   try {
     const [camp] = await db.insert(messageCampaigns).values({
-      name, channel: b.channel, subject: b.subject, body: b.body,
+      name, channel: b.channel, subject: b.subject, body: b.body, bodyHtml: b.bodyHtml ?? false,
       status: ok ? 'sent' : 'failed', sentAt: now,
       ctaLabel: b.ctaLabel ?? null, ctaUrl: b.ctaUrl ?? null, mediaUrl: b.mediaUrl ?? null,
       audience: person ? { mode: 'people', personIds: [person.id] } : null,

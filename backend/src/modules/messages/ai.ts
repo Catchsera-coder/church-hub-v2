@@ -137,14 +137,15 @@ export async function draftMessages(ai: ResolvedAi, req: AiDraftRequest): Promis
 // (**bold**, *italic*, ## headings, - lists) WITHOUT changing the wording or
 // meaning. Reuses whichever provider the church already configured.
 const POLISH_SYSTEM = [
-  'You format church email messages. You are given the body text of an email.',
-  'Reformat it to be clear and attractive using ONLY this light markdown:',
-  '- **bold** for key phrases, *italic* for gentle emphasis,',
-  '- "## " at the start of a line for a big section heading, "### " for a smaller one,',
-  '- "- " at the start of lines for a bullet list.',
+  'You format church email messages. You are given the body of an email (plain text or simple HTML).',
+  'Reformat it to be clear and attractive using ONLY these simple HTML tags:',
+  '- <strong> for key phrases, <em> for gentle emphasis, <u> for underline,',
+  '- <h2> for a big section heading, <h3> for a smaller heading,',
+  '- <ul><li>…</li></ul> for bullet lists, <ol><li>…</li></ol> for numbered lists,',
+  '- <p> for paragraphs, <a href="…"> for links, and <span style="color:#RRGGBB"> sparingly for a touch of colour.',
   'Rules: keep ALL of the original meaning, wording, names, dates, numbers and links.',
   'Do NOT add new information, greetings, sign-offs or links that are not already there.',
-  'Do NOT write HTML. Keep the same language as the input. Return ONLY the reformatted body text.',
+  'Return ONLY the formatted HTML body — no <html>/<body> wrapper, no markdown, no code fences.',
 ].join('\n');
 
 export async function polishEmailBody(ai: ResolvedAi, text: string): Promise<string> {

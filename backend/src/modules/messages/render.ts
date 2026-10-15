@@ -1,5 +1,6 @@
 import type { I18n, EmailSettings } from '../../db/schema.js';
 import { config } from '../../config.js';
+import { sanitizeEmailHtml } from './sanitize.js';
 
 /**
  * Template merge fields + branded email rendering. Shared by manual campaign
@@ -213,6 +214,7 @@ export function brandedEmailHtml(
     attachmentsHtml?: string;                 // pre-built inline image HTML (placed at [image] marker, else under the body)
     logoCid?: string;                         // when set, the logo is an embedded cid: image (real sends)
     headerImageCid?: string;                  // when set, the header photo is an embedded cid: image
+    bodyIsHtml?: boolean;                      // body is sanitised rich-text HTML (WYSIWYG), not plain/markdown
   } = {},
 ): string {
   const lang = opts.lang ?? 'en';
@@ -259,9 +261,13 @@ export function brandedEmailHtml(
   // Images go where the sender put an [image] marker in the text; otherwise under
   // the body. (renderText leaves [image] untouched — unlike {{tokens}}.)
   const imagesBlock = opts.attachmentsHtml ?? '';
-  const body = imagesBlock && /\[images?\]/i.test(bodyText)
-    ? bodyText.split(/\[images?\]/i).map((seg) => paragraphs(seg, brand)).join(imagesBlock)
-    : paragraphs(bodyText, brand) + imagesBlock;
+  // Rich-text (WYSIWYG) bodies are sanitised then placed as-is in a styled block.
+  // Plain/markdown bodies go through paragraphs() exactly as before (unchanged).
+  const body = opts.bodyIsHtml
+    ? `<div style="font-size:15px;line-height:1.65;color:#0f172a">${sanitizeEmailHtml(bodyText)}</div>` + imagesBlock
+    : (imagesBlock && /\[images?\]/i.test(bodyText)
+        ? bodyText.split(/\[images?\]/i).map((seg) => paragraphs(seg, brand)).join(imagesBlock)
+        : paragraphs(bodyText, brand) + imagesBlock);
   const cta = opts.cta && opts.cta.url && opts.cta.label ? ctaButton(opts.cta, btn) : '';
   const signature = opts.signature
     ? `<div style="margin:20px 0 0;font-size:15px;line-height:1.6;color:#0f172a">${escapeHtml(opts.signature).replace(/\n/g, '<br/>')}</div>`

@@ -706,6 +706,10 @@ export const messageCampaigns = pgTable('message_campaigns', {
   channel: campaignChannel('channel').notNull().default('email'),
   subject: jsonb('subject').$type<I18n>().notNull().default({}),
   body: jsonb('body').$type<I18n>().notNull().default({}),
+  // When true the per-locale body holds sanitised rich-text HTML (from the
+  // WYSIWYG editor). Default false = legacy plain text / light markdown — so
+  // existing and automated emails render exactly as before.
+  bodyHtml: boolean('body_html').notNull().default(false),
   status: campaignStatus('status').notNull().default('draft'),
   scheduledFor: timestamp('scheduled_for', { withTimezone: true }),
   sentAt: timestamp('sent_at', { withTimezone: true }),

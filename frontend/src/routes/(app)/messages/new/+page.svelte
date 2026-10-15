@@ -9,7 +9,7 @@
   import { hasRole, can } from '$lib/stores/auth.js';
   import PageHeader from '$lib/components/PageHeader.svelte';
   import ScheduleEditor from '$lib/components/ScheduleEditor.svelte';
-  import RichTextArea from '$lib/components/RichTextArea.svelte';
+  import RichEditor from '$lib/components/RichEditor.svelte';
   import { type Schedule, defaultSchedule, describeSchedule } from '$lib/schedule.js';
   import { resolveStreamLink } from '$lib/stream.js';
   import { clickOutside } from '$lib/actions/clickOutside.js';
@@ -52,8 +52,27 @@
     for (const [k, v] of Object.entries(form.ctaLabel)) if (v?.trim()) ctaLabel[k] = fillCustom(v);
     // Only send a CTA on email when both a label and a link are present.
     const hasCta = form.channel === 'email' && Object.keys(ctaLabel).length > 0 && form.ctaUrl.trim();
-    return { ...form, subject, body, ctaLabel: hasCta ? ctaLabel : null, ctaUrl: hasCta ? form.ctaUrl.trim() : null, audience: currentAudience(), attachmentTokens: attachments.map((a) => a.token), imagePlacement };
+    return { ...form, subject, body, bodyHtml: form.channel === 'email', ctaLabel: hasCta ? ctaLabel : null, ctaUrl: hasCta ? form.ctaUrl.trim() : null, audience: currentAudience(), attachmentTokens: attachments.map((a) => a.token), imagePlacement };
   }
+
+  // The email body is rich HTML; SMS/WhatsApp are plain text. When the user
+  // switches AWAY from email, flatten any HTML so the plain textarea stays clean.
+  function stripHtml(s: string): string {
+    return (s ?? '')
+      .replace(/<\s*br\s*\/?>/gi, '\n').replace(/<\s*li[^>]*>/gi, '• ')
+      .replace(/<\/\s*(p|div|h2|h3|li|ul|ol|blockquote)\s*>/gi, '\n')
+      .replace(/<[^>]+>/g, '')
+      .replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>')
+      .replace(/\n{3,}/g, '\n\n').trim();
+  }
+  let lastChannel = $state(form.channel);
+  $effect(() => {
+    const ch = form.channel;
+    if (ch !== lastChannel) {
+      if (ch !== 'email') { const b = { ...form.body }; for (const k of Object.keys(b)) b[k] = stripHtml(b[k]); form.body = b; }
+      lastChannel = ch;
+    }
+  });
 
   // --- Attachments: any file type/size. Large files upload straight to cloud
   // storage (Azure Blob) when configured; otherwise a smaller file falls back to
@@ -245,7 +264,7 @@
     try {
       const f = filledForm();
       const { data } = await api<{ data: any }>('/messages/preview', { method: 'POST', body: JSON.stringify({
-        channel: form.channel, subject: form.subject, body: f.body, ctaLabel: f.ctaLabel, ctaUrl: f.ctaUrl,
+        channel: form.channel, subject: form.subject, body: f.body, bodyHtml: form.channel === 'email', ctaLabel: f.ctaLabel, ctaUrl: f.ctaUrl,
         attachmentTokens: attachments.map((a) => a.token), imagePlacement,
       }) });
       previewData = data;
@@ -268,7 +287,7 @@
       const f = filledForm();
       const { data } = await api<{ data: { ok: boolean; to: string } }>('/messages/quick-send', { method: 'POST', body: JSON.stringify({
         channel: form.channel, toPersonId: onePersonId, toContact: onePersonId ? null : oneContact.trim(),
-        subject: f.subject, body: f.body, ctaLabel: f.ctaLabel, ctaUrl: f.ctaUrl, mediaUrl: form.mediaUrl,
+        subject: f.subject, body: f.body, bodyHtml: form.channel === 'email', ctaLabel: f.ctaLabel, ctaUrl: f.ctaUrl, mediaUrl: form.mediaUrl,
         attachmentTokens: attachments.map((a) => a.token), imagePlacement,
       }) });
       if (data.ok) done = { kind: 'sent', to: data.to, sent: 1, total: 1 };
@@ -704,16 +723,16 @@
     {#each $enabledLocales as l}
       <label class="block space-y-1">
         <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Message', ar: 'الرسالة' }, $locale)} ({l.native})</span>
-        <RichTextArea
-          bind:value={form.body[l.code]}
-          dir={l.dir}
-          rows={5}
-          required={l.code === 'en'}
-          format={form.channel === 'email'}
-          onpolish={form.channel === 'email' ? polishBody : undefined}
-        />
+        {#if form.channel === 'email'}
+          <RichEditor bind:value={form.body[l.code]} dir={l.dir} onpolish={polishBody} />
+        {:else}
+          <textarea class="input" dir={l.dir} rows="5" bind:value={form.body[l.code]} required={l.code === 'en'}></textarea>
+        {/if}
       </label>
     {/each}
+    {#if form.channel === 'email'}
+      <p class="-mt-2 text-xs text-slate-400">{tr({ en: 'Select text, then click a button to style it — bold, colour, headings, lists. What you see is what the email shows.', ar: 'حدّد النص ثم اضغط زراً لتنسيقه — عريض، لون، عناوين، قوائم. ما تراه هو ما تُظهره الرسالة.' }, $locale)}</p>
+    {/if}
 
     <!-- Smart links: drop a Venmo/giving/social/any link into the body (renders as
          a real clickable link in the email) or set it as the CTA button. Pick a
