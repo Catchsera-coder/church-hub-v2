@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { and, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
-import { people, personServiceType, attendanceRecords } from '../../db/schema.js';
+import { people, personServiceType, attendanceRecords, attendanceEvents } from '../../db/schema.js';
 
 // Accept a multi-value filter as a JSON array OR a comma-separated string.
 const toArray = (v: unknown): unknown[] | undefined =>
@@ -37,6 +37,12 @@ export const peopleListQuery = z.object({
   optedIn: z.enum(['email', 'sms', 'whatsapp']).optional(),
   missingContact: z.enum(['true']).optional(),
   inactiveWeeks: z.coerce.number().int().min(1).max(104).optional(),
+  // "Missed N of the last W weekly gatherings" — the follow-up group. Defaults:
+  // missed>=2 of the last 4 weeks, members/regulars only. All tunable (admin).
+  missed: z.enum(['1', 'true']).optional(),
+  missedCount: z.coerce.number().int().min(1).max(12).optional(),
+  missedWeeks: z.coerce.number().int().min(2).max(26).optional(),
+  missedStatuses: z.string().optional(),
   // Archived visibility: default hides archived; 'only' shows just archived;
   // 'include' shows both.
   archived: z.enum(['only', 'include']).optional(),
@@ -114,6 +120,18 @@ export function peopleFilters(q: PeopleQuery): SQL[] {
   if (q.optedIn === 'sms') filters.push(sql`${people.smsOptOut} = false AND ${people.mobile} IS NOT NULL AND ${people.mobile} <> ''`);
   if (q.optedIn === 'whatsapp') filters.push(sql`${people.whatsappOptOut} = false AND ${people.mobile} IS NOT NULL AND ${people.mobile} <> ''`);
   if (q.inactiveWeeks) filters.push(sql`NOT EXISTS (SELECT 1 FROM ${attendanceRecords} ar WHERE ar.person_id = ${people.id} AND ar.checked_in_at >= now() - (${q.inactiveWeeks} * interval '1 week'))`);
+  if (q.missed) {
+    const weeks = q.missedWeeks ?? 4;
+    const count = q.missedCount ?? 2;
+    const statuses = (q.missedStatuses ?? 'member,regular').split(',').map((s) => s.trim()).filter(Boolean);
+    if (statuses.length) filters.push(inArray(people.membershipStatus, statuses as ('visitor' | 'regular' | 'member' | 'inactive' | 'conference_attendee')[]));
+    // Weeks (in the window) that had a gathering MINUS weeks this person attended
+    // one — i.e. how many weeks they missed. >= count → in the follow-up group.
+    filters.push(sql`(
+      (SELECT count(DISTINCT date_trunc('week', ae.starts_at)) FROM ${attendanceEvents} ae WHERE ae.starts_at >= now() - (${weeks} * interval '1 week') AND ae.starts_at <= now())
+      - (SELECT count(DISTINCT date_trunc('week', ae2.starts_at)) FROM ${attendanceEvents} ae2 JOIN ${attendanceRecords} ar2 ON ar2.attendance_event_id = ae2.id AND ar2.person_id = ${people.id} WHERE ae2.starts_at >= now() - (${weeks} * interval '1 week') AND ae2.starts_at <= now())
+    ) >= ${count}`);
+  }
   if (q.followUpStage) {
     if (q.followUpStage === 'new_visitor') filters.push(sql`(${people.followUpStage} = 'new_visitor' OR (${people.followUpStage} IS NULL AND ${people.selfRegistered} = true AND ${people.reviewedAt} IS NULL))`);
     else filters.push(eq(people.followUpStage, q.followUpStage));

@@ -11,25 +11,28 @@
     members: number; households: number; attendanceThisMonth: number;
     newMembersThisMonth: number; awaitingApproval: number; birthdaysThisMonth: number;
     upcomingGatherings: number; attendanceByService: ServiceCount[];
+    missedTwoMeetings: number;
     liveGathering?: { id: number; title: Record<string, string>; startsAt: string; publicToken: string } | null;
     givingThisMonthCents?: number;
   }
+  const curMonth = new Date().getMonth() + 1;
   let stats = $state<Stats | null>(null);
   let loading = $state(true);
 
   type Widget = { label: Record<string, string>; value: (s: Stats) => number | undefined; money?: boolean; href?: string; emoji?: string };
   // Simple count/number widgets. 'services' (attendance-by-service) renders separately.
   const CATALOG: Record<string, Widget> = {
-    members: { label: { en: 'Members', ar: 'الأعضاء' }, value: (s) => s.members },
-    families: { label: { en: 'Families', ar: 'العائلات' }, value: (s) => s.households },
-    attendance: { label: { en: 'Attendance this month', ar: 'الحضور هذا الشهر' }, value: (s) => s.attendanceThisMonth },
-    newMembers: { label: { en: 'New this month', ar: 'جدد هذا الشهر' }, value: (s) => s.newMembersThisMonth, emoji: '✨' },
-    awaitingApproval: { label: { en: 'Awaiting approval', ar: 'بانتظار الموافقة' }, value: (s) => s.awaitingApproval, href: '/members', emoji: '🔔' },
-    birthdays: { label: { en: 'Birthdays this month', ar: 'أعياد ميلاد هذا الشهر' }, value: (s) => s.birthdaysThisMonth, emoji: '🎂' },
+    members: { label: { en: 'Members', ar: 'الأعضاء' }, value: (s) => s.members, href: '/members' },
+    families: { label: { en: 'Families', ar: 'العائلات' }, value: (s) => s.households, href: '/families' },
+    attendance: { label: { en: 'Attendance this month', ar: 'الحضور هذا الشهر' }, value: (s) => s.attendanceThisMonth, href: '/attendance' },
+    newMembers: { label: { en: 'New this month', ar: 'جدد هذا الشهر' }, value: (s) => s.newMembersThisMonth, emoji: '✨', href: '/members?review=pending' },
+    missed: { label: { en: 'Missed two meetings this month', ar: 'تغيّب عن اجتماعين هذا الشهر' }, value: (s) => s.missedTwoMeetings, emoji: '⚠️', href: '/members?missed=1' },
+    awaitingApproval: { label: { en: 'Awaiting approval', ar: 'بانتظار الموافقة' }, value: (s) => s.awaitingApproval, href: '/members?review=pending', emoji: '🔔' },
+    birthdays: { label: { en: 'Birthdays this month', ar: 'أعياد ميلاد هذا الشهر' }, value: (s) => s.birthdaysThisMonth, emoji: '🎂', href: `/members?birthdayMonth=${curMonth}` },
     upcoming: { label: { en: 'Upcoming attendance', ar: 'الحضور القادم' }, value: (s) => s.upcomingGatherings, href: '/attendance', emoji: '📅' },
-    giving: { label: { en: 'Giving this month', ar: 'العطاء هذا الشهر' }, value: (s) => s.givingThisMonthCents, money: true },
+    giving: { label: { en: 'Giving this month', ar: 'العطاء هذا الشهر' }, value: (s) => s.givingThisMonthCents, money: true, href: '/giving' },
   };
-  const DEFAULT_WIDGETS = ['members', 'families', 'attendance', 'newMembers', 'awaitingApproval', 'birthdays', 'upcoming', 'services', 'giving'];
+  const DEFAULT_WIDGETS = ['members', 'families', 'attendance', 'newMembers', 'missed', 'awaitingApproval', 'birthdays', 'upcoming', 'services', 'giving'];
   let widgets = $state<string[]>(DEFAULT_WIDGETS);
   let currency = $state('USD');
 
@@ -129,10 +132,11 @@
       {#if w && val !== undefined}
         {#snippet tile()}
           <p class="text-sm text-slate-500">{w.emoji ? w.emoji + ' ' : ''}{tr(w.label, $locale)}</p>
-          <p class="mt-1 text-3xl font-semibold {w.money ? 'force-ltr' : ''}" style={key === 'awaitingApproval' && val > 0 ? 'color: var(--brand)' : ''}>{w.money ? money(val) : val}</p>
+          <p class="mt-1 text-3xl font-semibold {w.money ? 'force-ltr' : ''}" style={(key === 'awaitingApproval' || key === 'missed') && val > 0 ? 'color: var(--brand)' : ''}>{w.money ? money(val) : val}</p>
+          {#if w.href}<span class="mt-2 inline-block text-xs text-slate-400 group-hover:text-slate-500">{tr({ en: 'View →', ar: 'عرض →' }, $locale)}</span>{/if}
         {/snippet}
-        {#if w.href && val > 0}
-          <a href={w.href} class="card p-5 transition hover:shadow-md">{@render tile()}</a>
+        {#if w.href}
+          <a href={w.href} class="card group p-5 transition hover:shadow-md hover:ring-1 hover:ring-slate-300 dark:hover:ring-slate-600">{@render tile()}</a>
         {:else}
           <div class="card p-5">{@render tile()}</div>
         {/if}

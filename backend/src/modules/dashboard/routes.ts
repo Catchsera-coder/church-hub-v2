@@ -4,6 +4,7 @@ import { db } from '../../db/index.js';
 import { people, households, attendanceRecords, attendanceEvents, serviceTypes, contributions } from '../../db/schema.js';
 import { asyncHandler } from '../../http/asyncHandler.js';
 import { authenticate } from '../../middleware/auth.js';
+import { peopleListQuery, peopleFilters } from '../people/filters.js';
 
 export const dashboardRouter = Router();
 dashboardRouter.use(authenticate);
@@ -16,6 +17,7 @@ type Base = {
   members: number; households: number; attendanceThisMonth: number;
   newMembersThisMonth: number; awaitingApproval: number; birthdaysThisMonth: number;
   upcomingGatherings: number; attendanceByService: ServiceCount[];
+  missedTwoMeetings: number;
 };
 let baseCache: { at: number; data: Base } | null = null;
 
@@ -53,6 +55,12 @@ dashboardRouter.get(
         .select({ c: sql<number>`count(*)::int` })
         .from(attendanceEvents)
         .where(gte(attendanceEvents.startsAt, now));
+      // Follow-up group: members/regulars who missed >=2 of the last 4 weeks.
+      // Reuses the exact Members-list `missed` filter so the count == the list.
+      const [missed] = await db
+        .select({ c: sql<number>`count(*)::int` })
+        .from(people)
+        .where(and(...peopleFilters(peopleListQuery.parse({ missed: '1' }))));
       // Attendance this month broken down by service/ministry (General = no service).
       const svc = await db
         .select({ name: serviceTypes.name, count: sql<number>`count(*)::int` })
@@ -71,6 +79,7 @@ dashboardRouter.get(
         birthdaysThisMonth: bdays?.c ?? 0,
         upcomingGatherings: upcoming?.c ?? 0,
         attendanceByService: svc.map((s) => ({ name: s.name ?? null, count: s.count })),
+        missedTwoMeetings: missed?.c ?? 0,
       };
       baseCache = { at: Date.now(), data: base };
     }

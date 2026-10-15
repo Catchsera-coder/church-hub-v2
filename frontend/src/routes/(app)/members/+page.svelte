@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { goto } from '$app/navigation';
   import { api } from '$lib/api.js';
   import { t, locale, tr } from '$lib/i18n.js';
   import { nameOrder, pageSize, toLimit } from '$lib/stores/prefs.js';
@@ -143,6 +144,11 @@
   let loading = $state(true);
   let reviewOnly = $state(false);
   let showArchived = $state(false);
+  // "Missed two meetings" follow-up group (from the dashboard card / ?missed=1).
+  let missedMode = $state(false);
+  let missedParams = $state<Record<string, string>>({});
+  const canMessage = can('create message');
+  let messagingGroup = $state(false);
   let pendingCount = $state(0);
   let ministries = $state<{ id: number; name: Record<string, string>; kind?: string }[]>([]);
   let timer: ReturnType<typeof setTimeout>;
@@ -177,6 +183,7 @@
   // --- Bulk select → add to an EXISTING family (reassign householdId) ----------
   const canAssignFamily = can('update person');
   const canBulk = canRoster || canAssignFamily;
+  const canSelect = canBulk || canMessage;
   let bulkTarget = $state<'ministry' | 'family'>(canRoster ? 'ministry' : 'family');
   let famQuery = $state('');
   let famResults = $state<any[]>([]);
@@ -209,6 +216,7 @@
       if (search.trim()) q.set('search', search.trim());
       if (reviewOnly) q.set('review', 'pending');
       if (showArchived) q.set('archived', 'only');
+      if (missedMode) { q.set('missed', '1'); for (const [k, v] of Object.entries(missedParams)) q.set(k, v); }
       q.set('category', cat);
       for (const [k, v] of Object.entries(f)) if (v !== '') q.set(k, String(v));
       const r = await api<{ data: Person[]; meta: Meta }>(`/people?${q}`);
@@ -239,7 +247,34 @@
     await Promise.all([load(), loadPendingCount()]);
   }
 
+  // Message the whole current group (missed / filtered view) — fetch every id and
+  // open the composer with them as removable chips (check/uncheck there).
+  async function messageGroup() {
+    messagingGroup = true;
+    try {
+      const q = new URLSearchParams({ limit: '2000', category: cat });
+      if (search.trim()) q.set('search', search.trim());
+      if (reviewOnly) q.set('review', 'pending');
+      if (missedMode) { q.set('missed', '1'); for (const [k, v] of Object.entries(missedParams)) q.set(k, v); }
+      for (const [k, v] of Object.entries(f)) if (v !== '') q.set(k, String(v));
+      const r = await api<{ data: Person[] }>(`/people?${q}`);
+      const ids = r.data.map((p) => p.id);
+      if (!ids.length) { alert(tr({ en: 'No one in this group yet.', ar: 'لا أحد في هذه المجموعة بعد.' }, $locale)); return; }
+      goto(`/messages/new?people=${ids.join(',')}`);
+    } catch (err) { alert((err as Error).message); } finally { messagingGroup = false; }
+  }
+  function messageSelected() { if (selected.size) goto(`/messages/new?people=${[...selected].join(',')}`); }
+
   onMount(async () => {
+    // Deep links from the dashboard cards: pre-apply the filter + show its banner.
+    const sp = new URLSearchParams(window.location.search);
+    if (sp.get('missed')) {
+      missedMode = true;
+      for (const k of ['missedCount', 'missedWeeks', 'missedStatuses']) { const v = sp.get(k); if (v) missedParams[k] = v; }
+    }
+    if (sp.get('review') === 'pending') reviewOnly = true;
+    if (sp.get('birthdayMonth')) f.birthdayMonth = sp.get('birthdayMonth')!;
+    if (sp.get('status')) f.status = sp.get('status')!;
     load();
     loadPendingCount();
     try { ministries = (await api<{ data: any[] }>('/ministries')).data; } catch { /* optional */ }
@@ -259,7 +294,17 @@
   </div>
 </div>
 
-{#if pendingCount > 0 && !reviewOnly}
+{#if missedMode}
+  <div class="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm dark:border-amber-900/50 dark:bg-amber-900/20">
+    <a href="/dashboard" class="text-amber-700 hover:underline dark:text-amber-300">← {tr({ en: 'Dashboard', ar: 'لوحة المعلومات' }, $locale)}</a>
+    <span class="font-medium text-amber-800 dark:text-amber-200">⚠️ {tr({ en: 'Missed two meetings', ar: 'تغيّب عن اجتماعين' }, $locale)}</span>
+    <span class="text-amber-700/80 dark:text-amber-300/70">{tr({ en: 'members & regulars who missed 2 of the last 4 weeks', ar: 'الأعضاء والمنتظمون الذين تغيّبوا عن أسبوعين من آخر 4 أسابيع' }, $locale)}{meta ? ` · ${meta.total}` : ''}</span>
+    {#if canMessage}<button class="ms-auto rounded-lg px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50" style="background: var(--brand)" disabled={messagingGroup} onclick={messageGroup}>✉️ {messagingGroup ? '…' : tr({ en: 'Message this group', ar: 'راسل هذه المجموعة' }, $locale)}</button>{/if}
+    <a href="/members" class="text-xs text-slate-500 hover:underline">{tr({ en: 'Clear', ar: 'مسح' }, $locale)}</a>
+  </div>
+{/if}
+
+{#if pendingCount > 0 && !reviewOnly && !missedMode}
   <button class="mb-4 flex w-full items-center gap-3 rounded-xl bg-amber-50 px-4 py-3 text-start text-sm text-amber-800 hover:bg-amber-100 dark:bg-amber-900/20 dark:text-amber-200 dark:hover:bg-amber-900/30" onclick={toggleReview}>
     <span class="text-lg">🔔</span>
     <span class="flex-1">
@@ -379,10 +424,11 @@
   </label>
 </FilterBar>
 
-{#if canBulk && selected.size > 0}
+{#if canSelect && selected.size > 0}
   <div class="mb-3 rounded-xl border border-primary-200 bg-primary-50 px-4 py-3 dark:border-primary-800 dark:bg-primary-900/20">
     <div class="flex flex-wrap items-center gap-2">
       <span class="font-medium" style="color: var(--brand)">{selected.size} {tr({ en: 'selected', ar: 'محدد' }, $locale)}</span>
+      {#if canMessage}<button class="rounded-lg px-3 py-1 text-sm font-semibold text-white" style="background: var(--brand)" onclick={messageSelected}>✉️ {tr({ en: 'Message selected', ar: 'راسل المحددين' }, $locale)}</button>{/if}
       {#if canRoster && canAssignFamily}
         <div class="inline-flex overflow-hidden rounded-lg border border-primary-300 text-sm dark:border-primary-700">
           <button class="px-3 py-1 {bulkTarget === 'ministry' ? 'text-white' : 'text-slate-600 dark:text-slate-300'}" style={bulkTarget === 'ministry' ? 'background: var(--brand)' : ''} onclick={() => (bulkTarget = 'ministry')}>{tr({ en: 'Ministry / group', ar: 'خدمة / مجموعة' }, $locale)}</button>
@@ -431,7 +477,7 @@
     <table class="w-full text-sm">
       <thead class="border-b border-slate-200 text-start text-slate-500 dark:border-slate-800">
         <tr>
-          {#if canBulk}<th class="w-10 p-3 text-start"><input type="checkbox" checked={allShownSelected} onchange={toggleAllShown} aria-label={tr({ en: 'Select all shown', ar: 'تحديد الكل' }, $locale)} /></th>{/if}
+          {#if canSelect}<th class="w-10 p-3 text-start"><input type="checkbox" checked={allShownSelected} onchange={toggleAllShown} aria-label={tr({ en: 'Select all shown', ar: 'تحديد الكل' }, $locale)} /></th>{/if}
           <th class="w-16 p-3 text-start font-medium text-slate-400">{tr({ en: 'ID', ar: 'المعرّف' }, $locale)}</th>
           <th class="p-3 text-start font-medium">{tr({ en: 'Name', ar: 'الاسم' }, $locale)}</th>
           <th class="p-3 text-start font-medium">{tr({ en: 'Household', ar: 'الأسرة' }, $locale)}</th>
@@ -444,7 +490,7 @@
       <tbody>
         {#each rows as p}
           <tr class="border-b border-slate-100 last:border-0 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/50 {selected.has(p.id) ? 'bg-primary-50/40 dark:bg-primary-900/10' : ''}">
-            {#if canBulk}<td class="p-3 align-top"><input type="checkbox" checked={selected.has(p.id)} onchange={() => toggleSel(p.id)} aria-label={tr({ en: 'Select', ar: 'تحديد' }, $locale)} /></td>{/if}
+            {#if canSelect}<td class="p-3 align-top"><input type="checkbox" checked={selected.has(p.id)} onchange={() => toggleSel(p.id)} aria-label={tr({ en: 'Select', ar: 'تحديد' }, $locale)} /></td>{/if}
             <td class="p-3 align-top">
               <span class="inline-block rounded-md bg-slate-100 px-2 py-0.5 text-xs font-semibold tabular-nums text-slate-500 dark:bg-slate-800 dark:text-slate-400">{p.id}</span>
             </td>
