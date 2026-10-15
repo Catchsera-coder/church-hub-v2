@@ -88,6 +88,31 @@
     { v: 11, en: 'November', ar: 'نوفمبر' }, { v: 12, en: 'December', ar: 'ديسمبر' },
   ];
 
+  // Inline status edit in the list — writes the real member record (syncs system-
+  // wide), optimistic with rollback. Same statuses used everywhere.
+  const STATUSES = [
+    { v: 'visitor', en: 'Visitor', ar: 'زائر' }, { v: 'regular', en: 'Regular', ar: 'منتظم' },
+    { v: 'member', en: 'Member', ar: 'عضو' }, { v: 'conference_attendee', en: 'Conference attendee', ar: 'حضور مؤتمر' },
+    { v: 'inactive', en: 'Inactive', ar: 'غير نشط' },
+  ];
+  const statusClasses = (s: string) => s === 'member' ? 'text-emerald-700 dark:text-emerald-300'
+    : s === 'inactive' ? 'text-slate-500 dark:text-slate-400'
+    : s === 'regular' ? 'text-sky-700 dark:text-sky-300'
+    : s === 'conference_attendee' ? 'text-violet-700 dark:text-violet-300'
+    : 'text-amber-700 dark:text-amber-300';
+  const canEditStatus = can('update person');
+  let savingStatus = $state<number | null>(null);
+  let statusSaved = $state<number | null>(null);
+  async function setStatus(p: any, value: string) {
+    if (!value || value === p.membershipStatus) return;
+    const prev = p.membershipStatus;
+    savingStatus = p.id; p.membershipStatus = value; rows = rows; // optimistic
+    try {
+      await api(`/people/${p.id}`, { method: 'PUT', body: JSON.stringify({ membershipStatus: value }) });
+      statusSaved = p.id; setTimeout(() => { if (statusSaved === p.id) statusSaved = null; }, 1500);
+    } catch (e) { p.membershipStatus = prev; rows = rows; alert((e as Error).message); } finally { savingStatus = null; }
+  }
+
   // Empty string = filter off. Kept in one object so "active count" + clear are simple.
   const EMPTY = {
     status: '', ageGroup: '', birthdayMonth: '', anniversaryMonth: '',
@@ -458,7 +483,18 @@
                 <a class="inline-flex items-center gap-1 text-xs text-amber-600 hover:underline dark:text-amber-400" href="/members/{p.id}">＋ {tr({ en: 'Assign family', ar: 'تعيين عائلة' }, $locale)}</a>
               {/if}
             </td>
-            <td class="p-3 capitalize text-slate-600 dark:text-slate-300">{(p.membershipStatus || '').replace(/_/g, ' ')}</td>
+            <td class="p-3">
+              {#if canEditStatus}
+                <span class="inline-flex items-center gap-1.5">
+                  <select class="input h-8 w-36 py-0 text-xs font-medium capitalize {statusClasses(p.membershipStatus)}" value={p.membershipStatus} disabled={savingStatus === p.id} onchange={(e) => setStatus(p, (e.currentTarget as HTMLSelectElement).value)} onclick={(e) => e.stopPropagation()}>
+                    {#each STATUSES as s}<option value={s.v}>{tr({ en: s.en, ar: s.ar }, $locale)}</option>{/each}
+                  </select>
+                  {#if savingStatus === p.id}<span class="text-xs text-slate-400">…</span>{:else if statusSaved === p.id}<span class="text-xs text-emerald-600 dark:text-emerald-400">✓</span>{/if}
+                </span>
+              {:else}
+                <span class="capitalize font-medium {statusClasses(p.membershipStatus)}">{(p.membershipStatus || '').replace(/_/g, ' ')}</span>
+              {/if}
+            </td>
             <td class="p-3 force-ltr text-slate-600 dark:text-slate-300">{p.email ?? '—'}</td>
             <td class="p-3 force-ltr text-slate-600 dark:text-slate-300">{p.mobile ?? '—'}</td>
             {#if reviewOnly}

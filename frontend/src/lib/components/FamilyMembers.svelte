@@ -4,6 +4,7 @@
   import { t, locale, tr, displayName, enabledLocales } from '$lib/i18n.js';
   import { nameOrder } from '$lib/stores/prefs.js';
   import { can } from '$lib/stores/auth.js';
+  import MergeDialog from '$lib/components/MergeDialog.svelte';
 
   // In-page family roster. Everything writes people.householdId (and person
   // fields), so members ↔ families stay in sync automatically. The parent owns
@@ -17,6 +18,9 @@
 
   const editable = can('update person');
   const canMessage = can('create message');
+  const canDelete = can('delete person');
+  let mergeFor = $state<any>(null);
+  let mergeOpen = $state(false);
 
   // attach existing
   let query = $state('');
@@ -331,6 +335,7 @@
                 {#if members.length > 1}<button class="rounded-md px-2 py-1 text-xs font-medium text-slate-500 hover:bg-slate-100 hover:text-primary-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-primary-300" title={tr({ en: 'Split into their own new family', ar: 'فصله في عائلة جديدة خاصة به' }, $locale)} disabled={busy} onclick={() => doRemove(m, 'own')}>{tr({ en: 'New family', ar: 'عائلة جديدة' }, $locale)}</button>{/if}
                 <button class="rounded-md px-2 py-1 text-xs font-medium text-slate-500 hover:bg-rose-50 hover:text-rose-600 dark:text-slate-400 dark:hover:bg-rose-900/30 dark:hover:text-rose-400" onclick={() => askRemove(m)}>{tr({ en: 'Move / Remove', ar: 'نقل / إزالة' }, $locale)}</button>
               {/if}
+              {#if canDelete}<button class="rounded-md px-2 py-1 text-xs font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200" title={tr({ en: 'Merge a duplicate into this person', ar: 'دمج نسخة مكررة في هذا الشخص' }, $locale)} onclick={() => { mergeFor = m; mergeOpen = true; }}>🔗 {tr({ en: 'Merge', ar: 'دمج' }, $locale)}</button>{/if}
             </div>
           </div>
 
@@ -421,4 +426,8 @@
   <datalist id="fm-roles">
     {#each ROLES as r}<option value={tr(r, $locale)}></option>{/each}
   </datalist>
+
+  {#if mergeFor}
+    <MergeDialog bind:open={mergeOpen} primaryId={mergeFor.id} primaryName={displayName(mergeFor, $nameOrder, $locale)} given={mergeFor.givenName} family={mergeFor.familyName} ondone={() => onchanged?.()} />
+  {/if}
 </div>

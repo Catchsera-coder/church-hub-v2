@@ -13,6 +13,7 @@
   import MemberQrCard from '$lib/components/MemberQrCard.svelte';
   import PhotoUpload from '$lib/components/PhotoUpload.svelte';
   import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
+  import MergeDialog from '$lib/components/MergeDialog.svelte';
 
   // Where the "← back" link returns to. Defaults to Members; when opened from
   // Attendance (or elsewhere) the caller passes ?back=<url> so you land back there.
@@ -47,6 +48,7 @@
   }
 
   let person = $state<any>(null);
+  let mergeOpen = $state(false);
   let id = $state<number>(Number($page.params.id));
   let busy = $state(false);
   let confirmDel = $state(false);
@@ -100,10 +102,15 @@
       {/if}
     {/if}
     {#if person && can('delete person')}
+      <button class="btn-ghost border border-slate-300 text-sm dark:border-slate-700" onclick={() => (mergeOpen = true)}>🔗 {tr({ en: 'Merge duplicate', ar: 'دمج نسخة مكررة' }, $locale)}</button>
       <button class="btn-ghost border border-rose-300 text-sm text-rose-600 dark:border-rose-800 dark:text-rose-400" onclick={() => (confirmDel = true)}>🗑 {tr({ en: 'Delete', ar: 'حذف' }, $locale)}</button>
     {/if}
   {/snippet}
 </PageHeader>
+
+{#if person}
+  <MergeDialog bind:open={mergeOpen} primaryId={person.id} primaryName={`${tr(person.givenName, $locale)} ${tr(person.familyName, $locale)}`.trim()} given={person.givenName} family={person.familyName} ondone={reload} />
+{/if}
 
 {#if person}
   {#if person.archivedAt}

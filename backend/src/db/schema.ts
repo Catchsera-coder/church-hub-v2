@@ -310,6 +310,9 @@ export const people = pgTable('people', {
   baptized: boolean('baptized').notNull().default(false),
   baptizedOn: date('baptized_on'),
   baptismType: varchar('baptism_type', { length: 30 }),
+  // When this person was merged INTO another (duplicate cleanup): set to the
+  // surviving person's id, and deletedAt is set too. Reversible via peopleMerges.
+  mergedIntoId: integer('merged_into_id'),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
   ...timestamps,
 }, (t) => ({
@@ -320,6 +323,23 @@ export const people = pgTable('people', {
   qrUnique: uniqueIndex('people_qr_unique').on(t.qrToken),
   reviewIdx: index('people_review_idx').on(t.selfRegistered, t.reviewedAt),
 }));
+
+// Reversible merge of two duplicate people. `snapshot` holds everything needed to
+// undo: the surviving person's pre-merge field values we overwrote, and the ids
+// of the rows we moved from the merged-away person (per table). Undo restores the
+// fields, moves the rows back, and un-deletes the merged-away person.
+export const peopleMerges = pgTable('people_merges', {
+  id: serial('id').primaryKey(),
+  primaryId: integer('primary_id').notNull(),   // the surviving person
+  secondaryId: integer('secondary_id').notNull(), // the one merged away (soft-deleted)
+  snapshot: jsonb('snapshot').$type<{
+    filled: Record<string, unknown>;             // field -> surviving person's OLD value
+    moved: Record<string, number[]>;             // table -> moved row ids (person_service_type -> service_type_ids)
+  }>().notNull(),
+  createdByUserId: integer('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+  undoneAt: timestamp('undone_at', { withTimezone: true }),
+  ...timestamps,
+});
 
 // ---------------------------------------------------------------------------
 // Ministries (service types) + rosters

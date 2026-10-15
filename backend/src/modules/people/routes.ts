@@ -10,6 +10,7 @@ import { logActivity } from '../activity/service.js';
 import { sendTemplateToPerson, resolveMessaging } from '../automations/service.js';
 import { currentOrg } from '../settings/routes.js';
 import { peopleListQuery, peopleFilters } from './filters.js';
+import { mergePreview, mergePeople, undoMerge, recentMerges } from './merge.js';
 
 export const peopleRouter = Router();
 peopleRouter.use(authenticate);
@@ -549,6 +550,29 @@ peopleRouter.post(
     res.json({ data: row });
   }),
 );
+
+// --- Merge duplicates (reversible) ------------------------------------------
+// Preview shows what will be filled + how many linked rows move; the merge itself
+// soft-deletes the duplicate and is undoable. See merge.ts.
+peopleRouter.get('/merges/recent', requirePermission('update person'), asyncHandler(async (_req, res) => {
+  res.json({ data: await recentMerges(10) });
+}));
+peopleRouter.post('/merges/:mergeId/undo', requirePermission('delete person'), asyncHandler(async (req, res) => {
+  await undoMerge(Number(req.params.mergeId));
+  await logActivity(req, 'updated', 'person', Number(req.params.mergeId), 'merge undone');
+  res.json({ data: { ok: true } });
+}));
+peopleRouter.get('/:id(\\d+)/merge-preview', requirePermission('update person'), asyncHandler(async (req, res) => {
+  const secondaryId = Number((req.query as Record<string, string>).secondaryId);
+  if (!Number.isInteger(secondaryId) || secondaryId <= 0) throw notFound();
+  res.json({ data: await mergePreview(Number(req.params.id), secondaryId) });
+}));
+peopleRouter.post('/:id(\\d+)/merge', requirePermission('delete person'), asyncHandler(async (req, res) => {
+  const { secondaryId } = z.object({ secondaryId: z.number().int().positive() }).parse(req.body);
+  const result = await mergePeople(Number(req.params.id), secondaryId, req.auth?.sub ?? null);
+  await logActivity(req, 'updated', 'person', Number(req.params.id), `merged #${secondaryId} in`);
+  res.json({ data: result });
+}));
 
 // Soft delete — historical contributions must keep resolving a name.
 peopleRouter.delete(
