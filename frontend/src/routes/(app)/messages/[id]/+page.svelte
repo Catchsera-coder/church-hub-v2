@@ -118,6 +118,12 @@
         {#if msg.counts?.pending}<span class="rounded-full bg-amber-50 px-3 py-1 text-sm text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">… {msg.counts.pending} {tr({ en: 'pending', ar: 'قيد الانتظار' }, $locale)}</span>{/if}
       </div>
     {/if}
+    {#if msg.status === 'sending' && msg.counts?.pending > 0}
+      <div class="mt-3 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-200">
+        <span>⏳</span>
+        <span>{tr({ en: `Auto-continuing — ${msg.counts.pending} still to send. To stay under Azure's hourly email limit, the system is sending in batches and will finish these automatically. No action needed.`, ar: `يُكمل تلقائياً — تبقّى ${msg.counts.pending}. للبقاء ضمن حد Azure للبريد في الساعة، يُرسل النظام على دفعات وسيُكملها تلقائياً. لا حاجة لأي إجراء.` }, $locale)}</span>
+      </div>
+    {/if}
   </div>
 
   <!-- Content review: exactly what recipients received -->
@@ -135,7 +141,8 @@
     {#if current}
       {#if msg.channel === 'email'}
         {#if current.subject}<p class="mb-2 text-sm"><span class="text-slate-400">{tr({ en: 'Subject:', ar: 'الموضوع:' }, $locale)}</span> <b>{current.subject}</b></p>{/if}
-        <iframe title="message" srcdoc={current.html} sandbox="allow-same-origin" class="h-[520px] w-full rounded-md border border-slate-200 bg-white dark:border-slate-700"></iframe>
+        <iframe title="message" srcdoc={current.html} sandbox="allow-same-origin" style="height:560px" class="block w-full rounded-md border border-slate-200 bg-white dark:border-slate-700"
+          onload={(e) => { const f = e.currentTarget as HTMLIFrameElement; try { const h = f.contentWindow?.document?.documentElement?.scrollHeight; if (h) f.style.height = (h + 24) + 'px'; } catch { /* ignore */ } }}></iframe>
       {:else}
         <div class="rounded-2xl bg-emerald-100 p-4 text-sm text-slate-800 dark:bg-emerald-900/40 dark:text-slate-100" style="white-space:pre-wrap">{current.text}</div>
         {#if msg.mediaUrl}<img src={msg.mediaUrl} alt="" class="mt-3 max-h-64 rounded-lg" />{/if}

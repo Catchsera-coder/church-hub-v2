@@ -1,4 +1,4 @@
-import { and, eq, isNull, isNotNull, ne, inArray } from 'drizzle-orm';
+import { and, eq, isNull, isNotNull, ne, inArray, sql } from 'drizzle-orm';
 import { db } from '../../db/index.js';
 import { messageCampaigns, messageRecipients, people } from '../../db/schema.js';
 import { config } from '../../config.js';
@@ -14,10 +14,22 @@ import { loadCampaignAttachments, prepareDelivery, dataUriAttachment, type OutAt
  * merge fields and brands email as HTML. Honest status: 'failed' if there were
  * recipients but none were accepted, else 'sent'.
  */
-export async function sendCampaignNow(campaignId: number, sentByUserId?: number): Promise<{ sent: number; total: number }> {
+// A provider rate-limit / throttle (e.g. ACS PerSubscriptionPerHourLimitExceeded,
+// HTTP 429). When we hit this we STOP, leave the rest as 'pending', and let the
+// user Resume later (after the limit resets) — nothing is lost or marked failed.
+export const isRateLimited = (error?: string | null): boolean =>
+  /\b429\b|TooManyRequests|LimitExceeded|throttl/i.test(error ?? '');
+
+export async function sendCampaignNow(
+  campaignId: number,
+  sentByUserId?: number,
+  opts: { resume?: boolean } = {},
+): Promise<{ sent: number; total: number; rateLimited: boolean; pending: number }> {
   const [c] = await db.select().from(messageCampaigns).where(eq(messageCampaigns.id, campaignId)).limit(1);
-  if (!c) return { sent: 0, total: 0 };
-  if (c.status === 'sent' || c.status === 'sending') return { sent: 0, total: 0 };
+  if (!c) return { sent: 0, total: 0, rateLimited: false, pending: 0 };
+  // First send is blocked if already sent/sending; Resume (opts.resume) bypasses
+  // so a stalled or partly-failed campaign can be re-driven (only un-sent go out).
+  if (!opts.resume && (c.status === 'sent' || c.status === 'sending')) return { sent: 0, total: 0, rateLimited: false, pending: 0 };
 
   const contactCol = c.channel === 'email' ? people.email : people.mobile;
   const optOutCol = c.channel === 'email' ? people.emailOptOut : c.channel === 'whatsapp' ? people.whatsappOptOut : people.smsOptOut;
@@ -37,7 +49,10 @@ export async function sendCampaignNow(campaignId: number, sentByUserId?: number)
       ...(targetIds ? [inArray(people.id, targetIds)] : []),
     ));
 
-  await db.update(messageCampaigns).set({ status: 'sending', updatedAt: new Date() }).where(eq(messageCampaigns.id, campaignId));
+  // Mark 'sending' and take a 15-min processing lease (nextBatchAt in the future)
+  // so the background drainer won't start a second batch while this one runs. The
+  // final update below overwrites nextBatchAt with the real resume time (or null).
+  await db.update(messageCampaigns).set({ status: 'sending', nextBatchAt: new Date(Date.now() + 15 * 60_000), updatedAt: new Date() }).where(eq(messageCampaigns.id, campaignId));
 
   const org = await currentOrg();
   const messaging = resolveMessaging(org.messaging, { replyTo: org.emailSettings?.replyTo || org.email });
@@ -55,12 +70,22 @@ export async function sendCampaignNow(campaignId: number, sentByUserId?: number)
   const brandAtts: OutAttachment[] = [logoAtt, headerAtt].filter((x): x is OutAttachment => Boolean(x));
 
   let sent = 0;
+  let rateLimited = false;
+  let retryAfterSec = 0;
   for (const p of audience) {
     const nm = [localeName(p.givenName, p.lang || 'en'), localeName(p.familyName, p.lang || 'en')].filter(Boolean).join(' ').trim();
-    const [rec] = await db.insert(messageRecipients)
+    // Idempotent: a fresh insert gives a new 'pending' row; on Resume the row
+    // already exists — reuse it, and SKIP anyone already delivered so a resumed
+    // send never double-sends.
+    let rec = (await db.insert(messageRecipients)
       .values({ messageCampaignId: campaignId, personId: p.id, toContact: (p.contact as string) ?? null, resolvedName: nm || null })
-      .onConflictDoNothing().returning();
-    if (!rec) continue;
+      .onConflictDoNothing().returning())[0];
+    if (!rec) {
+      const [ex] = await db.select().from(messageRecipients)
+        .where(and(eq(messageRecipients.messageCampaignId, campaignId), eq(messageRecipients.personId, p.id))).limit(1);
+      if (!ex || ex.status === 'sent') continue; // already delivered — leave it
+      rec = ex;
+    }
     const lang = p.lang || 'en';
     const ctx = buildContext(p, org, now, lang);
     const subject = renderText(c.subject[lang] ?? c.subject.en ?? '', ctx);
@@ -84,21 +109,34 @@ export async function sendCampaignNow(campaignId: number, sentByUserId?: number)
     ].filter(Boolean).join('\n\n');
     const emailAtts = c.channel === 'email' ? [...brandAtts, ...prepared.inline] : prepared.inline;
     const result = await sendMessage(messaging, c.channel, p.contact as string, subject, plain, html, c.mediaUrl ?? undefined, emailAtts, oneClickUnsub);
+    // Hit the provider's rate/hour limit → STOP here, leave this + the rest as
+    // 'pending' (don't mark failed), and let the user Resume after it resets.
+    if (!result.ok && isRateLimited(result.error)) { rateLimited = true; retryAfterSec = result.retryAfter ?? 3600; break; }
     await db.update(messageRecipients)
       .set({ status: result.ok ? 'sent' : 'failed', sentAt: new Date(), error: result.ok ? null : (result.error ?? 'Provider did not accept the message').slice(0, 500) })
       .where(eq(messageRecipients.id, rec.id));
     if (result.ok) sent++;
-    // Gentle pacing to smooth bursts under the provider per-minute caps (SMS
-    // toll-free 200/min, ACS custom-domain email 30/min); the delivery layer also
-    // retries on 429, so nothing is dropped. For very large church-wide blasts
-    // prefer scheduling the campaign — the background worker drains it without
-    // holding an HTTP request open.
-    await sleep(75);
+    // Pace sends to stay under the provider's per-minute cap (ACS custom-domain
+    // email ~30/min; the delivery layer also retries short 429s). The per-HOUR
+    // cap is handled by the rate-limit pause + Resume above.
+    await sleep(c.channel === 'email' ? 300 : 75);
   }
 
-  const finalStatus = audience.length > 0 && sent === 0 ? 'failed' : 'sent';
+  // How many are still waiting (rate-limit pause, or never reached).
+  const [{ pending }] = await db
+    .select({ pending: sql<number>`count(*) filter (where ${messageRecipients.status} = 'pending')::int` })
+    .from(messageRecipients).where(eq(messageRecipients.messageCampaignId, campaignId));
+
+  // Rate-limited or anyone still pending → keep 'sending' (resumable) and set when
+  // the background drainer should send the next batch: after the provider's cap
+  // resets (rate-limit) or soon (a normal pause). Complete → finalise 'sent'.
+  const incomplete = rateLimited || pending > 0;
+  const status = incomplete ? 'sending' : (sent > 0 || audience.length === 0 ? 'sent' : 'failed');
+  const nextBatchAt = incomplete
+    ? new Date(Date.now() + (rateLimited ? (retryAfterSec * 1000 + 30_000) : 120_000))
+    : null;
   await db.update(messageCampaigns)
-    .set({ status: finalStatus, sentAt: new Date(), updatedAt: new Date(), ...(sentByUserId ? { sentByUserId } : {}) })
+    .set({ status, nextBatchAt, sentAt: new Date(), updatedAt: new Date(), ...(sentByUserId ? { sentByUserId } : {}) })
     .where(eq(messageCampaigns.id, campaignId));
-  return { sent, total: audience.length };
+  return { sent, total: audience.length, rateLimited, pending };
 }

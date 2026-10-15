@@ -105,6 +105,10 @@ async function withThrottleRetry(doFetch: () => Promise<Response>, maxRetries = 
   let attempt = 0;
   while (res.status === 429 && attempt < maxRetries) {
     const ra = Number(res.headers.get('retry-after'));
+    // A long Retry-After = an hourly/daily quota, not a short burst. Don't burn
+    // minutes retrying — return the 429 so the caller pauses the campaign and the
+    // user can Resume after it resets.
+    if (Number.isFinite(ra) && ra > 120) break;
     const waitMs = Number.isFinite(ra) && ra > 0 ? Math.min(ra * 1000, 60_000) : Math.min(1000 * 2 ** attempt, 30_000);
     await sleep(waitMs);
     res = await doFetch();
@@ -121,7 +125,16 @@ export interface EmailAttachment { filename: string; contentType: string; base64
 // Result of a single send. `error` carries the provider's own reason (e.g. the
 // ACS/SendGrid rejection text or an invalid-address message) so a failed
 // recipient shows WHY it failed on the message's detail page — not just "failed".
-export type SendResult = { ok: boolean; error?: string };
+export type SendResult = { ok: boolean; error?: string; retryAfter?: number };
+
+// Seconds to wait before retrying, from a 429 response: the Retry-After header,
+// else "try again after N seconds" in the body. Used to schedule the next batch.
+function parseRetryAfter(res: Response, body: string): number | undefined {
+  const h = Number(res.headers.get('retry-after'));
+  if (Number.isFinite(h) && h > 0) return h;
+  const m = /try again after (\d+)\s*seconds/i.exec(body);
+  return m ? Number(m[1]) : undefined;
+}
 
 export async function sendMessage(
   m: ResolvedMessaging,
@@ -233,7 +246,7 @@ async function sendEmailAcs(m: ResolvedMessaging, to: string, subject: string, b
   if (res.ok) return { ok: true }; // 202 Accepted (async send queued)
   const detail = (await res.text()).slice(0, 300);
   console.error(`[email] Azure ${res.status}: ${detail}`);
-  return { ok: false, error: `Azure rejected it (HTTP ${res.status}): ${detail}` };
+  return { ok: false, error: `Azure rejected it (HTTP ${res.status}): ${detail}`, retryAfter: res.status === 429 ? parseRetryAfter(res, detail) : undefined };
 }
 
 // --- SMS: Twilio -------------------------------------------------------------

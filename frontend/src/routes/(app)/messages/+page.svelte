@@ -81,6 +81,29 @@
       reviewText = r?.text ?? '';
     } catch (err) { reviewText = (err as Error).message; } finally { reviewLoading = false; }
   }
+
+  // Who failed / is pending + the exact reason — shown right here on the list.
+  let failOpen = $state(false);
+  let failName = $state('');
+  let failRows = $state<any[]>([]);
+  let failLoading = $state(false);
+  async function openFailures(m: any, e: Event) {
+    e.preventDefault(); e.stopPropagation();
+    failOpen = true; failName = m.name; failRows = []; failLoading = true;
+    try {
+      const { data } = await api<{ data: any[] }>(`/messages/${m.id}/recipients`);
+      failRows = data.filter((r: any) => r.status === 'failed' || r.status === 'pending');
+    } catch { failRows = []; } finally { failLoading = false; }
+  }
+  const rName = (r: any) => r.resolvedName || `${tr(r.givenName ?? {}, $locale)} ${tr(r.familyName ?? {}, $locale)}`.trim() || r.toContact || '—';
+  // Friendlier one-line reason for common provider errors.
+  function reasonText(r: any): string {
+    const e = r.error ?? '';
+    if (r.status === 'pending') return tr({ en: 'Waiting — will auto-send in the next batch', ar: 'بالانتظار — سيُرسل تلقائياً في الدفعة التالية' }, $locale);
+    if (/TooManyRequests|LimitExceeded|\b429\b/i.test(e)) return tr({ en: 'Azure hourly email limit reached — auto-retried later', ar: 'بلغ حد Azure للبريد في الساعة — يُعاد تلقائياً لاحقاً' }, $locale);
+    if (/fetch failed|ECONNR|ETIMEDOUT|network/i.test(e)) return tr({ en: 'Network hiccup reaching Azure — safe to resend', ar: 'انقطاع شبكة مؤقت مع Azure — يمكن إعادة الإرسال' }, $locale);
+    return e || tr({ en: 'Provider did not accept it', ar: 'لم يقبلها المزود' }, $locale);
+  }
 </script>
 
 <PageHeader title={$t('nav.messages')}>
@@ -147,7 +170,8 @@
     </td>
     <td class="p-3 text-end">
       <span class="font-medium">{m.recipients ?? 0}</span>
-      {#if m.failed > 0}<span class="ms-1 text-xs text-rose-500">({m.failed} {tr({ en: 'failed', ar: 'فشل' }, $locale)})</span>{/if}
+      {#if m.failed > 0}<button class="ms-1 text-xs text-rose-500 hover:underline" onclick={(e) => openFailures(m, e)}>({m.failed} {tr({ en: 'failed', ar: 'فشل' }, $locale)})</button>{/if}
+      {#if m.pending > 0}<button class="ms-1 text-xs text-amber-500 hover:underline" onclick={(e) => openFailures(m, e)}>({m.pending} {tr({ en: 'pending', ar: 'بالانتظار' }, $locale)})</button>{/if}
     </td>
     <td class="p-3 text-slate-600 dark:text-slate-300">{m.sentByName || m.createdByName || '—'}</td>
     <td class="p-3 force-ltr text-slate-600 dark:text-slate-300">{m.sentAt ? dateTime(m.sentAt) : (m.scheduledFor ? dateTime(m.scheduledFor) : dateTime(m.createdAt))}</td>
@@ -177,13 +201,50 @@
         </div>
         <button class="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200" aria-label="Close" onclick={() => (reviewOpen = false)}>✕</button>
       </div>
-      <div class="min-h-0 flex-1 overflow-auto bg-slate-100 dark:bg-slate-950">
+      <div class="min-h-0 flex-1 overflow-auto bg-slate-200 p-3 dark:bg-slate-950">
         {#if reviewLoading}
           <p class="p-8 text-center text-slate-400">{$t('common.loading')}</p>
         {:else if reviewChannel === 'email' && reviewHtml}
-          <iframe title="email preview" class="h-[70vh] w-full border-0 bg-white" sandbox="allow-same-origin" srcdoc={reviewHtml}></iframe>
+          <!-- Auto-size the frame to the email's real height so it shows as one
+               full piece (the modal scrolls for very long emails). -->
+          <iframe title="email preview" class="block w-full border-0" style="height:640px" sandbox="allow-same-origin" srcdoc={reviewHtml}
+            onload={(e) => { const f = e.currentTarget as HTMLIFrameElement; try { const h = f.contentWindow?.document?.documentElement?.scrollHeight; if (h) f.style.height = (h + 24) + 'px'; } catch { /* cross-origin */ } }}></iframe>
         {:else}
           <pre class="whitespace-pre-wrap p-6 text-sm text-slate-800 dark:text-slate-200">{reviewText || tr({ en: 'Nothing to preview.', ar: 'لا شيء للمعاينة.' }, $locale)}</pre>
+        {/if}
+      </div>
+    </div>
+  </div>
+{/if}
+
+{#if failOpen}
+  <div class="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4" role="button" tabindex="-1" onclick={() => (failOpen = false)} onkeydown={(e) => e.key === 'Escape' && (failOpen = false)}>
+    <div class="flex max-h-[85vh] w-full max-w-xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl dark:bg-slate-900" role="dialog" tabindex="0" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
+      <div class="flex items-center justify-between gap-2 border-b border-slate-200 px-4 py-3 dark:border-slate-700">
+        <div class="min-w-0">
+          <p class="truncate font-semibold">⚠️ {tr({ en: 'Not delivered — who & why', ar: 'لم تُسلَّم — من ولماذا' }, $locale)}</p>
+          <p class="truncate text-xs text-slate-500">{failName}</p>
+        </div>
+        <button class="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200" aria-label="Close" onclick={() => (failOpen = false)}>✕</button>
+      </div>
+      <div class="min-h-0 flex-1 overflow-auto">
+        {#if failLoading}
+          <p class="p-8 text-center text-slate-400">{$t('common.loading')}</p>
+        {:else if failRows.length}
+          <ul class="divide-y divide-slate-100 dark:divide-slate-800">
+            {#each failRows as r (r.id)}
+              <li class="px-4 py-3">
+                <div class="flex items-center justify-between gap-2">
+                  <span class="font-medium">{rName(r)}</span>
+                  <span class="text-xs font-medium {r.status === 'failed' ? 'text-rose-500' : 'text-amber-500'}">{r.status === 'failed' ? tr({ en: 'Failed', ar: 'فشل' }, $locale) : tr({ en: 'Pending', ar: 'بالانتظار' }, $locale)}</span>
+                </div>
+                <div class="force-ltr text-xs text-slate-400">{r.email || r.mobile || r.toContact || ''}</div>
+                <div class="mt-0.5 text-sm text-slate-600 dark:text-slate-300">{reasonText(r)}</div>
+              </li>
+            {/each}
+          </ul>
+        {:else}
+          <p class="p-8 text-center text-slate-400">{tr({ en: 'Everyone received it. 🎉', ar: 'استلمها الجميع. 🎉' }, $locale)}</p>
         {/if}
       </div>
     </div>

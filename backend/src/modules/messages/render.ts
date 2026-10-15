@@ -193,16 +193,19 @@ export function brandedEmailHtml(
   // optional church header photo/banner on the RIGHT (set in Settings → email
   // branding). Data: URIs go through the public branding endpoints (email clients
   // block data: URIs); external https URLs are used as-is.
+  // Compact, professional lockup: a right-sized logo (height-capped) BESIDE the
+  // church name — never a full-width image. The `ch-logo`/`ch-photo` classes let
+  // the media query shrink them a touch more on phones.
   const logoImg = logoSrc
-    ? `<img src="${escapeHtml(logoSrc)}" alt="${name}" style="height:46px;max-width:180px;object-fit:contain;display:block" />`
+    ? `<img src="${escapeHtml(logoSrc)}" alt="${name}" class="ch-logo" width="44" height="44" style="height:44px;width:auto;max-width:120px;object-fit:contain;display:block" />`
     : '';
-  const headerName = `<div style="font-size:${logoSrc ? '16px' : '22px'};font-weight:700;color:#ffffff;margin:${logoSrc ? '8px 0 0' : '0'}">${name}</div>`;
+  const headerName = `<span style="font-size:${logoSrc ? '19px' : '22px'};font-weight:700;color:#ffffff;line-height:1.2;letter-spacing:.2px">${name}</span>`;
   const headerImgVal = es.headerImage;
   const headerImgSrc = opts.headerImageCid
     ? `cid:${opts.headerImageCid}`
     : (headerImgVal ? (/^https?:\/\//i.test(headerImgVal) ? headerImgVal : (appUrl ? `${appUrl}/api/public/branding/header-image` : null)) : null);
   const headerPhoto = headerImgSrc
-    ? `<img src="${escapeHtml(headerImgSrc)}" alt="" style="height:58px;max-width:150px;object-fit:contain;border-radius:8px;display:block" />`
+    ? `<img src="${escapeHtml(headerImgSrc)}" alt="" class="ch-photo" style="height:48px;width:auto;max-width:110px;object-fit:contain;border-radius:8px;display:block" />`
     : '';
 
   const preheader = opts.preheader
@@ -252,23 +255,34 @@ export function brandedEmailHtml(
   // Mobile-first: fluid 600px container (shrinks to the screen), plus a media
   // query that tightens padding, drops the corners edge-to-edge, and makes the
   // CTA full-width on phones. Inline styles remain the desktop/Outlook fallback.
+  // NOTE: never force height:auto on ALL images — that would blow up the fixed-size
+  // header logo/photo. Only BODY images get fluid sizing (via their own inline
+  // max-width:100%, and the .ch-bimg class below for safety).
   const style = `<style>`
-    + `img{max-width:100%!important;height:auto!important;border:0}`
+    + `img{border:0;outline:none;text-decoration:none}`
+    + `.ch-bimg{max-width:100%!important;height:auto!important}`
     + `@media only screen and (max-width:600px){`
     + `.ch-wrap{width:100%!important;border-radius:0!important}`
-    + `.ch-head{padding:18px 18px!important}`
-    + `.ch-pad{padding:22px 18px!important}`
+    + `.ch-head{padding:16px 18px!important}`
+    + `.ch-pad{padding:20px 18px!important}`
     + `.ch-foot{padding:16px 18px!important}`
     + `.ch-btn{display:block!important;text-align:center!important;padding-left:18px!important;padding-right:18px!important}`
-    + `.ch-h1{font-size:21px!important}`
+    + `.ch-h1{font-size:20px!important}`
+    + `.ch-logo{height:36px!important}`
+    + `.ch-photo{height:40px!important}`
     + `}</style>`;
   return `<!doctype html><html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>${style}</head>`
     + `<body style="margin:0;background:#eef1f5;padding:24px 12px;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#0f172a">`
     + preheader
     + `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="ch-wrap" style="max-width:600px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 6px 24px rgba(15,23,42,0.10)">`
-    + `<tr><td class="ch-head" style="background:${brand};padding:24px 28px">`
+    + `<tr><td class="ch-head" style="background:${brand};padding:20px 28px">`
       + `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>`
-        + `<td style="vertical-align:middle;text-align:left">${logoImg}${headerName}</td>`
+        + `<td style="vertical-align:middle;text-align:left">`
+          + `<table role="presentation" cellpadding="0" cellspacing="0"><tr>`
+            + (logoImg ? `<td style="vertical-align:middle;padding-right:12px">${logoImg}</td>` : '')
+            + `<td style="vertical-align:middle">${headerName}</td>`
+          + `</tr></table>`
+        + `</td>`
         + (headerPhoto ? `<td style="vertical-align:middle;text-align:right;white-space:nowrap">${headerPhoto}</td>` : '')
       + `</tr></table>`
     + `</td></tr>`

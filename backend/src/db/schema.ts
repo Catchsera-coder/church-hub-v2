@@ -732,6 +732,10 @@ export const messageCampaigns = pgTable('message_campaigns', {
   // re-sends each due occurrence instead of marking the campaign done.
   schedule: jsonb('schedule').$type<Schedule>(),
   lastRunOn: date('last_run_on'),
+  // Auto-batching: when a big send hits the provider's hourly cap it pauses with
+  // 'pending' recipients and sets nextBatchAt to when the cap resets. The
+  // background drainer resumes it then, batch by batch, until none are pending.
+  nextBatchAt: timestamp('next_batch_at', { withTimezone: true }),
   createdByUserId: integer('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
   // Who actually triggered the send (distinct from who composed it). Null for a
   // send fired by the background scheduler — the sent-log shows "Scheduled" then.

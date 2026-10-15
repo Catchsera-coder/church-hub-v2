@@ -70,7 +70,7 @@ messagesRouter.get('/', requirePermission('view message'), asyncHandler(async (r
   const q = listQuery.parse(req.query);
   const creator = alias(users, 'creator');
   const sender = alias(users, 'sender');
-  const recCount = (status?: 'sent' | 'failed') =>
+  const recCount = (status?: 'sent' | 'failed' | 'pending') =>
     sql<number>`(select count(*)::int from ${messageRecipients} r where r.message_campaign_id = ${messageCampaigns.id}${status ? sql` and r.status = ${status}` : sql``})`;
   const whenExpr = sql`coalesce(${messageCampaigns.sentAt}, ${messageCampaigns.scheduledFor}, ${messageCampaigns.createdAt})`;
 
@@ -89,7 +89,8 @@ messagesRouter.get('/', requirePermission('view message'), asyncHandler(async (r
       createdAt: messageCampaigns.createdAt,
       createdByUserId: messageCampaigns.createdByUserId, createdByName: creator.name,
       sentByUserId: messageCampaigns.sentByUserId, sentByName: sender.name,
-      recipients: recCount(), sent: recCount('sent'), failed: recCount('failed'),
+      recipients: recCount(), sent: recCount('sent'), failed: recCount('failed'), pending: recCount('pending'),
+      nextBatchAt: messageCampaigns.nextBatchAt,
     })
     .from(messageCampaigns)
     .leftJoin(creator, eq(creator.id, messageCampaigns.createdByUserId))

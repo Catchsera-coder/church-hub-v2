@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, or, lte, isNull, sql } from 'drizzle-orm';
 import { pool, db } from './db/index.js';
 import { messageCampaigns, messageRecipients, automations } from './db/schema.js';
 import { sendCampaignNow } from './modules/messages/send.js';
@@ -29,6 +29,7 @@ async function tick(): Promise<void> {
     const { rows } = await client.query('select pg_try_advisory_lock($1) as ok', [LOCK_KEY]);
     if (!rows[0]?.ok) return; // another replica holds the lock
     try {
+      await drainSendingCampaigns();
       await runScheduledCampaigns();
       await runAutoAutomations();
     } finally {
@@ -36,6 +37,30 @@ async function tick(): Promise<void> {
     }
   } finally {
     client.release();
+  }
+}
+
+// Auto-batching drainer: a big send that hit the provider's hourly cap (or was
+// interrupted) is left 'sending' with 'pending' recipients and a nextBatchAt.
+// When that time arrives we send the next batch — repeating until none are
+// pending, then the send finalises to 'sent'. This spreads a large blast under
+// the ACS per-hour limit automatically, with no one lost.
+async function drainSendingCampaigns(): Promise<void> {
+  const now = new Date();
+  const due = await db.select().from(messageCampaigns)
+    .where(and(eq(messageCampaigns.status, 'sending'),
+      or(isNull(messageCampaigns.nextBatchAt), lte(messageCampaigns.nextBatchAt, now))));
+  for (const c of due) {
+    const [row] = await db
+      .select({ pending: sql<number>`count(*) filter (where ${messageRecipients.status} = 'pending')::int` })
+      .from(messageRecipients).where(eq(messageRecipients.messageCampaignId, c.id));
+    if (!row || row.pending === 0) {
+      // Nothing left to send — finalise (also recovers any stuck 'sending' row).
+      await db.update(messageCampaigns).set({ status: 'sent', nextBatchAt: null, updatedAt: new Date() }).where(eq(messageCampaigns.id, c.id));
+      continue;
+    }
+    await sendCampaignNow(c.id, c.sentByUserId ?? undefined, { resume: true })
+      .catch((e) => console.error('[scheduler] drain', c.id, e instanceof Error ? e.message : e));
   }
 }
 
