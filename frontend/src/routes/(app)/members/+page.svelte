@@ -179,8 +179,10 @@
   let loading = $state(true);
   let reviewOnly = $state(false);
   let showArchived = $state(false);
-  // "Missed two meetings" follow-up group (from the dashboard card / ?missed=1).
+  // Follow-up groups from the dashboard cards: ?missed=1 (sporadic) / ?away=1
+  // (continuous absence). groupParams carries the configured thresholds.
   let missedMode = $state(false);
+  let awayMode = $state(false);
   let missedParams = $state<Record<string, string>>({});
   const canMessage = can('create message');
   let messagingGroup = $state(false);
@@ -251,7 +253,9 @@
       if (search.trim()) q.set('search', search.trim());
       if (reviewOnly) q.set('review', 'pending');
       if (showArchived) q.set('archived', 'only');
-      if (missedMode) { q.set('missed', '1'); for (const [k, v] of Object.entries(missedParams)) q.set(k, v); }
+      if (missedMode) q.set('missed', '1');
+      if (awayMode) q.set('away', '1');
+      if (missedMode || awayMode) for (const [k, v] of Object.entries(missedParams)) q.set(k, v);
       q.set('category', cat);
       for (const [k, v] of Object.entries(f)) if (v !== '') q.set(k, String(v));
       const r = await api<{ data: Person[]; meta: Meta }>(`/people?${q}`);
@@ -290,7 +294,9 @@
       const q = new URLSearchParams({ limit: '2000', category: cat });
       if (search.trim()) q.set('search', search.trim());
       if (reviewOnly) q.set('review', 'pending');
-      if (missedMode) { q.set('missed', '1'); for (const [k, v] of Object.entries(missedParams)) q.set(k, v); }
+      if (missedMode) q.set('missed', '1');
+      if (awayMode) q.set('away', '1');
+      if (missedMode || awayMode) for (const [k, v] of Object.entries(missedParams)) q.set(k, v);
       for (const [k, v] of Object.entries(f)) if (v !== '') q.set(k, String(v));
       const r = await api<{ data: Person[] }>(`/people?${q}`);
       const ids = r.data.map((p) => p.id);
@@ -303,9 +309,10 @@
   onMount(async () => {
     // Deep links from the dashboard cards: pre-apply the filter + show its banner.
     const sp = new URLSearchParams(window.location.search);
-    if (sp.get('missed')) {
-      missedMode = true;
-      for (const k of ['missedCount', 'missedWeeks', 'missedStatuses']) { const v = sp.get(k); if (v) missedParams[k] = v; }
+    if (sp.get('missed')) missedMode = true;
+    if (sp.get('away')) awayMode = true;
+    if (missedMode || awayMode) {
+      for (const k of ['missedCount', 'missedWeeks', 'missedStatuses', 'awayWeeks']) { const v = sp.get(k); if (v) missedParams[k] = v; }
     }
     if (sp.get('review') === 'pending') reviewOnly = true;
     if (sp.get('birthdayMonth')) f.birthdayMonth = sp.get('birthdayMonth')!;
@@ -329,17 +336,22 @@
   </div>
 </div>
 
-{#if missedMode}
+{#if missedMode || awayMode}
   <div class="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm dark:border-amber-900/50 dark:bg-amber-900/20">
     <a href="/dashboard" class="text-amber-700 hover:underline dark:text-amber-300">← {tr({ en: 'Dashboard', ar: 'لوحة المعلومات' }, $locale)}</a>
-    <span class="font-medium text-amber-800 dark:text-amber-200">⚠️ {tr({ en: 'Missed two meetings', ar: 'تغيّب عن اجتماعين' }, $locale)}</span>
-    <span class="text-amber-700/80 dark:text-amber-300/70">{tr({ en: 'members & regulars who missed 2 of the last 4 weeks', ar: 'الأعضاء والمنتظمون الذين تغيّبوا عن أسبوعين من آخر 4 أسابيع' }, $locale)}{meta ? ` · ${meta.total}` : ''}</span>
+    {#if missedMode}
+      <span class="font-medium text-amber-800 dark:text-amber-200">⚠️ {tr({ en: 'Missed two meetings', ar: 'تغيّب عن اجتماعين' }, $locale)}</span>
+      <span class="text-amber-700/80 dark:text-amber-300/70">{tr({ en: 'members & regulars who missed several of the last weeks', ar: 'الأعضاء والمنتظمون الذين تغيّبوا عن عدة أسابيع ماضية' }, $locale)}{meta ? ` · ${meta.total}` : ''}</span>
+    {:else}
+      <span class="font-medium text-amber-800 dark:text-amber-200">🚪 {tr({ en: 'Away more than two weeks', ar: 'غائب أكثر من أسبوعين' }, $locale)}</span>
+      <span class="text-amber-700/80 dark:text-amber-300/70">{tr({ en: 'members & regulars with no attendance recently', ar: 'الأعضاء والمنتظمون بلا حضور مؤخراً' }, $locale)}{meta ? ` · ${meta.total}` : ''}</span>
+    {/if}
     {#if canMessage}<button class="ms-auto rounded-lg px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50" style="background: var(--brand)" disabled={messagingGroup} onclick={messageGroup}>✉️ {messagingGroup ? '…' : tr({ en: 'Message this group', ar: 'راسل هذه المجموعة' }, $locale)}</button>{/if}
     <a href="/members" class="text-xs text-slate-500 hover:underline">{tr({ en: 'Clear', ar: 'مسح' }, $locale)}</a>
   </div>
 {/if}
 
-{#if pendingCount > 0 && !reviewOnly && !missedMode}
+{#if pendingCount > 0 && !reviewOnly && !missedMode && !awayMode}
   <button class="mb-4 flex w-full items-center gap-3 rounded-xl bg-amber-50 px-4 py-3 text-start text-sm text-amber-800 hover:bg-amber-100 dark:bg-amber-900/20 dark:text-amber-200 dark:hover:bg-amber-900/30" onclick={toggleReview}>
     <span class="text-lg">🔔</span>
     <span class="flex-1">

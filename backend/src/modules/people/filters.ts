@@ -43,6 +43,11 @@ export const peopleListQuery = z.object({
   missedCount: z.coerce.number().int().min(1).max(12).optional(),
   missedWeeks: z.coerce.number().int().min(2).max(26).optional(),
   missedStatuses: z.string().optional(),
+  // "Away for more than N weeks" — a CONTINUOUS absence (no attendance at all in
+  // the last `awayWeeks` weeks), among the same follow-up statuses. Separate group
+  // from `missed` (which is sporadic: missed some of the last few weeks).
+  away: z.enum(['1', 'true']).optional(),
+  awayWeeks: z.coerce.number().int().min(1).max(52).optional(),
   // Archived visibility: default hides archived; 'only' shows just archived;
   // 'include' shows both.
   archived: z.enum(['only', 'include']).optional(),
@@ -131,6 +136,13 @@ export function peopleFilters(q: PeopleQuery): SQL[] {
       (SELECT count(DISTINCT date_trunc('week', ae.starts_at)) FROM ${attendanceEvents} ae WHERE ae.starts_at >= now() - (${weeks} * interval '1 week') AND ae.starts_at <= now())
       - (SELECT count(DISTINCT date_trunc('week', ae2.starts_at)) FROM ${attendanceEvents} ae2 JOIN ${attendanceRecords} ar2 ON ar2.attendance_event_id = ae2.id AND ar2.person_id = ${people.id} WHERE ae2.starts_at >= now() - (${weeks} * interval '1 week') AND ae2.starts_at <= now())
     ) >= ${count}`);
+  }
+  if (q.away) {
+    const weeks = q.awayWeeks ?? 2;
+    const statuses = (q.missedStatuses ?? 'member,regular').split(',').map((s) => s.trim()).filter(Boolean);
+    if (statuses.length) filters.push(inArray(people.membershipStatus, statuses as ('visitor' | 'regular' | 'member' | 'inactive' | 'conference_attendee')[]));
+    // No attendance at all in the last `weeks` weeks (continuous absence).
+    filters.push(sql`NOT EXISTS (SELECT 1 FROM ${attendanceRecords} ar3 WHERE ar3.person_id = ${people.id} AND ar3.checked_in_at >= now() - (${weeks} * interval '1 week'))`);
   }
   if (q.followUpStage) {
     if (q.followUpStage === 'new_visitor') filters.push(sql`(${people.followUpStage} = 'new_visitor' OR (${people.followUpStage} IS NULL AND ${people.selfRegistered} = true AND ${people.reviewedAt} IS NULL))`);

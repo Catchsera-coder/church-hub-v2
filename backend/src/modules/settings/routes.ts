@@ -89,6 +89,13 @@ const updateSchema = z.object({
   // schema change each release.
   dashboard: z.object({
     widgets: z.array(z.string().max(40)).max(30),
+    // Follow-up groups config (missed / away cards). Admin-tunable.
+    followUp: z.object({
+      statuses: z.array(z.enum(['visitor', 'regular', 'member', 'inactive', 'conference_attendee'])).max(5).optional(),
+      missedCount: z.coerce.number().int().min(1).max(12).optional(),
+      missedWeeks: z.coerce.number().int().min(2).max(26).optional(),
+      awayWeeks: z.coerce.number().int().min(1).max(52).optional(),
+    }).optional(),
   }).optional(),
 });
 

@@ -123,7 +123,7 @@ export const organisations = pgTable('organisations', {
   messaging: jsonb('messaging').$type<MessagingSettings>().notNull().default({}),
   // Dashboard customization (#17): which stat widgets show, in order. Empty =
   // show the default set. Per-church (white-label), set by an Admin in Settings.
-  dashboard: jsonb('dashboard').$type<{ widgets?: string[] }>().notNull().default({}),
+  dashboard: jsonb('dashboard').$type<{ widgets?: string[]; followUp?: { statuses?: string[]; missedCount?: number; missedWeeks?: number; awayWeeks?: number } }>().notNull().default({}),
   // Professional email presentation (non-secret): reply-to, website, social,
   // sign-off, footer toggle. Drives the branded email layout + Settings preview.
   emailSettings: jsonb('email_settings').$type<EmailSettings>().notNull().default({}),

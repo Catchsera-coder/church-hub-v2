@@ -22,6 +22,8 @@
     { key: 'families', label: { en: 'Families', ar: 'العائلات' } },
     { key: 'attendance', label: { en: 'Attendance this month', ar: 'الحضور هذا الشهر' } },
     { key: 'newMembers', label: { en: 'New this month', ar: 'جدد هذا الشهر' } },
+    { key: 'missed', label: { en: 'Missed two meetings', ar: 'تغيّب عن اجتماعين' } },
+    { key: 'away', label: { en: 'Away more than two weeks', ar: 'غائب أكثر من أسبوعين' } },
     { key: 'awaitingApproval', label: { en: 'Awaiting approval', ar: 'بانتظار الموافقة' } },
     { key: 'birthdays', label: { en: 'Birthdays this month', ar: 'أعياد ميلاد هذا الشهر' } },
     { key: 'upcoming', label: { en: 'Upcoming attendance', ar: 'الحضور القادم' } },
@@ -41,8 +43,17 @@
   function toggleWidget(key: string) {
     const set = new Set(form.dashboard?.widgets ?? ALL_WIDGET_KEYS);
     if (set.has(key)) set.delete(key); else set.add(key);
-    // Persist in the canonical catalog order regardless of toggle sequence.
-    form.dashboard = { widgets: ALL_WIDGET_KEYS.filter((k) => set.has(k)) };
+    // Persist in the canonical catalog order; keep the follow-up config.
+    form.dashboard = { ...form.dashboard, widgets: ALL_WIDGET_KEYS.filter((k) => set.has(k)) };
+  }
+  // Follow-up group config (missed / away cards).
+  const FOLLOWUP_STATUSES = [
+    { v: 'visitor', en: 'Visitor', ar: 'زائر' }, { v: 'regular', en: 'Regular', ar: 'منتظم' },
+    { v: 'member', en: 'Member', ar: 'عضو' }, { v: 'conference_attendee', en: 'Conference', ar: 'مؤتمر' },
+  ];
+  function toggleFollowStatus(v: string) {
+    const cur: string[] = form.dashboard?.followUp?.statuses ?? [];
+    form.dashboard.followUp.statuses = cur.includes(v) ? cur.filter((x) => x !== v) : [...cur, v];
   }
 
   let form = $state<any>(null);
@@ -66,8 +77,10 @@
     const r = await api<{ data: any }>('/settings');
     // Default the dashboard to all widgets when the church hasn't customized it.
     const widgets = r.data.dashboard?.widgets?.length ? r.data.dashboard.widgets : ALL_WIDGET_KEYS;
+    const fu = r.data.dashboard?.followUp ?? {};
+    const followUp = { statuses: fu.statuses?.length ? fu.statuses : ['member', 'regular'], missedCount: fu.missedCount ?? 2, missedWeeks: fu.missedWeeks ?? 4, awayWeeks: fu.awayWeeks ?? 2 };
     const es = r.data.emailSettings ?? {};
-    form = { ...r.data, name: r.data.name ?? {}, dashboard: { widgets }, emailSettings: { ...es, signature: es.signature ?? {}, social: es.social ?? {}, quickLinks: es.quickLinks ?? [] } };
+    form = { ...r.data, name: r.data.name ?? {}, dashboard: { widgets, followUp }, emailSettings: { ...es, signature: es.signature ?? {}, social: es.social ?? {}, quickLinks: es.quickLinks ?? [] } };
     if (isAdmin) {
       const m = await api<{ data: any }>('/settings/messaging');
       // secret fields start blank; blank on save = leave unchanged
@@ -85,7 +98,7 @@
         region: form.region, postalCode: form.postalCode, country: form.country,
         logoPath: form.logoPath ?? null, arabicEnabled: !!form.arabicEnabled,
         brandColor: form.brandColor || null,
-        dashboard: { widgets: form.dashboard?.widgets ?? ALL_WIDGET_KEYS },
+        dashboard: { widgets: form.dashboard?.widgets ?? ALL_WIDGET_KEYS, followUp: form.dashboard?.followUp },
         emailSettings: {
           replyTo: form.emailSettings?.replyTo || '',
           website: form.emailSettings?.website || '',
@@ -307,6 +320,28 @@
           {tr(w.label, $locale)}
         </label>
       {/each}
+
+      {#if form.dashboard?.followUp}
+        <div class="mt-3 space-y-3 border-t border-slate-100 pt-4 dark:border-slate-800">
+          <div>
+            <p class="text-sm font-medium">{tr({ en: 'Follow-up groups', ar: 'مجموعات المتابعة' }, $locale)}</p>
+            <p class="text-xs text-slate-500 dark:text-slate-400">{tr({ en: 'Who counts for the “Missed two meetings” and “Away more than two weeks” cards.', ar: 'من يُحتسب لبطاقتَي «تغيّب عن اجتماعين» و«غائب أكثر من أسبوعين».' }, $locale)}</p>
+          </div>
+          <div>
+            <span class="mb-1 block text-xs text-slate-500">{tr({ en: 'Only these statuses', ar: 'هذه الحالات فقط' }, $locale)}</span>
+            <div class="flex flex-wrap gap-3">
+              {#each FOLLOWUP_STATUSES as s}
+                <label class="flex items-center gap-1.5 text-sm"><input type="checkbox" checked={(form.dashboard.followUp.statuses ?? []).includes(s.v)} onchange={() => toggleFollowStatus(s.v)} /> {tr({ en: s.en, ar: s.ar }, $locale)}</label>
+              {/each}
+            </div>
+          </div>
+          <div class="grid gap-3 sm:grid-cols-3">
+            <label class="block space-y-1"><span class="text-xs text-slate-500">{tr({ en: 'Missed at least (meetings)', ar: 'تغيّب عن (اجتماعات) على الأقل' }, $locale)}</span><input class="input" type="number" min="1" max="12" bind:value={form.dashboard.followUp.missedCount} /></label>
+            <label class="block space-y-1"><span class="text-xs text-slate-500">{tr({ en: 'of the last (weeks)', ar: 'من آخر (أسابيع)' }, $locale)}</span><input class="input" type="number" min="2" max="26" bind:value={form.dashboard.followUp.missedWeeks} /></label>
+            <label class="block space-y-1"><span class="text-xs text-slate-500">{tr({ en: 'Away more than (weeks)', ar: 'غائب أكثر من (أسابيع)' }, $locale)}</span><input class="input" type="number" min="1" max="52" bind:value={form.dashboard.followUp.awayWeeks} /></label>
+          </div>
+        </div>
+      {/if}
     </div>
 
     <div class="card grid gap-4 p-6 sm:grid-cols-2">
