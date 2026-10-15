@@ -3,6 +3,7 @@
   import { page } from '$app/stores';
   import { t, locale, tr } from '$lib/i18n.js';
   import { applyBrandColor } from '$lib/stores/brand.js';
+  import PhoneInput from '$lib/components/PhoneInput.svelte';
 
   const token = $page.params.token;
   const base = `/api/public/checkin/${token}`;
@@ -279,7 +280,7 @@
               <input class="input" bind:value={me.givenName} placeholder={tr({ en: 'First name', ar: 'الاسم الأول' }, $locale)} />
               <input class="input" bind:value={me.familyName} placeholder={tr({ en: 'Last name', ar: 'اسم العائلة' }, $locale)} />
             </div>
-            <input class="input mt-2" bind:value={me.mobile} type="tel" placeholder={tr({ en: 'Mobile (optional)', ar: 'الجوال (اختياري)' }, $locale)} />
+            <div class="mt-2"><PhoneInput bind:value={me.mobile} placeholder={tr({ en: 'Mobile (optional)', ar: 'الجوال (اختياري)' }, $locale)} /></div>
             <input class="input mt-2" bind:value={me.email} type="email" placeholder={tr({ en: 'Email (optional)', ar: 'البريد الإلكتروني (اختياري)' }, $locale)} />
             <label class="mt-3 flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
               <input type="checkbox" class="h-5 w-5 rounded" bind:checked={me.attending} />

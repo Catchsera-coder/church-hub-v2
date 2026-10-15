@@ -3,6 +3,7 @@
   import { api } from '$lib/api.js';
   import { t, locale, tr, enabledLocales } from '$lib/i18n.js';
   import AddressAutocomplete from '$lib/components/AddressAutocomplete.svelte';
+  import PhoneInput from '$lib/components/PhoneInput.svelte';
 
   function fillAddr(a: { line1: string; line2: string; city: string; region: string; postalCode: string; country: string }) {
     if (a.line1) form.addressLine1 = a.line1;
@@ -71,7 +72,7 @@
     {/each}
     <label class="block space-y-1">
       <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Home phone', ar: 'هاتف المنزل' }, $locale)}</span>
-      <input class="input force-ltr" bind:value={form.homePhone} />
+      <PhoneInput bind:value={form.homePhone} />
     </label>
     <label class="block space-y-1">
       <span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Family status', ar: 'حالة العائلة' }, $locale)}</span>

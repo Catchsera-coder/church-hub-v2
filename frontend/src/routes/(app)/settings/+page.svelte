@@ -7,6 +7,7 @@
   import { pageTips, resetHints } from '$lib/stores/prefs.js';
   import { applyBrandColor } from '$lib/stores/brand.js';
   import PageHeader from '$lib/components/PageHeader.svelte';
+  import PhoneInput from '$lib/components/PhoneInput.svelte';
   import PageHint from '$lib/components/PageHint.svelte';
 
   const SIZES = [
@@ -356,7 +357,7 @@
     <div class="card grid gap-4 p-6 sm:grid-cols-2">
       <h2 class="text-lg font-semibold sm:col-span-2">{tr({ en: 'Contact', ar: 'التواصل' }, $locale)}</h2>
       <label class="block space-y-1"><span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Email', ar: 'البريد' }, $locale)}</span><input class="input force-ltr" bind:value={form.email} /></label>
-      <label class="block space-y-1"><span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Phone', ar: 'الهاتف' }, $locale)}</span><input class="input force-ltr" bind:value={form.phone} /></label>
+      <label class="block space-y-1"><span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Phone', ar: 'الهاتف' }, $locale)}</span><PhoneInput bind:value={form.phone} /></label>
       <label class="block space-y-1"><span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'Address', ar: 'العنوان' }, $locale)}</span><input class="input" bind:value={form.addressLine1} /></label>
       <label class="block space-y-1"><span class="text-sm text-slate-600 dark:text-slate-300">{tr({ en: 'City', ar: 'المدينة' }, $locale)}</span><input class="input" bind:value={form.city} /></label>
     </div>

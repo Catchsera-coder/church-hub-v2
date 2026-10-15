@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
   import { t, locale, tr } from '$lib/i18n.js';
+  import PhoneInput from '$lib/components/PhoneInput.svelte';
 
   const token = $page.params.token;
   const base = `/api/public/ministries/${token}`;
@@ -78,7 +79,7 @@
         <label class="block space-y-1"><span class="text-xs text-slate-500">{tr({ en: 'First name', ar: 'الاسم الأول' }, $locale)} *</span><input class="input" bind:value={f.givenName} required /></label>
         <label class="block space-y-1"><span class="text-xs text-slate-500">{tr({ en: 'Last name', ar: 'اسم العائلة' }, $locale)}</span><input class="input" bind:value={f.familyName} /></label>
         <label class="block space-y-1"><span class="text-xs text-slate-500">{tr({ en: 'Email', ar: 'البريد' }, $locale)}</span><input class="input force-ltr" type="email" bind:value={f.email} /></label>
-        <label class="block space-y-1"><span class="text-xs text-slate-500">{tr({ en: 'Mobile', ar: 'الجوال' }, $locale)}</span><input class="input force-ltr" bind:value={f.mobile} /></label>
+        <label class="block space-y-1"><span class="text-xs text-slate-500">{tr({ en: 'Mobile', ar: 'الجوال' }, $locale)}</span><PhoneInput bind:value={f.mobile} /></label>
       </div>
 
       <div class="space-y-2">

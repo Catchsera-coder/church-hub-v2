@@ -5,6 +5,7 @@
   import { nameOrder } from '$lib/stores/prefs.js';
   import { can } from '$lib/stores/auth.js';
   import MergeDialog from '$lib/components/MergeDialog.svelte';
+  import PhoneInput from '$lib/components/PhoneInput.svelte';
 
   // In-page family roster. Everything writes people.householdId (and person
   // fields), so members ↔ families stay in sync automatically. The parent owns
@@ -391,7 +392,7 @@
                 </label>
                 <label class="block space-y-1">
                   <span class="text-xs text-slate-500">{tr({ en: 'Mobile', ar: 'الجوال' }, $locale)}</span>
-                  <input class="input force-ltr" bind:value={draft.mobile} />
+                  <PhoneInput bind:value={draft.mobile} />
                 </label>
                 <label class="block space-y-1">
                   <span class="text-xs text-slate-500">{tr({ en: 'Email', ar: 'البريد' }, $locale)}</span>

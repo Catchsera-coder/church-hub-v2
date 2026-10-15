@@ -5,6 +5,7 @@
   import PageHeader from '$lib/components/PageHeader.svelte';
   import PageHint from '$lib/components/PageHint.svelte';
   import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
+  import PhoneInput from '$lib/components/PhoneInput.svelte';
 
   interface Vendor { id: number; name: string; title: string | null; category: string | null; email: string | null; phone: string | null; mobile: string | null; website: string | null; notes: string | null; isActive?: boolean; }
 
@@ -113,8 +114,8 @@
       <label class="text-sm"><span class="mb-1 block text-slate-500">{tr({ en: 'Title / occupation', ar: 'الوظيفة / المهنة' }, $locale)}</span><input class="input" bind:value={editing.title} /></label>
       <label class="text-sm"><span class="mb-1 block text-slate-500">{tr({ en: 'Category', ar: 'الفئة' }, $locale)}</span><input class="input" list="vendor-cats" bind:value={editing.category} placeholder={tr({ en: 'e.g. Maintenance', ar: 'مثال: صيانة' }, $locale)} /><datalist id="vendor-cats">{#each allCategories as c}<option value={c}></option>{/each}</datalist></label>
       <label class="text-sm"><span class="mb-1 block text-slate-500">{tr({ en: 'Email', ar: 'البريد' }, $locale)}</span><input class="input force-ltr" type="email" bind:value={editing.email} /></label>
-      <label class="text-sm"><span class="mb-1 block text-slate-500">{tr({ en: 'Phone', ar: 'الهاتف' }, $locale)}</span><input class="input force-ltr" bind:value={editing.phone} /></label>
-      <label class="text-sm"><span class="mb-1 block text-slate-500">{tr({ en: 'Mobile (SMS)', ar: 'الجوال (SMS)' }, $locale)}</span><input class="input force-ltr" bind:value={editing.mobile} /></label>
+      <label class="text-sm"><span class="mb-1 block text-slate-500">{tr({ en: 'Phone', ar: 'الهاتف' }, $locale)}</span><PhoneInput bind:value={editing.phone} /></label>
+      <label class="text-sm"><span class="mb-1 block text-slate-500">{tr({ en: 'Mobile (SMS)', ar: 'الجوال (SMS)' }, $locale)}</span><PhoneInput bind:value={editing.mobile} /></label>
       <label class="text-sm"><span class="mb-1 block text-slate-500">{tr({ en: 'Website', ar: 'الموقع' }, $locale)}</span><input class="input force-ltr" bind:value={editing.website} /></label>
       <label class="flex items-center gap-2 pt-6 text-sm"><input type="checkbox" bind:checked={editing.isActive} /> {tr({ en: 'Active', ar: 'مُفعّل' }, $locale)}</label>
       <label class="text-sm sm:col-span-2"><span class="mb-1 block text-slate-500">{tr({ en: 'Notes', ar: 'ملاحظات' }, $locale)}</span><textarea class="input" rows="2" bind:value={editing.notes}></textarea></label>

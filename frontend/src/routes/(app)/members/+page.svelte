@@ -5,6 +5,7 @@
   import { t, locale, tr } from '$lib/i18n.js';
   import { nameOrder, pageSize, toLimit } from '$lib/stores/prefs.js';
   import { can } from '$lib/stores/auth.js';
+  import { normalizePhone } from '$lib/phone.js';
   import FilterBar from '$lib/components/FilterBar.svelte';
   import PageSizeSelect from '$lib/components/PageSizeSelect.svelte';
   import ExportMenu from '$lib/components/ExportMenu.svelte';
@@ -136,7 +137,7 @@
       const v = editVal.trim() || null; if (v === (p.email ?? null)) { editCell = null; return; }
       const prev = p.email; body = { email: v }; apply = () => (p.email = v); rollback = () => (p.email = prev);
     } else if (field === 'mobile') {
-      const v = editVal.trim() || null; if (v === (p.mobile ?? null)) { editCell = null; return; }
+      const v = normalizePhone(editVal) || null; if (v === (p.mobile ?? null)) { editCell = null; return; }
       const prev = p.mobile; body = { mobile: v }; apply = () => (p.mobile = v); rollback = () => (p.mobile = prev);
     } else {
       const first = editFirst.trim(); if (!first) { editCell = null; return; }
