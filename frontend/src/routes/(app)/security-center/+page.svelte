@@ -44,6 +44,13 @@
     } finally { loading = false; }
   }
 
+  // Auto-sync: re-run the scan (no auto-heal) so anything resolved — by a one-click
+  // fix or a deployed code change — clears itself, then refresh the list.
+  async function syncThenLoad() {
+    try { await api('/security/scan', { method: 'POST', body: '{}' }); } catch { /* best-effort reconcile */ }
+    await load();
+  }
+
   async function runScan() {
     scanning = true; note = '';
     try {
@@ -60,14 +67,14 @@
       note = data.fixed
         ? tr({ en: `Fixed: ${data.detail ?? ''}`, ar: `تم الإصلاح: ${data.detail ?? ''}` }, $locale)
         : tr({ en: 'Flagged for a reviewed fix — this one needs a code change, not an automatic one.', ar: 'تم وضع علامة لإصلاح مُراجَع — يحتاج تغييراً برمجياً وليس تلقائياً.' }, $locale);
-      await load();
+      await syncThenLoad();
     } catch (e) { note = (e as Error).message; } finally { busyId = null; }
   }
 
   async function dismiss(f: Finding) {
     if (!confirm(tr({ en: 'Dismiss this finding? It will not show again unless it changes.', ar: 'تجاهل هذه الملاحظة؟ لن تظهر مجدداً ما لم تتغير.' }, $locale))) return;
     busyId = f.id;
-    try { await api(`/security/findings/${f.id}/dismiss`, { method: 'POST', body: '{}' }); await load(); }
+    try { await api(`/security/findings/${f.id}/dismiss`, { method: 'POST', body: '{}' }); await syncThenLoad(); }
     catch (e) { note = (e as Error).message; } finally { busyId = null; }
   }
 
@@ -75,7 +82,7 @@
 
   onMount(() => {
     if (!hasRole('Super Admin')) { goto('/dashboard', { replaceState: true }); return; }
-    load();
+    syncThenLoad();
   });
 </script>
 

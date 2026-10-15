@@ -85,6 +85,10 @@ const schema = z.object({
   // identity (no key stored anywhere) instead of an API key. The host injects
   // IDENTITY_ENDPOINT / IDENTITY_HEADER for the token exchange.
   AZURE_OPENAI_USE_MANAGED_IDENTITY: z.enum(['true', 'false']).optional(),
+  // The clientId of the managed identity to use. REQUIRED when the app has more
+  // than one identity (e.g. a user-assigned ACR-pull identity + system-assigned),
+  // so the token endpoint knows which one to issue a token for.
+  AZURE_OPENAI_MI_CLIENT_ID: z.string().optional(),
 });
 
 const parsed = schema.safeParse(process.env);

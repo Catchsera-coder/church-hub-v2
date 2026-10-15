@@ -26,7 +26,10 @@ async function managedIdentityToken(): Promise<string> {
   if (miToken && Date.now() < miToken.expMs - 120_000) return miToken.token;
   const ep = process.env.IDENTITY_ENDPOINT, hdr = process.env.IDENTITY_HEADER;
   if (!ep || !hdr) throw new Error('Managed identity is not available in this environment.');
-  const url = `${ep}?resource=${encodeURIComponent('https://cognitiveservices.azure.com')}&api-version=2019-08-01`;
+  // With more than one identity on the app, the token endpoint needs the exact
+  // clientId; omitting it is ambiguous and fails.
+  const cid = config.AZURE_OPENAI_MI_CLIENT_ID ? `&client_id=${encodeURIComponent(config.AZURE_OPENAI_MI_CLIENT_ID)}` : '';
+  const url = `${ep}?resource=${encodeURIComponent('https://cognitiveservices.azure.com')}&api-version=2019-08-01${cid}`;
   const res = await fetch(url, { headers: { 'X-IDENTITY-HEADER': hdr } });
   if (!res.ok) throw new Error(`Managed identity token ${res.status}: ${(await res.text()).slice(0, 200)}`);
   const d = (await res.json()) as { access_token: string; expires_on?: string; expires_in?: string };
