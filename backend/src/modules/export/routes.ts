@@ -177,14 +177,29 @@ exportRouter.get('/attendance', requirePermission('view attendance'), asyncHandl
 
 // --- Attendance: one event's attendee list (?eventId=) -----------------------
 exportRouter.get('/attendance-event', requirePermission('view attendance'), asyncHandler(async (req, res) => {
-  const eventId = Number((req.query as Record<string, string>).eventId);
+  const qp = req.query as Record<string, string>;
+  const eventId = Number(qp.eventId);
   if (!Number.isInteger(eventId) || eventId <= 0) return sendCsv(res, 'attendance', ['Name'], []);
   const [ev] = await db.select({ title: attendanceEvents.title, startsAt: attendanceEvents.startsAt }).from(attendanceEvents).where(eq(attendanceEvents.id, eventId)).limit(1);
+  // Honour the same filters the event page shows, so the export matches the view.
+  const filters = [eq(attendanceRecords.attendanceEventId, eventId)] as import('drizzle-orm').SQL[];
+  const statuses = (qp.statuses ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+  if (statuses.length) filters.push(sql`${people.membershipStatus} IN (${sql.join(statuses.map((s) => sql`${s}`), sql`, `)})`);
+  const ages = (qp.ageGroups ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+  if (ages.length) {
+    const parts = ages.map((g) => g === 'child'
+      ? sql`(${people.dateOfBirth} IS NOT NULL AND extract(year from age(${people.dateOfBirth})) < 13)`
+      : g === 'youth' ? sql`extract(year from age(${people.dateOfBirth})) BETWEEN 13 AND 17`
+        : sql`extract(year from age(${people.dateOfBirth})) >= 18`);
+    filters.push(sql`(${sql.join(parts, sql` OR `)})`);
+  }
+  if (qp.q?.trim()) { const like = `%${qp.q.trim().toLowerCase()}%`; filters.push(sql`(lower(coalesce(${people.givenName}->>'en','')||' '||coalesce(${people.familyName}->>'en','')) LIKE ${like} OR lower(coalesce(${people.givenName}->>'ar','')||' '||coalesce(${people.familyName}->>'ar','')) LIKE ${like})`); }
+  if (qp.newOnly === 'true') filters.push(sql`(${people.selfRegistered} = true AND ${people.reviewedAt} IS NULL)`);
   const rows = await db
     .select({ given: people.givenName, family: people.familyName, status: people.membershipStatus, email: people.email, mobile: people.mobile, checkedInAt: attendanceRecords.checkedInAt })
     .from(attendanceRecords)
     .innerJoin(people, eq(people.id, attendanceRecords.personId))
-    .where(eq(attendanceRecords.attendanceEventId, eventId))
+    .where(and(...filters))
     .orderBy(desc(attendanceRecords.checkedInAt));
   const headers = ['#', 'Name', 'Status', 'Checked in', 'Email', 'Mobile'];
   const data: Row[] = rows.map((r, i) => [i + 1, `${en(r.given)} ${en(r.family)}`.trim(), r.status, fmtDate(r.checkedInAt), r.email ?? '', r.mobile ?? '']);

@@ -54,12 +54,41 @@
   }
 
   // 'all' | 'new' (visitor/self-registered) | 'member' (regular/member).
-  let who = $state<'all' | 'new' | 'member'>('all');
+  // Attendee-list filters (all client-side over the loaded records; the Export
+  // menu sends the same filters to the server so the file matches the view).
+  let fq = $state('');
+  let fStatuses = $state<Set<string>>(new Set());
+  let fAges = $state<Set<string>>(new Set());
+  let fNewOnly = $state(false);
+  let showFilters = $state(false);
+  const AGES = [{ v: 'child', en: 'Children', ar: 'أطفال' }, { v: 'youth', en: 'Youth', ar: 'شباب' }, { v: 'adult', en: 'Adults', ar: 'بالغون' }];
+  function toggleFilter(which: 'statuses' | 'ages', v: string) {
+    const cur = which === 'statuses' ? fStatuses : fAges;
+    const n = new Set(cur); if (n.has(v)) n.delete(v); else n.add(v);
+    if (which === 'statuses') fStatuses = n; else fAges = n;
+  }
+  const ageGroupOf = (dob: string | null): 'child' | 'youth' | 'adult' | null => {
+    if (!dob) return null;
+    const y = (Date.now() - new Date(dob).getTime()) / (365.25 * 864e5);
+    return y < 13 ? 'child' : y < 18 ? 'youth' : 'adult';
+  };
   const filtered = $derived(records.filter((r) => {
-    if (who === 'new') return r.selfRegistered || r.membershipStatus === 'visitor';
-    if (who === 'member') return r.membershipStatus === 'regular' || r.membershipStatus === 'member';
+    if (fq.trim()) { const q = fq.trim().toLowerCase(); const name = `${tr(r.givenName, $locale)} ${tr(r.familyName, $locale)}`.toLowerCase(); if (!name.includes(q)) return false; }
+    if (fStatuses.size && !fStatuses.has(r.membershipStatus)) return false;
+    if (fAges.size) { const g = ageGroupOf(r.dateOfBirth); if (!g || !fAges.has(g)) return false; }
+    if (fNewOnly && !(r.selfRegistered && !r.reviewedAt)) return false;
     return true;
   }));
+  const fCount = $derived((fq.trim() ? 1 : 0) + fStatuses.size + fAges.size + (fNewOnly ? 1 : 0));
+  function clearFilters() { fq = ''; fStatuses = new Set(); fAges = new Set(); fNewOnly = false; }
+  const attExportParams = $derived.by(() => {
+    const p = new URLSearchParams(); p.set('eventId', String(id));
+    if (fq.trim()) p.set('q', fq.trim());
+    if (fStatuses.size) p.set('statuses', [...fStatuses].join(','));
+    if (fAges.size) p.set('ageGroups', [...fAges].join(','));
+    if (fNewOnly) p.set('newOnly', 'true');
+    return p.toString();
+  });
 
   // Rename + reschedule
   let editing = $state(false);
@@ -181,7 +210,7 @@
 
 <PageHeader title={event ? tr(event.title, $locale) || tr({ en: 'Attendance', ar: 'الحضور' }, $locale) : tr({ en: 'Attendance', ar: 'الحضور' }, $locale)} back="/attendance">
   {#snippet actions()}
-    {#if event}<ExportMenu resource="attendance-event" title={tr(event.title, $locale) || tr({ en: 'Attendance', ar: 'الحضور' }, $locale)} params={`eventId=${id}`} />{/if}
+    {#if event}<ExportMenu resource="attendance-event" title={tr(event.title, $locale) || tr({ en: 'Attendance', ar: 'الحضور' }, $locale)} params={attExportParams} />{/if}
     {#if canEdit}<button class="btn-ghost" onclick={() => (editing = !editing)}>{tr({ en: 'Edit name / time', ar: 'تعديل الوقت / الاسم' }, $locale)}</button>{/if}
     {#if isSuper}<button class="btn-ghost text-rose-600 dark:text-rose-400" onclick={() => (confirmDelete = true)}>{$t('common.delete')}</button>{/if}
   {/snippet}
@@ -211,11 +240,15 @@
 {/if}
 
 {#if manage}
-  <div class="card mb-4 p-4">
-    <p class="mb-2 text-sm font-medium">✅ {tr({ en: 'Check in', ar: 'تسجيل الحضور' }, $locale)}</p>
+  <div class="mb-4 rounded-2xl border-2 border-emerald-200 bg-emerald-50/60 p-4 dark:border-emerald-900/50 dark:bg-emerald-900/10">
+    <p class="mb-1 flex items-center gap-2 text-sm font-semibold text-emerald-800 dark:text-emerald-200">
+      <span class="grid h-6 w-6 place-items-center rounded-full bg-emerald-600 text-white">✓</span>
+      {tr({ en: 'Check someone in', ar: 'سجّل حضور شخص' }, $locale)}
+    </p>
+    <p class="mb-2 text-xs text-emerald-700/80 dark:text-emerald-300/70">{tr({ en: 'Search a name to add them (and their family) to this gathering. To narrow the list below instead, use Filter.', ar: 'ابحث عن اسم لإضافته (وعائلته) لهذا اللقاء. لتصفية القائمة بالأسفل استخدم «تصفية».' }, $locale)}</p>
     <div class="relative max-w-md" use:clickOutside={() => (personResults = [])}>
-      <input class="input" bind:value={personQuery} oninput={searchPeople} disabled={adding || checkingIn}
-        placeholder={tr({ en: 'Search a name to check in…', ar: 'ابحث عن اسم لتسجيل حضوره…' }, $locale)} />
+      <input class="input border-emerald-300 bg-white focus:border-emerald-500 dark:border-emerald-800 dark:bg-slate-900" bind:value={personQuery} oninput={searchPeople} disabled={adding || checkingIn}
+        placeholder={tr({ en: '＋ Search a name to check in…', ar: '＋ ابحث عن اسم لتسجيل حضوره…' }, $locale)} />
       {#if personResults.length}
         <div class="absolute z-20 mt-1 w-full overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-900">
           {#each personResults as p}
@@ -263,13 +296,41 @@
   </div>
 {/if}
 
-<!-- New-vs-member filter -->
-<div class="mb-3 flex items-center gap-2">
-  {#each [['all', { en: 'All', ar: 'الكل' }], ['new', { en: 'New', ar: 'جدد' }], ['member', { en: 'Members', ar: 'أعضاء' }]] as [val, lbl]}
-    <button class="btn-ghost text-sm {who === val ? 'ring-1 ring-slate-300 dark:ring-slate-600' : ''}" style={who === val ? 'color: var(--brand)' : ''} onclick={() => (who = val as any)}>{tr(lbl as any, $locale)}</button>
-  {/each}
-  <span class="ms-auto text-sm text-slate-500">{filtered.length} {tr({ en: 'checked in', ar: 'مسجّل' }, $locale)}</span>
+<!-- Attendee list: clear header + its own filters (separate from check-in above) -->
+<div class="mb-3 mt-6 flex flex-wrap items-center gap-2">
+  <h2 class="text-lg font-semibold">{tr({ en: 'Attendees', ar: 'الحاضرون' }, $locale)}</h2>
+  <span class="rounded-full bg-slate-100 px-2.5 py-0.5 text-sm text-slate-600 dark:bg-slate-800 dark:text-slate-300">{filtered.length}{#if fCount} / {records.length}{/if}</span>
+  <button class="btn-ghost ms-auto border border-slate-300 text-sm dark:border-slate-700 {fCount ? 'text-white' : ''}" style={fCount ? 'background: var(--brand); border-color: transparent' : ''} onclick={() => (showFilters = !showFilters)}>
+    ⚙ {tr({ en: 'Filter', ar: 'تصفية' }, $locale)}{#if fCount} · {fCount}{/if}
+  </button>
 </div>
+
+{#if showFilters}
+  <div class="mb-4 space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800/40">
+    <div class="flex flex-wrap items-center gap-2">
+      <input class="input max-w-xs" bind:value={fq} placeholder={tr({ en: 'Search a name in the list…', ar: 'ابحث عن اسم في القائمة…' }, $locale)} />
+      <label class="flex items-center gap-2 text-sm"><input type="checkbox" bind:checked={fNewOnly} /> {tr({ en: 'New / first-time only', ar: 'الجدد فقط' }, $locale)}</label>
+      {#if fCount}<button class="ms-auto text-xs text-slate-500 hover:underline" onclick={clearFilters}>{tr({ en: 'Clear filters', ar: 'مسح التصفية' }, $locale)}</button>{/if}
+    </div>
+    <div>
+      <span class="mb-1.5 block text-xs font-medium text-slate-500">{tr({ en: 'Status', ar: 'الحالة' }, $locale)}</span>
+      <div class="flex flex-wrap gap-1.5">
+        {#each STATUSES as s (s.v)}
+          <button type="button" class="rounded-full border px-3 py-1 text-xs {fStatuses.has(s.v) ? 'border-transparent text-white' : 'border-slate-300 dark:border-slate-700'}" style={fStatuses.has(s.v) ? 'background: var(--brand)' : ''} onclick={() => toggleFilter('statuses', s.v)}>{tr({ en: s.en, ar: s.ar }, $locale)}</button>
+        {/each}
+      </div>
+    </div>
+    <div>
+      <span class="mb-1.5 block text-xs font-medium text-slate-500">{tr({ en: 'Age group', ar: 'الفئة العمرية' }, $locale)}</span>
+      <div class="flex flex-wrap gap-1.5">
+        {#each AGES as a (a.v)}
+          <button type="button" class="rounded-full border px-3 py-1 text-xs {fAges.has(a.v) ? 'border-transparent text-white' : 'border-slate-300 dark:border-slate-700'}" style={fAges.has(a.v) ? 'background: var(--brand)' : ''} onclick={() => toggleFilter('ages', a.v)}>{tr({ en: a.en, ar: a.ar }, $locale)}</button>
+        {/each}
+      </div>
+    </div>
+    <p class="text-xs text-slate-400">{tr({ en: 'The Export button downloads exactly this filtered list.', ar: 'زر «تصدير» ينزّل هذه القائمة المُصفّاة تماماً.' }, $locale)}</p>
+  </div>
+{/if}
 
 {#if canEditPerson && records.length}
   <p class="mb-3 flex items-center gap-1.5 text-xs text-slate-400">

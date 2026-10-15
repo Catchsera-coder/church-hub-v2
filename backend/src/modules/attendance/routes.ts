@@ -148,9 +148,11 @@ attendanceRouter.get('/events/:id/records', requirePermission('view attendance')
       // Contact for the exportable attendee list.
       email: people.email,
       mobile: people.mobile,
-      // For the new-vs-member filter on the attendee list.
+      // For the new-vs-member + age filters on the attendee list.
       membershipStatus: people.membershipStatus,
       selfRegistered: people.selfRegistered,
+      reviewedAt: people.reviewedAt,
+      dateOfBirth: people.dateOfBirth,
     })
     .from(attendanceRecords)
     .innerJoin(people, eq(people.id, attendanceRecords.personId))
