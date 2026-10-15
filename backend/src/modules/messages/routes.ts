@@ -435,7 +435,8 @@ messagesRouter.post('/quick-send', sendLimiter, requirePermission('create messag
   const oneClickUnsub = b.channel === 'email' && appUrl && person?.unsubToken ? `${appUrl}/api/public/unsubscribe/${person.unsubToken}/one-click` : undefined;
   const html = b.channel === 'email' ? brandedEmailHtml(bodyWithLinks, org, { lang, signature, cta, unsubscribeUrl, attachmentsHtml: prepared.imagesHtml, logoCid: logoAtt ? 'logo' : undefined, headerImageCid: headerAtt ? 'headerimg' : undefined }) : undefined;
   const plain = [linksToPlainText(bodyWithLinks), cta ? `${cta.label}: ${cta.url}` : '', signature].filter(Boolean).join('\n\n');
-  const ok = await sendMessage(messaging, b.channel, contact, subject, plain, html, b.mediaUrl ?? undefined, [...brandAtts, ...prepared.inline], oneClickUnsub);
+  const result = await sendMessage(messaging, b.channel, contact, subject, plain, html, b.mediaUrl ?? undefined, [...brandAtts, ...prepared.inline], oneClickUnsub);
+  const ok = result.ok;
 
   // Log the direct send so it appears in the sent-log alongside campaigns: a
   // lightweight campaign row (marked as a direct send) + one recipient row.
@@ -456,6 +457,7 @@ messagesRouter.post('/quick-send', sendLimiter, requirePermission('create messag
       await db.insert(messageRecipients).values({
         messageCampaignId: camp.id, personId: person.id,
         status: ok ? 'sent' : 'failed', sentAt: now, toContact: contact, resolvedName: recipientName,
+        error: ok ? null : (result.error ?? null)?.slice(0, 500),
       });
     }
     if (camp) await linkAttachments(camp.id, b.attachmentTokens);

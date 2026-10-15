@@ -73,7 +73,7 @@ async function sendInviteEmail(user: { id: number; name: string; email: string }
     .set({ inviteTokenHash: hash, inviteExpiresAt: new Date(Date.now() + INVITE_TTL_DAYS * 86400000), updatedAt: new Date() })
     .where(eq(users.id, user.id));
   const { subject, body, html } = renderInvite(org, user, inviteLink(token), mode);
-  return await sendMessage(messaging, 'email', user.email, subject, body, html);
+  return (await sendMessage(messaging, 'email', user.email, subject, body, html)).ok;
 }
 
 export const teamRouter = Router();

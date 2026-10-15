@@ -380,8 +380,8 @@ ministriesRouter.post('/:id/assignments/remind', requirePermission('update minis
     const subject = `Serving reminder — ${mName}`;
     const text = `Hi ${first},\n\nThis is a reminder that you're serving in ${mName}${roleLine} on ${serveDate}.\n\nThank you for serving!`;
     let ok = false;
-    if (r.email && !r.emailOptOut) ok = await sendMessage(messaging, 'email', r.email, subject, text);
-    else if (r.mobile && !r.smsOptOut) ok = await sendMessage(messaging, 'sms', r.mobile, subject, text);
+    if (r.email && !r.emailOptOut) ok = (await sendMessage(messaging, 'email', r.email, subject, text)).ok;
+    else if (r.mobile && !r.smsOptOut) ok = (await sendMessage(messaging, 'sms', r.mobile, subject, text)).ok;
     if (ok) { sent++; await db.update(servingAssignments).set({ reminderSentAt: new Date() }).where(eq(servingAssignments.id, r.id)); }
   }
   await logActivity(req, 'updated', 'ministry', id, 'rota-remind');

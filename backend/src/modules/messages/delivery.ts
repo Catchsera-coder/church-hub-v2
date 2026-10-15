@@ -118,6 +118,11 @@ async function withThrottleRetry(doFetch: () => Promise<Response>, maxRetries = 
 // always render in the recipient's client — no "display images" prompt, no proxy.
 export interface EmailAttachment { filename: string; contentType: string; base64: string; contentId?: string }
 
+// Result of a single send. `error` carries the provider's own reason (e.g. the
+// ACS/SendGrid rejection text or an invalid-address message) so a failed
+// recipient shows WHY it failed on the message's detail page — not just "failed".
+export type SendResult = { ok: boolean; error?: string };
+
 export async function sendMessage(
   m: ResolvedMessaging,
   channel: 'email' | 'sms' | 'whatsapp',
@@ -128,7 +133,7 @@ export async function sendMessage(
   mediaUrl?: string,  // optional image for MMS (SMS) / media (WhatsApp) — Twilio only
   attachments?: EmailAttachment[], // files attached inline to email (ignored on SMS/WhatsApp)
   listUnsubscribeUrl?: string, // email one-click unsubscribe URL (RFC 8058) — deliverability
-): Promise<boolean> {
+): Promise<SendResult> {
   try {
     if (channel === 'email') {
       if (m.emailProvider === 'sendgrid') return await sendEmailSendgrid(m, to, subject, body, html, attachments, listUnsubscribeUrl);
@@ -142,16 +147,17 @@ export async function sendMessage(
       return await sendSmsAzure(m, to, body); // Azure SMS has no MMS media support
     }
   } catch (err) {
-    console.error(`[${channel}] delivery error for ${to}:`, err instanceof Error ? err.message : err);
-    return false;
+    const error = err instanceof Error ? err.message : String(err);
+    console.error(`[${channel}] delivery error for ${to}:`, error);
+    return { ok: false, error };
   }
 
   if (!config.isProd) {
     console.log(`[dev ${channel}] -> ${to} :: ${subject} :: ${body.slice(0, 80)}`);
-    return true;
+    return { ok: true };
   }
   console.warn(`[${channel}] provider not configured — not delivered to ${to}`);
-  return false;
+  return { ok: false, error: `No ${channel} provider is configured in Settings.` };
 }
 
 /**
@@ -186,7 +192,7 @@ export async function verifyEmail(m: ResolvedMessaging, to: string): Promise<{ o
 }
 
 // --- Email: SendGrid ---------------------------------------------------------
-async function sendEmailSendgrid(m: ResolvedMessaging, to: string, subject: string, body: string, html?: string, attachments?: EmailAttachment[], listUnsubscribeUrl?: string): Promise<boolean> {
+async function sendEmailSendgrid(m: ResolvedMessaging, to: string, subject: string, body: string, html?: string, attachments?: EmailAttachment[], listUnsubscribeUrl?: string): Promise<SendResult> {
   // SendGrid requires text/plain before text/html; include both when we have HTML.
   const content = html
     ? [{ type: 'text/plain', value: body }, { type: 'text/html', value: html }]
@@ -204,13 +210,14 @@ async function sendEmailSendgrid(m: ResolvedMessaging, to: string, subject: stri
       ...(attachments?.length ? { attachments: attachments.map((a) => ({ content: a.base64, filename: a.filename, type: a.contentType, disposition: a.contentId ? 'inline' : 'attachment', ...(a.contentId ? { content_id: a.contentId } : {}) })) } : {}),
     }),
   });
-  if (res.ok) return true; // 202 Accepted
-  console.error(`[email] SendGrid ${res.status}: ${(await res.text()).slice(0, 200)}`);
-  return false;
+  if (res.ok) return { ok: true }; // 202 Accepted
+  const detail = (await res.text()).slice(0, 300);
+  console.error(`[email] SendGrid ${res.status}: ${detail}`);
+  return { ok: false, error: `SendGrid rejected it (HTTP ${res.status}): ${detail}` };
 }
 
 // --- Email: Azure Communication Services -------------------------------------
-async function sendEmailAcs(m: ResolvedMessaging, to: string, subject: string, body: string, html?: string, attachments?: EmailAttachment[], listUnsubscribeUrl?: string): Promise<boolean> {
+async function sendEmailAcs(m: ResolvedMessaging, to: string, subject: string, body: string, html?: string, attachments?: EmailAttachment[], listUnsubscribeUrl?: string): Promise<SendResult> {
   const res = await acsSignedFetch(
     m.acsConnectionString!,
     '/emails:send?api-version=2025-09-01',
@@ -223,13 +230,14 @@ async function sendEmailAcs(m: ResolvedMessaging, to: string, subject: string, b
       ...(attachments?.length ? { attachments: attachments.map((a) => ({ name: a.filename, contentType: a.contentType, contentInBase64: a.base64, ...(a.contentId ? { contentId: a.contentId } : {}) })) } : {}),
     },
   );
-  if (res.ok) return true; // 202 Accepted (async send queued)
-  console.error(`[email] Azure ${res.status}: ${(await res.text()).slice(0, 200)}`);
-  return false;
+  if (res.ok) return { ok: true }; // 202 Accepted (async send queued)
+  const detail = (await res.text()).slice(0, 300);
+  console.error(`[email] Azure ${res.status}: ${detail}`);
+  return { ok: false, error: `Azure rejected it (HTTP ${res.status}): ${detail}` };
 }
 
 // --- SMS: Twilio -------------------------------------------------------------
-async function sendSmsTwilio(m: ResolvedMessaging, to: string, body: string, mediaUrl?: string): Promise<boolean> {
+async function sendSmsTwilio(m: ResolvedMessaging, to: string, body: string, mediaUrl?: string): Promise<SendResult> {
   const url = `https://api.twilio.com/2010-04-01/Accounts/${m.twilioAccountSid}/Messages.json`;
   const auth = Buffer.from(`${m.twilioAccountSid}:${m.twilioAuthToken}`).toString('base64');
   const params = new URLSearchParams({ To: to, From: m.smsFrom!, Body: body });
@@ -239,16 +247,17 @@ async function sendSmsTwilio(m: ResolvedMessaging, to: string, body: string, med
     headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/x-www-form-urlencoded' },
     body: params.toString(),
   });
-  if (res.ok) return true; // 201 Created
-  console.error(`[sms] Twilio ${res.status}: ${(await res.text()).slice(0, 200)}`);
-  return false;
+  if (res.ok) return { ok: true }; // 201 Created
+  const detail = (await res.text()).slice(0, 300);
+  console.error(`[sms] Twilio ${res.status}: ${detail}`);
+  return { ok: false, error: `Twilio rejected it (HTTP ${res.status}): ${detail}` };
 }
 
 // --- WhatsApp: Twilio --------------------------------------------------------
 // Same Messages endpoint as SMS, but both numbers carry the "whatsapp:" scheme.
 // The sender (whatsappFrom) is already stored with the prefix; the recipient's
 // stored mobile is a bare E.164 number, so prefix it here.
-async function sendWhatsappTwilio(m: ResolvedMessaging, to: string, body: string, mediaUrl?: string): Promise<boolean> {
+async function sendWhatsappTwilio(m: ResolvedMessaging, to: string, body: string, mediaUrl?: string): Promise<SendResult> {
   const url = `https://api.twilio.com/2010-04-01/Accounts/${m.twilioAccountSid}/Messages.json`;
   const auth = Buffer.from(`${m.twilioAccountSid}:${m.twilioAuthToken}`).toString('base64');
   const from = m.whatsappFrom!.startsWith('whatsapp:') ? m.whatsappFrom! : `whatsapp:${m.whatsappFrom}`;
@@ -260,25 +269,27 @@ async function sendWhatsappTwilio(m: ResolvedMessaging, to: string, body: string
     headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/x-www-form-urlencoded' },
     body: params.toString(),
   });
-  if (res.ok) return true; // 201 Created
-  console.error(`[whatsapp] Twilio ${res.status}: ${(await res.text()).slice(0, 200)}`);
-  return false;
+  if (res.ok) return { ok: true }; // 201 Created
+  const detail = (await res.text()).slice(0, 300);
+  console.error(`[whatsapp] Twilio ${res.status}: ${detail}`);
+  return { ok: false, error: `Twilio rejected it (HTTP ${res.status}): ${detail}` };
 }
 
 // --- SMS: Azure Communication Services --------------------------------------
-async function sendSmsAzure(m: ResolvedMessaging, to: string, body: string): Promise<boolean> {
+async function sendSmsAzure(m: ResolvedMessaging, to: string, body: string): Promise<SendResult> {
   const res = await acsSignedFetch(
     m.acsConnectionString!,
     '/sms?api-version=2021-03-07',
     { from: m.acsSmsFrom, message: body, smsRecipients: [{ to }] },
   );
   if (!res.ok) {
-    console.error(`[sms] Azure ${res.status}: ${(await res.text()).slice(0, 200)}`);
-    return false;
+    const detail = (await res.text()).slice(0, 300);
+    console.error(`[sms] Azure ${res.status}: ${detail}`);
+    return { ok: false, error: `Azure rejected it (HTTP ${res.status}): ${detail}` };
   }
   const data = (await res.json().catch(() => null)) as { value?: Array<{ successful?: boolean }> } | null;
   const first = data?.value?.[0];
-  return first ? first.successful !== false : true;
+  return { ok: first ? first.successful !== false : true };
 }
 
 // --- WhatsApp: Azure Communication Services (Advanced Messaging) -------------
@@ -286,15 +297,16 @@ async function sendSmsAzure(m: ResolvedMessaging, to: string, body: string): Pro
 // only allows free-form text inside the 24h customer-service window; a
 // church-INITIATED message outside that window must use a pre-approved template
 // (that path isn't wired here yet — Meta template approval is a prerequisite).
-async function sendWhatsappAcs(m: ResolvedMessaging, to: string, body: string): Promise<boolean> {
+async function sendWhatsappAcs(m: ResolvedMessaging, to: string, body: string): Promise<SendResult> {
   const res = await acsSignedFetch(
     m.acsConnectionString!,
     '/messages/notifications:send?api-version=2024-02-01',
     { channelRegistrationId: m.acsWhatsappChannelId, to: [to], kind: 'text', content: body },
   );
-  if (res.ok) return true; // 202 Accepted
-  console.error(`[whatsapp] Azure ${res.status}: ${(await res.text()).slice(0, 200)}`);
-  return false;
+  if (res.ok) return { ok: true }; // 202 Accepted
+  const detail = (await res.text()).slice(0, 300);
+  console.error(`[whatsapp] Azure ${res.status}: ${detail}`);
+  return { ok: false, error: `Azure rejected it (HTTP ${res.status}): ${detail}` };
 }
 
 // --- ACS HMAC request signing (shared by email + SMS) ------------------------

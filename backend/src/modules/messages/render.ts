@@ -114,7 +114,7 @@ function ctaButton(cta: { label: string; url: string }, color: string): string {
   const url = escapeHtml(cta.url);
   const label = escapeHtml(cta.label);
   return `<table role="presentation" align="center" cellpadding="0" cellspacing="0" style="margin:10px auto 6px"><tr><td style="border-radius:10px;background:${color};box-shadow:0 2px 8px rgba(15,23,42,0.18)">`
-    + `<a href="${url}" target="_blank" rel="noopener" style="display:inline-block;padding:14px 38px;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;letter-spacing:.2px;border-radius:10px">${label}</a>`
+    + `<a href="${url}" target="_blank" rel="noopener" class="ch-btn" style="display:inline-block;padding:14px 38px;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;letter-spacing:.2px;border-radius:10px">${label}</a>`
     + `</td></tr></table>`;
 }
 
@@ -210,7 +210,7 @@ export function brandedEmailHtml(
     : '';
 
   const heading = opts.heading
-    ? `<h1 style="margin:0 0 16px;font-family:Georgia,'Times New Roman',serif;font-size:23px;line-height:1.3;font-weight:700;color:#0f172a">${escapeHtml(opts.heading)}</h1>`
+    ? `<h1 class="ch-h1" style="margin:0 0 16px;font-family:Georgia,'Times New Roman',serif;font-size:23px;line-height:1.3;font-weight:700;color:#0f172a">${escapeHtml(opts.heading)}</h1>`
     : '';
   const highlight = opts.highlight ? highlightBox(opts.highlight, brand) : '';
   // Images go where the sender put an [image] marker in the text; otherwise under
@@ -245,22 +245,35 @@ export function brandedEmailHtml(
     unsub,
   ].filter(Boolean).join('');
   const footer = footerInner
-    ? `<tr><td style="padding:18px 28px 24px;border-top:1px solid #e2e8f0;color:#64748b;font-size:12px;line-height:1.6;text-align:center">${footerInner}</td></tr>`
+    ? `<tr><td class="ch-foot" style="padding:18px 28px 24px;border-top:1px solid #e2e8f0;color:#64748b;font-size:12px;line-height:1.6;text-align:center">${footerInner}</td></tr>`
     : '';
 
   const brandDark = shade(brand, -16);
-  return `<!doctype html><html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/></head>`
-    + `<body style="margin:0;background:#eef1f5;padding:28px 16px;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#0f172a">`
+  // Mobile-first: fluid 600px container (shrinks to the screen), plus a media
+  // query that tightens padding, drops the corners edge-to-edge, and makes the
+  // CTA full-width on phones. Inline styles remain the desktop/Outlook fallback.
+  const style = `<style>`
+    + `img{max-width:100%!important;height:auto!important;border:0}`
+    + `@media only screen and (max-width:600px){`
+    + `.ch-wrap{width:100%!important;border-radius:0!important}`
+    + `.ch-head{padding:18px 18px!important}`
+    + `.ch-pad{padding:22px 18px!important}`
+    + `.ch-foot{padding:16px 18px!important}`
+    + `.ch-btn{display:block!important;text-align:center!important;padding-left:18px!important;padding-right:18px!important}`
+    + `.ch-h1{font-size:21px!important}`
+    + `}</style>`;
+  return `<!doctype html><html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>${style}</head>`
+    + `<body style="margin:0;background:#eef1f5;padding:24px 12px;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#0f172a">`
     + preheader
-    + `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 6px 24px rgba(15,23,42,0.10)">`
-    + `<tr><td style="background:${brand};padding:24px 28px">`
+    + `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="ch-wrap" style="max-width:600px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 6px 24px rgba(15,23,42,0.10)">`
+    + `<tr><td class="ch-head" style="background:${brand};padding:24px 28px">`
       + `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>`
         + `<td style="vertical-align:middle;text-align:left">${logoImg}${headerName}</td>`
         + (headerPhoto ? `<td style="vertical-align:middle;text-align:right;white-space:nowrap">${headerPhoto}</td>` : '')
       + `</tr></table>`
     + `</td></tr>`
     + `<tr><td style="height:4px;background:${brandDark};font-size:0;line-height:0">&nbsp;</td></tr>`
-    + `<tr><td style="padding:34px 36px">${heading}${body}${highlight}${cta}${signature}${bodyNote}</td></tr>`
+    + `<tr><td class="ch-pad" style="padding:34px 36px">${heading}${body}${highlight}${cta}${signature}${bodyNote}</td></tr>`
     + footer
     + `</table>`
     + `</body></html>`;

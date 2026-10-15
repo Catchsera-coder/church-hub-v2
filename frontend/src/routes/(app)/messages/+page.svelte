@@ -61,6 +61,26 @@
       alert(err instanceof ApiError ? err.message : (err as Error).message);
     } finally { sending = null; }
   }
+
+  // Quick "Review" — preview the message exactly as the recipient received it
+  // (the stored, rendered email HTML / SMS text), in a modal, without leaving the
+  // list. Same render the detail page shows.
+  let reviewOpen = $state(false);
+  let reviewName = $state('');
+  let reviewChannel = $state('email');
+  let reviewHtml = $state('');
+  let reviewText = $state('');
+  let reviewLoading = $state(false);
+  async function openReview(m: any, e: Event) {
+    e.preventDefault(); e.stopPropagation();
+    reviewOpen = true; reviewName = m.name; reviewChannel = m.channel; reviewHtml = ''; reviewText = ''; reviewLoading = true;
+    try {
+      const { data } = await api<{ data: any }>(`/messages/${m.id}`);
+      const r = (data.rendered ?? []).find((x: any) => x.html) ?? data.rendered?.[0];
+      reviewHtml = r?.html ?? '';
+      reviewText = r?.text ?? '';
+    } catch (err) { reviewText = (err as Error).message; } finally { reviewLoading = false; }
+  }
 </script>
 
 <PageHeader title={$t('nav.messages')}>
@@ -133,6 +153,7 @@
     <td class="p-3 force-ltr text-slate-600 dark:text-slate-300">{m.sentAt ? dateTime(m.sentAt) : (m.scheduledFor ? dateTime(m.scheduledFor) : dateTime(m.createdAt))}</td>
     <td class="p-3 text-end">
       <div class="flex items-center justify-end gap-3">
+        <button class="text-xs text-slate-500 hover:underline dark:text-slate-400" onclick={(e) => openReview(m, e)}>👁 {tr({ en: 'Review', ar: 'معاينة' }, $locale)}</button>
         {#if (m.status === 'draft' || m.status === 'scheduled') && can('update message')}
           <button class="text-xs text-primary-600 hover:underline disabled:opacity-50 dark:text-primary-300" disabled={sending === m.id} onclick={(e) => sendNow(m, e)}>
             {sending === m.id ? $t('common.loading') : tr({ en: 'Send now', ar: 'إرسال الآن' }, $locale)}
@@ -145,3 +166,26 @@
     </td>
   {/snippet}
 </DataTable>
+
+{#if reviewOpen}
+  <div class="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4" role="button" tabindex="-1" onclick={() => (reviewOpen = false)} onkeydown={(e) => e.key === 'Escape' && (reviewOpen = false)}>
+    <div class="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl dark:bg-slate-900" role="dialog" tabindex="0" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
+      <div class="flex items-center justify-between gap-2 border-b border-slate-200 px-4 py-3 dark:border-slate-700">
+        <div class="min-w-0">
+          <p class="truncate font-semibold">👁 {tr({ en: 'As delivered', ar: 'كما وصلت' }, $locale)}</p>
+          <p class="truncate text-xs text-slate-500">{reviewName}</p>
+        </div>
+        <button class="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200" aria-label="Close" onclick={() => (reviewOpen = false)}>✕</button>
+      </div>
+      <div class="min-h-0 flex-1 overflow-auto bg-slate-100 dark:bg-slate-950">
+        {#if reviewLoading}
+          <p class="p-8 text-center text-slate-400">{$t('common.loading')}</p>
+        {:else if reviewChannel === 'email' && reviewHtml}
+          <iframe title="email preview" class="h-[70vh] w-full border-0 bg-white" sandbox="allow-same-origin" srcdoc={reviewHtml}></iframe>
+        {:else}
+          <pre class="whitespace-pre-wrap p-6 text-sm text-slate-800 dark:text-slate-200">{reviewText || tr({ en: 'Nothing to preview.', ar: 'لا شيء للمعاينة.' }, $locale)}</pre>
+        {/if}
+      </div>
+    </div>
+  </div>
+{/if}

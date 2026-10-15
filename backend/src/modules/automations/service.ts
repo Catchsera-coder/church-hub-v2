@@ -73,10 +73,10 @@ export async function sendTemplateToPerson(
   if (channel === 'email') {
     const html = brandedEmailHtml(bodyText, org, { lang, signature, bodyFooterNote: footer || undefined });
     const plain = [bodyText, signature, footer].filter(Boolean).join('\n\n');
-    return sendMessage(messaging, channel, c.to, subject, plain, html);
+    return (await sendMessage(messaging, channel, c.to, subject, plain, html)).ok;
   }
   const plain = [bodyText, footer].filter(Boolean).join('\n\n');
-  return sendMessage(messaging, channel, c.to, subject, plain);
+  return (await sendMessage(messaging, channel, c.to, subject, plain)).ok;
 }
 
 /** Run one automation now: send its template to everyone it currently matches. */

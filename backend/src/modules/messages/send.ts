@@ -83,11 +83,11 @@ export async function sendCampaignNow(campaignId: number, sentByUserId?: number)
       unsubscribeUrl ? `—\nTo stop receiving these emails, unsubscribe: ${unsubscribeUrl}` : '',
     ].filter(Boolean).join('\n\n');
     const emailAtts = c.channel === 'email' ? [...brandAtts, ...prepared.inline] : prepared.inline;
-    const ok = await sendMessage(messaging, c.channel, p.contact as string, subject, plain, html, c.mediaUrl ?? undefined, emailAtts, oneClickUnsub);
+    const result = await sendMessage(messaging, c.channel, p.contact as string, subject, plain, html, c.mediaUrl ?? undefined, emailAtts, oneClickUnsub);
     await db.update(messageRecipients)
-      .set({ status: ok ? 'sent' : 'failed', sentAt: new Date(), error: ok ? null : 'Provider did not accept the message' })
+      .set({ status: result.ok ? 'sent' : 'failed', sentAt: new Date(), error: result.ok ? null : (result.error ?? 'Provider did not accept the message').slice(0, 500) })
       .where(eq(messageRecipients.id, rec.id));
-    if (ok) sent++;
+    if (result.ok) sent++;
     // Gentle pacing to smooth bursts under the provider per-minute caps (SMS
     // toll-free 200/min, ACS custom-domain email 30/min); the delivery layer also
     // retries on 429, so nothing is dropped. For very large church-wide blasts
