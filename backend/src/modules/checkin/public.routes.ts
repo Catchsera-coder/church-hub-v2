@@ -6,6 +6,7 @@ import { attendanceEvents, attendanceRecords, checkinForms, households, people }
 import { asyncHandler } from '../../http/asyncHandler.js';
 import { badRequest, notFound } from '../../http/errors.js';
 import { currentOrg } from '../settings/routes.js';
+import { normalizePhone } from '../../lib/phone.js';
 import { STANDARD_FIELD_KEYS } from './forms.routes.js';
 
 /**
@@ -167,7 +168,7 @@ publicCheckinRouter.post(
 
       for (const m of registrants) {
         const email = m.email && m.email.trim() ? m.email.trim().toLowerCase() : null;
-        const mobile = m.mobile && m.mobile.trim() ? m.mobile.trim() : null;
+        const mobile = normalizePhone(m.mobile);
         const [person] = await db
           .insert(people)
           .values({
@@ -260,7 +261,7 @@ publicCheckinRouter.post(
       const given = str(vals.givenName);
       if (!given) continue;
       const email = str(vals.email);
-      const mobile = str(vals.mobile);
+      const mobile = normalizePhone(str(vals.mobile));
       const custom: Record<string, string> = {};
       for (const [k, v] of Object.entries(vals)) {
         if (STANDARD_FIELD_KEYS.has(k) || k === 'attending' || k === 'role') continue;

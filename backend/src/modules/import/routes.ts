@@ -8,6 +8,7 @@ import { asyncHandler } from '../../http/asyncHandler.js';
 import { authenticate, requirePermission } from '../../middleware/auth.js';
 import { badRequest } from '../../http/errors.js';
 import { logActivity } from '../activity/service.js';
+import { normalizePhone } from '../../lib/phone.js';
 
 /**
  * Bulk import of members from an Excel/CSV file. Flow: download a template →
@@ -207,7 +208,7 @@ importRouter.post('/members', requirePermission('create person'), asyncHandler(a
     if (!given) { continue; }
     const email = v.email?.trim() ? v.email.trim().toLowerCase() : null;
     // No mobile? fall back to the home phone so the person is still contactable.
-    const mobile = (v.mobile?.trim() || v.homePhone?.trim()) || null;
+    const mobile = normalizePhone(v.mobile?.trim() || v.homePhone?.trim());
     const m10 = last10(mobile);
     if ((email && emailSet.has(email)) || (m10 && mobileSet.has(m10))) { skipped++; continue; }
 
@@ -221,7 +222,7 @@ importRouter.post('/members', requirePermission('create person'), asyncHandler(a
         else {
           const [h] = await db.insert(households).values({
             name: { en: fam },
-            homePhone: v.homePhone?.trim() || null,
+            homePhone: normalizePhone(v.homePhone),
             addressLine1: v.addressLine1?.trim() || null, city: v.city?.trim() || null,
             region: v.region?.trim() || null, postalCode: v.postalCode?.trim() || null, country: v.country?.trim() || null,
           }).returning();

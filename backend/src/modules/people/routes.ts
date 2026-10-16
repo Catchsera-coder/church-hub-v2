@@ -11,6 +11,14 @@ import { sendTemplateToPerson, resolveMessaging } from '../automations/service.j
 import { currentOrg } from '../settings/routes.js';
 import { peopleListQuery, peopleFilters } from './filters.js';
 import { mergePreview, mergePeople, undoMerge, recentMerges } from './merge.js';
+import { normalizePhone } from '../../lib/phone.js';
+
+// Normalise a phone value to clean E.164 only when one is actually provided —
+// undefined (field not sent) stays undefined so partial updates never clobber it.
+const phoneField = z.preprocess(
+  (v) => (v === undefined ? undefined : v === null ? null : normalizePhone(v as string)),
+  z.string().max(40).nullable().optional(),
+);
 
 export const peopleRouter = Router();
 peopleRouter.use(authenticate);
@@ -34,7 +42,7 @@ const upsertSchema = z.object({
   membershipStatus: z.enum(['visitor', 'regular', 'member', 'inactive', 'conference_attendee']).default('visitor'),
   category: z.enum(['congregation', 'contact']).optional(),
   email: z.string().email().nullable().optional(),
-  mobile: z.string().max(40).nullable().optional(),
+  mobile: phoneField,
   preferredLanguage: z.string().max(8).default('en'),
   dateOfBirth: z.string().nullable().optional(),
   joinedOn: z.string().nullable().optional(),
